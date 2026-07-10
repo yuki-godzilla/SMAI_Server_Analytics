@@ -13,6 +13,11 @@ SNAPSHOT = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
 ACTIVITY = PROJECT_ROOT / "data/ops/server_ops/activity_state.json"
 EVENT_LOG = RUNTIME_ROOT / "audit/events.jsonl"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
+TASKS = (
+    "SmartMarketAI-Server-Autostart",
+    "SmartMarketAI-Server-Watch",
+    "SmartMarketAI-Symbol-Maintenance-IfDue",
+)
 
 
 def read_json(path: Path) -> dict[str, object]:
@@ -52,6 +57,22 @@ def recent_logs() -> list[str]:
     return lines[-100:]
 
 
+def read_task_status() -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    for task in TASKS:
+        try:
+            result = subprocess.run(["schtasks.exe", "/Query", "/TN", f"\\{task}", "/FO", "LIST"], capture_output=True, text=True, timeout=2, check=False)
+            values: dict[str, str] = {}
+            for line in result.stdout.splitlines():
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    values[key.strip()] = value.strip()
+            rows.append((task, values.get("Status", "unknown"), values.get("Last Result", "unknown")))
+        except (OSError, subprocess.TimeoutExpired):
+            rows.append((task, "unknown", "task query unavailable"))
+    return rows
+
+
 class Dashboard:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -81,18 +102,42 @@ class Dashboard:
         overview = ttk.Frame(notebook, padding=8)
         history = ttk.Frame(notebook, padding=8)
         incidents = ttk.Frame(notebook, padding=8)
+        sessions = ttk.Frame(notebook, padding=8)
+        tasks = ttk.Frame(notebook, padding=8)
+        logs = ttk.Frame(notebook, padding=8)
         notebook.add(overview, text="Overview")
+        notebook.add(sessions, text="Sessions")
         notebook.add(history, text="Activity History")
-        notebook.add(incidents, text="Incidents / Logs")
+        notebook.add(incidents, text="Incidents")
+        notebook.add(tasks, text="Tasks")
+        notebook.add(logs, text="Logs")
         self.health = tk.Text(overview, state="disabled", wrap="word")
         self.health.pack(fill="both", expand=True)
+        self.sessions = ttk.Treeview(sessions, columns=("user", "heartbeat", "state"), show="headings")
+        for name, title in (("user", "Session / User"), ("heartbeat", "Last heartbeat"), ("state", "State")):
+            self.sessions.heading(name, text=title)
+            self.sessions.column(name, width=250 if name == "user" else 220, anchor="w")
+        self.sessions.pack(fill="both", expand=True)
+        controls = ttk.Frame(history)
+        controls.pack(fill="x", pady=(0, 8))
+        self.history_filter = tk.StringVar(value="all")
+        ttk.Label(controls, text="Result").pack(side="left")
+        ttk.Combobox(controls, textvariable=self.history_filter, values=("all", "ok", "failed", "cancelled"), state="readonly", width=14).pack(side="left", padx=8)
+        ttk.Button(controls, text="Apply", command=self.refresh_history).pack(side="left")
         self.history = ttk.Treeview(history, columns=("time", "user", "action", "target", "result", "device", "duration"), show="headings")
         headings = {"time": "Time", "user": "User", "action": "Action", "target": "Target", "result": "Result", "device": "Device", "duration": "Duration"}
         for name, title in headings.items():
             self.history.heading(name, text=title)
             self.history.column(name, width=130 if name not in {"action", "target"} else 180, anchor="w")
         self.history.pack(fill="both", expand=True)
-        self.logs = tk.Text(incidents, state="disabled", wrap="none")
+        self.incidents = tk.Text(incidents, state="disabled", wrap="word")
+        self.incidents.pack(fill="both", expand=True)
+        self.tasks = ttk.Treeview(tasks, columns=("task", "status", "result"), show="headings")
+        for name, title in (("task", "Task"), ("status", "Status"), ("result", "Last result")):
+            self.tasks.heading(name, text=title)
+            self.tasks.column(name, width=340 if name == "task" else 180, anchor="w")
+        self.tasks.pack(fill="both", expand=True)
+        self.logs = tk.Text(logs, state="disabled", wrap="none")
         self.logs.pack(fill="both", expand=True)
         ttk.Label(self.root, text=f"Project: {PROJECT_ROOT}    Runtime: {RUNTIME_ROOT}").pack(anchor="w", padx=12, pady=(0, 8))
 
@@ -120,12 +165,31 @@ class Dashboard:
         operations = activity.get("operations", {})
         self.session.set(str(len(sessions) if isinstance(sessions, dict) else 0))
         self.operations.set(str(len(operations) if isinstance(operations, dict) else 0))
+        for item in self.sessions.get_children():
+            self.sessions.delete(item)
+        if isinstance(sessions, dict):
+            for session_id, heartbeat in sessions.items():
+                self.sessions.insert("", "end", values=(session_id, heartbeat, "active"))
+        self.refresh_history()
+        incident_lines = [json.dumps(event, ensure_ascii=False) for event in read_events() if str(event.get("result", "")).lower() in {"failed", "error", "critical"}]
+        self.set_text(self.incidents, incident_lines or ["No incidents recorded"])
+        for item in self.tasks.get_children():
+            self.tasks.delete(item)
+        for task, status, result in read_task_status():
+            self.tasks.insert("", "end", values=(task, status, result))
+        self.set_text(self.logs, recent_logs())
+        self.root.after(5000, self.refresh)
+
+    def refresh_history(self) -> None:
+        if not hasattr(self, "history"):
+            return
+        selected = self.history_filter.get()
         for item in self.history.get_children():
             self.history.delete(item)
         for event in read_events():
+            if selected != "all" and str(event.get("result", "")).lower() != selected:
+                continue
             self.history.insert("", "end", values=tuple(str(event.get(key, "")) for key in ("timestamp", "user_id", "action", "target", "result", "device_id", "duration_ms")))
-        self.set_text(self.logs, recent_logs())
-        self.root.after(5000, self.refresh)
 
 
 def main() -> None:
@@ -137,4 +201,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
