@@ -1,45 +1,30 @@
-# SMAI Server Analytics - Project Context
+﻿# SMAI Server Analytics - Project Context
 
 ## Purpose
 
-SMAI本体をWindows PC上で常時運用するための、独立した監視・バックアップ・障害解析プロジェクトです。
-
+SMAI譛ｬ菴薙ｒWindows PC荳翫〒蟶ｸ譎る°逕ｨ縺吶ｋ縺溘ａ縺ｮ縲∫峡遶九＠縺溽屮隕悶・繝舌ャ繧ｯ繧｢繝・・繝ｻ髫懷ｮｳ隗｣譫舌・繝ｭ繧ｸ繧ｧ繧ｯ繝医〒縺吶・
 ## Current status
 
-- `dashboard.py`: Tkinterのデスクトップ監視画面。5秒間隔でhealth snapshot、session、operation、直近ログを更新
-- `health.py`: L1 TCP/Streamlit health、L2ページ応答、L3 state/data read-writeの3段階確認
-- `backup.py`: user data、server ops state、正式なsymbol universeをRuntimeへmanifest付きバックアップ
-- `retention.py`: Runtimeログの保持期限処理
-- `retention_policy.json`: ログ、バックアップ、生成レポート、Git追跡対象の方針
-- `tasks.md`: SMAI本体と運用コンポーネントの責務一覧
-- `audit.py`: secretを除外した操作イベントをRuntimeの`audit/events.jsonl`へ追記
-- `dashboard.py`の`Activity History`: ユーザー、操作、対象、結果、端末擬似ID、所要時間を表示
+- `dashboard.py`: Tkinter縺ｮ繝・せ繧ｯ繝医ャ繝礼屮隕也判髱｢縲・遘帝俣髫斐〒health snapshot縲《ession縲｛peration縲∫峩霑代Ο繧ｰ繧呈峩譁ｰ
+- `health.py`: L1 TCP/Streamlit health縲´2繝壹・繧ｸ蠢懃ｭ斐´3 state/data read-write縺ｮ3谿ｵ髫守｢ｺ隱・- `backup.py`: user data縲《erver ops state縲∵ｭ｣蠑上↑symbol universe繧坦untime縺ｸmanifest莉倥″繝舌ャ繧ｯ繧｢繝・・
+- `retention.py`: Runtime繝ｭ繧ｰ縺ｮ菫晄戟譛滄剞蜃ｦ逅・- `retention_policy.json`: 繝ｭ繧ｰ縲√ヰ繝・け繧｢繝・・縲∫函謌舌Ξ繝昴・繝医；it霑ｽ霍｡蟇ｾ雎｡縺ｮ譁ｹ驥・- `tasks.md`: SMAI譛ｬ菴薙→驕狗畑繧ｳ繝ｳ繝昴・繝阪Φ繝医・雋ｬ蜍吩ｸ隕ｧ
+- `audit.py`: secret繧帝勁螟悶＠縺滓桃菴懊う繝吶Φ繝医ｒRuntime縺ｮ`audit/events.jsonl`縺ｸ霑ｽ險・- `dashboard.py`縺ｮ`Activity History`: 繝ｦ繝ｼ繧ｶ繝ｼ縲∵桃菴懊∝ｯｾ雎｡縲∫ｵ先棡縲∫ｫｯ譛ｫ謫ｬ莨ｼID縲∵園隕∵凾髢薙ｒ陦ｨ遉ｺ
 
 ## Runtime layout
 
-既定値は次のとおりです。
-
+譌｢螳壼､縺ｯ谺｡縺ｮ縺ｨ縺翫ｊ縺ｧ縺吶・
 ```text
-C:\Users\user\workspace\Smart_Market_AI       # SMAI本体
-C:\Users\user\workspace\SMAI_Server_Analytics # このリポジトリ
-C:\Users\user\workspace\SMAI_Server_Runtime   # ログ・バックアップ・実行状態
-```
+C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI       # SMAI譛ｬ菴・C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Analytics # 縺薙・繝ｪ繝昴ず繝医Μ
+C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime   # 繝ｭ繧ｰ繝ｻ繝舌ャ繧ｯ繧｢繝・・繝ｻ螳溯｡檎憾諷・```
 
-`SMAI_PROJECT_ROOT` と `SMAI_RUNTIME_ROOT` で変更できます。
-
+`SMAI_PROJECT_ROOT` 縺ｨ `SMAI_RUNTIME_ROOT` 縺ｧ螟画峩縺ｧ縺阪∪縺吶・
 ## Explicit boundaries
 
-- Analyticsは本体のランキング、Forecast、スコア、ユーザーデータを変更しない
-- 監視画面停止はSMAI本体停止を意味しない
-- Gateway/Ollama/通知schedulerは任意依存として表示する
-- 生成レポートは障害調査用にRuntimeへ保存し、通常はGitへ追跡しない
-- 再現性のある銘柄マスターとmanifestだけを本体側のGitで追跡する
+- Analytics縺ｯ譛ｬ菴薙・繝ｩ繝ｳ繧ｭ繝ｳ繧ｰ縲：orecast縲√せ繧ｳ繧｢縲√Θ繝ｼ繧ｶ繝ｼ繝・・繧ｿ繧貞､画峩縺励↑縺・- 逶｣隕也判髱｢蛛懈ｭ｢縺ｯSMAI譛ｬ菴灘●豁｢繧呈э蜻ｳ縺励↑縺・- Gateway/Ollama/騾夂衍scheduler縺ｯ莉ｻ諢丈ｾ晏ｭ倥→縺励※陦ｨ遉ｺ縺吶ｋ
+- 逕滓・繝ｬ繝昴・繝医・髫懷ｮｳ隱ｿ譟ｻ逕ｨ縺ｫRuntime縺ｸ菫晏ｭ倥＠縲・壼ｸｸ縺ｯGit縺ｸ霑ｽ霍｡縺励↑縺・- 蜀咲樟諤ｧ縺ｮ縺ゅｋ驫俶氛繝槭せ繧ｿ繝ｼ縺ｨmanifest縺縺代ｒ譛ｬ菴灘・縺ｮGit縺ｧ霑ｽ霍｡縺吶ｋ
 
 ## Next priorities
 
-1. AnalyticsのWindowsタスク登録を追加
-2. graceful shutdownの本体連携を実機確認
-3. backup create/verify/restore smokeを追加
-4. ログ容量上限・圧縮・エラー保持期間を実装
-5. symbol maintenanceの自動pushをdry-runで確認後に有効化
-6. SMAI本体のプロフィール選択、ページ操作、主要処理へ`audit.record_event`の連携
+1. Analytics縺ｮWindows繧ｿ繧ｹ繧ｯ逋ｻ骭ｲ繧定ｿｽ蜉
+2. graceful shutdown縺ｮ譛ｬ菴馴｣謳ｺ繧貞ｮ滓ｩ溽｢ｺ隱・3. backup create/verify/restore smoke繧定ｿｽ蜉
+4. 繝ｭ繧ｰ螳ｹ驥丈ｸ企剞繝ｻ蝨ｧ邵ｮ繝ｻ繧ｨ繝ｩ繝ｼ菫晄戟譛滄俣繧貞ｮ溯｣・5. symbol maintenance縺ｮ閾ｪ蜍頻ush繧壇ry-run縺ｧ遒ｺ隱榊ｾ後↓譛牙柑蛹・6. SMAI譛ｬ菴薙・繝励Ο繝輔ぅ繝ｼ繝ｫ驕ｸ謚槭√・繝ｼ繧ｸ謫堺ｽ懊∽ｸｻ隕∝・逅・∈`audit.record_event`縺ｮ騾｣謳ｺ

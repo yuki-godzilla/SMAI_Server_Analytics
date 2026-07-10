@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import hashlib
@@ -8,8 +8,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\Smart_Market_AI"))
-RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Server_Runtime"))
+PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"))
+RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
 SOURCES = (PROJECT_ROOT / "data/user", PROJECT_ROOT / "data/ops", PROJECT_ROOT / "data/marketdata/symbol_universe.csv")
 
 

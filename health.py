@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -9,8 +9,8 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\Smart_Market_AI"))
-RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Server_Runtime"))
+PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"))
+RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
 SNAPSHOT_PATH = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
 LOG_PATH = RUNTIME_ROOT / "logs/health.jsonl"
 

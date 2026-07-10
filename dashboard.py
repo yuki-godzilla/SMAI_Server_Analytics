@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -7,8 +7,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\Smart_Market_AI"))
-RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Server_Runtime"))
+PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"))
+RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
 SNAPSHOT = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
 ACTIVITY = PROJECT_ROOT / "data/ops/server_ops/activity_state.json"
 EVENT_LOG = RUNTIME_ROOT / "audit/events.jsonl"
