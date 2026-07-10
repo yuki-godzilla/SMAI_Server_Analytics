@@ -1,0 +1,13 @@
+{
+  "log_days": 30,
+  "error_log_days": 90,
+  "max_log_bytes": 52428800,
+  "backup_days": 30,
+  "generated_reports": "runtime_only",
+  "tracked_symbol_artifacts": [
+    "data/marketdata/symbol_universe.csv",
+    "data/marketdata/symbol_universe_sources/*.csv",
+    "data/marketdata/*manifest*.json"
+  ]
+}
+

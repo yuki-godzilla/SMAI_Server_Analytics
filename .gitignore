@@ -1,0 +1,8 @@
+runtime/
+logs/
+backups/
+*.pyc
+__pycache__/
+.venv/
+.env
+
