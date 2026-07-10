@@ -44,3 +44,10 @@ L1失敗は `critical`、L2/L3のみの失敗は `degraded`、全成功は `heal
 5. 処理中でなければ段階停止を実行する
 6. 復旧後にhealthとバックアップ検証を再実行する
 
+## 7. 操作履歴と端末情報
+
+AnalyticsのActivity Historyは、Runtimeの`audit/events.jsonl`を読み取ります。イベントにはUTC時刻、ユーザーID、操作名、対象、結果、所要時間、端末擬似ID、OSが含まれます。
+
+端末擬似IDはRuntime固有のsaltと端末情報から生成し、IPアドレスを識別子にしません。token、secret、password、通知topic、入力本文はイベントへ保存しません。イベントログ自体はユーザー情報を含むため、RuntimeをGitへcommitせず、保持期限とバックアップ対象を明示して管理します。
+
+現在の画面は履歴表示の基盤まで実装済みです。SMAI本体側のログイン・画面操作・主要処理からイベントを送る連携は次の実装スライスです。
