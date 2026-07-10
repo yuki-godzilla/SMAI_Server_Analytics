@@ -79,6 +79,10 @@ class Dashboard:
         widget.configure(state="disabled")
 
     def refresh(self) -> None:
+        try:
+            subprocess.run([os.environ.get("PYTHON", "python"), str(Path(__file__).with_name("health.py"))], timeout=4, check=False, capture_output=True)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         snapshot = _read_json(SNAPSHOT)
         overall = str(snapshot.get("overall", "unknown"))
         self.status.set({"healthy": "● 正常", "degraded": "▲ 縮退", "critical": "■ 障害"}.get(overall, "? 未確認"))
@@ -103,4 +107,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
