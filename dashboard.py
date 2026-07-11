@@ -26,8 +26,7 @@ LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_RO
 ASSET_ROOT = Path(__file__).with_name("assets")
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
-ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-bright.png"
-ANALYTICS_LETTERING = ASSET_ROOT / "smai-analytics-lettering-gradient.png"
+ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-luminous.png"
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TASKS = (
     "SMAI-Server-Analytics",
@@ -274,10 +273,13 @@ class Dashboard:
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
         self.flow_phase = 0
-        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=56, max_height=56)
-        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=150, max_height=150)
-        self.wordmark_shield_image, _ = self._load_wordmark_parts(ANALYTICS_WORDMARK, shield_height=128, lettering_height=1)
-        self.wordmark_lettering_image = self._load_brand_image(ANALYTICS_LETTERING, max_width=820, max_height=104)
+        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=48, max_height=48)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=108, max_height=108)
+        self.wordmark_shield_image, self.wordmark_lettering_image = self._load_wordmark_parts(
+            ANALYTICS_WORDMARK,
+            shield_height=88,
+            lettering_height=70,
+        )
         self.topology_images = {
             "SMAI UI": self._load_sprite_tile(TOPOLOGY_SPRITE, 0, max_width=60, max_height=60),
             "Streamlit": self._load_sprite_tile(TOPOLOGY_SPRITE, 1, max_width=60, max_height=60),
@@ -433,12 +435,12 @@ class Dashboard:
         style.configure("Subtitle.TLabel", background=COLORS["page"], foreground=COLORS["muted"], font=self._font(11))
         style.configure("Section.TLabel", background=COLORS["surface"], foreground=COLORS["heading"], font=self._font(11, "bold"))
         style.configure("CardLabel.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=self._font(9, "bold"))
-        style.configure("CardValue.TLabel", background=COLORS["card"], foreground=COLORS["heading"], font=self._font(20, "bold"))
+        style.configure("CardValue.TLabel", background=COLORS["card"], foreground=COLORS["heading"], font=self._font(16, "bold"))
         style.configure("CardMeta.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=self._font(10))
         style.configure("TNotebook", background=COLORS["page"], borderwidth=0, tabmargins=(0, 0, 0, 0))
-        style.configure("TNotebook.Tab", background=COLORS["surface"], foreground=COLORS["muted"], padding=(self._px(18), self._px(9)), borderwidth=0, font=self._font(10, "bold"))
+        style.configure("TNotebook.Tab", background=COLORS["surface"], foreground=COLORS["muted"], padding=(self._px(16), self._px(7)), borderwidth=0, font=self._font(10, "bold"))
         style.map("TNotebook.Tab", background=[("selected", COLORS["card"])], foreground=[("selected", COLORS["cyan"])], expand=[("selected", (0, 1, 0, 0))])
-        style.configure("Treeview", background=COLORS["surface"], fieldbackground=COLORS["surface"], foreground=COLORS["text"], rowheight=self._px(32), borderwidth=0, font=self._font(10))
+        style.configure("Treeview", background=COLORS["surface"], fieldbackground=COLORS["surface"], foreground=COLORS["text"], rowheight=self._px(29), borderwidth=0, font=self._font(10))
         style.configure("Treeview.Heading", background=COLORS["elevated"], foreground=COLORS["heading"], relief="flat", font=self._font(10, "bold"))
         style.map("Treeview", background=[("selected", COLORS["card_hover"])], foreground=[("selected", COLORS["heading"])])
         style.configure("TButton", background=COLORS["elevated"], foreground=COLORS["heading"], borderwidth=1, padding=(self._px(12), self._px(7)), font=self._font(10, "bold"))
@@ -447,10 +449,10 @@ class Dashboard:
         style.configure("TEntry", fieldbackground=COLORS["surface"], foreground=COLORS["text"], insertcolor=COLORS["text"])
 
     def _build(self) -> None:
-        outer = ttk.Frame(self.root, style="App.TFrame", padding=(self._px(24), self._px(16), self._px(24), self._px(14)))
+        outer = ttk.Frame(self.root, style="App.TFrame", padding=(self._px(18), self._px(8), self._px(18), self._px(8)))
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer, style="App.TFrame")
-        header.pack(fill="x", pady=(0, self._px(16)))
+        header.pack(fill="x", pady=(0, self._px(8)))
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
         if self.wordmark_shield_image is not None and self.wordmark_lettering_image is not None:
@@ -458,7 +460,7 @@ class Dashboard:
             mark.pack(anchor="w")
             tk.Label(mark, image=self.wordmark_shield_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left")
             tk.Label(mark, image=self.wordmark_lettering_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(self._px(14), 0))
-            ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(4), 0))
+            ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(2), 0))
         else:
             if self.logo_image is not None:
                 tk.Label(brand_block, image=self.logo_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
@@ -477,14 +479,14 @@ class Dashboard:
         ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
-        facts.pack(fill="x", pady=(0, self._px(16)))
+        facts.pack(fill="x", pady=(0, self._px(8)))
         facts.pack_propagate(False)
-        facts.configure(height=self._px(106))
+        facts.configure(height=self._px(76))
         facts.columnconfigure(0, weight=1, uniform="kpi")
         facts.columnconfigure(1, weight=1, uniform="kpi")
         facts.columnconfigure(2, weight=1, uniform="kpi")
         for index, (label, variable, meta) in enumerate((("ACTIVE SESSIONS", self.session, "Current activity state"), ("RUNNING OPERATIONS", self.operations, "In-progress work items"), ("LAST CHECK", self.checked, "Snapshot time / local"))):
-            card = ttk.Frame(facts, style="Card.TFrame", padding=(self._px(18), self._px(15)))
+            card = ttk.Frame(facts, style="Card.TFrame", padding=(self._px(14), self._px(8)))
             card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(12) if index < 2 else 0))
             ttk.Label(card, text=label, style="CardLabel.TLabel").pack(anchor="w")
             ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w", pady=(5, 2))
@@ -505,41 +507,49 @@ class Dashboard:
             (logs, "Logs"),
         ):
             notebook.add(frame, text=name)
-        overview.columnconfigure(0, weight=5)
-        overview.columnconfigure(1, weight=4)
-        overview.rowconfigure(0, weight=3)
-        overview.rowconfigure(1, weight=2)
+        # Make the service path a tall, scan-friendly sidebar.  The timeline
+        # owns the primary right-hand area, while the score and check matrix
+        # remain concise supporting diagnostics below it.
+        overview.columnconfigure(0, weight=4, minsize=self._px(320))
+        overview.columnconfigure(1, weight=7, minsize=self._px(520))
+        overview.rowconfigure(0, weight=4)
+        overview.rowconfigure(1, weight=1)
         map_panel = self._panel(overview, "SERVICE TOPOLOGY", "Live local service path")
-        map_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
-        gauge_panel = self._panel(overview, "SYSTEM HEALTH", "Current health score")
-        gauge_panel.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=(0, 8))
+        map_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, self._px(10)))
         trend_panel = self._panel(overview, "HEALTH TIMELINE", "Recent refresh history")
-        trend_panel.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
-        checks_panel = self._panel(overview, "CHECK MATRIX", "接続 / 画面 / 保存の確認")
-        checks_panel.grid(row=1, column=1, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        self.map_canvas = self._canvas(map_panel, height=260)
+        trend_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(0, self._px(8)))
+        overview_summary = ttk.Frame(overview, style="Surface.TFrame")
+        overview_summary.grid(row=1, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(self._px(8), 0))
+        overview_summary.columnconfigure(0, weight=1, uniform="overview_summary")
+        overview_summary.columnconfigure(1, weight=1, uniform="overview_summary")
+        overview_summary.rowconfigure(0, weight=1)
+        gauge_panel = self._panel(overview_summary, "SYSTEM HEALTH", "Current health score")
+        gauge_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(8)))
+        checks_panel = self._panel(overview_summary, "CHECK MATRIX", "接続 / 画面 / 保存の確認")
+        checks_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(8), 0))
+        self.map_canvas = self._canvas(map_panel, height=300)
         self.map_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self.gauge_canvas = self._canvas(gauge_panel, height=170)
+        self.gauge_canvas = self._canvas(gauge_panel, height=128)
         self.gauge_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self.trend_canvas = self._canvas(trend_panel, height=210)
+        self.trend_canvas = self._canvas(trend_panel, height=230)
         self.trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self.health = self._canvas(checks_panel, height=170)
+        self.health = self._canvas(checks_panel, height=128)
         self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
         sessions_summary = self._panel(sessions, "SESSION PULSE", "接続中ユーザーとheartbeatの鮮度")
-        sessions_summary.pack(fill="x", pady=(0, 10))
-        self.session_canvas = self._canvas(sessions_summary, height=96)
+        sessions_summary.pack(fill="x", pady=(0, self._px(8)))
+        self.session_canvas = self._canvas(sessions_summary, height=84)
         self.session_canvas.pack(fill="x", padx=12, pady=(0, 12))
         sessions_table = self._panel(sessions, "SESSION DETAILS", "詳細は診断用。識別子は短縮表示")
         sessions_table.pack(fill="both", expand=True)
         self.sessions = self._tree(sessions_table, (("user", "ユーザー / プロフィール", 240), ("heartbeat", "最終通信", 230), ("device", "端末擬似ID", 150), ("state", "状態", 150)))
         activity_summary = self._panel(history, "ACTIVITY PULSE", "操作量と結果の分布")
-        activity_summary.pack(fill="x", pady=(0, 10))
-        self.activity_canvas = self._canvas(activity_summary, height=96)
+        activity_summary.pack(fill="x", pady=(0, self._px(8)))
+        self.activity_canvas = self._canvas(activity_summary, height=84)
         self.activity_canvas.pack(fill="x", padx=12, pady=(0, 12))
         controls = ttk.Frame(history, style="Surface.TFrame")
-        controls.pack(fill="x", pady=(0, 10))
+        controls.pack(fill="x", pady=(0, self._px(8)))
         ttk.Label(controls, text="期間", style="Section.TLabel").pack(side="left")
         self.history_window_filter = tk.StringVar(value="24h")
         ttk.Combobox(controls, textvariable=self.history_window_filter, values=("24h", "7d", "30d", "all"), state="readonly", width=8).pack(side="left", padx=(8, 12))
@@ -556,11 +566,11 @@ class Dashboard:
         ttk.Button(controls, text="クリア", command=self._clear_history_filters).pack(side="left")
         self.history = self._tree(history, (("time", "時刻", 180), ("user", "ユーザー", 140), ("action", "操作", 190), ("target", "対象", 220), ("result", "結果", 110), ("device", "端末", 130), ("duration", "所要時間", 100)))
         incident_summary = self._panel(incidents, "INCIDENT STATUS", "障害・失敗イベントと復旧確認")
-        incident_summary.pack(fill="x", pady=(0, 10))
-        self.incident_canvas = self._canvas(incident_summary, height=96)
+        incident_summary.pack(fill="x", pady=(0, self._px(8)))
+        self.incident_canvas = self._canvas(incident_summary, height=84)
         self.incident_canvas.pack(fill="x", padx=12, pady=(0, 12))
         incident_controls = ttk.Frame(incidents, style="Surface.TFrame")
-        incident_controls.pack(fill="x", pady=(0, 10))
+        incident_controls.pack(fill="x", pady=(0, self._px(8)))
         ttk.Label(incident_controls, text="期間", style="Section.TLabel").pack(side="left")
         self.incident_window_filter = tk.StringVar(value="7d")
         ttk.Combobox(incident_controls, textvariable=self.incident_window_filter, values=("24h", "7d", "30d", "all"), state="readonly", width=8).pack(side="left", padx=(8, 12))
@@ -576,7 +586,7 @@ class Dashboard:
             "CODEX IMPROVEMENT REPORTS",
             "重大警告の調査依頼、改善結果、管理者メールOutboxの追跡",
         )
-        report_summary.pack(fill="x", pady=(0, 10))
+        report_summary.pack(fill="x", pady=(0, self._px(8)))
         ttk.Label(
             report_summary,
             text="Runtimeのincident_operations/reportsへ蓄積。SMTP設定がない場合、メールは送信せずOutboxに保留します。",
@@ -596,15 +606,15 @@ class Dashboard:
             ),
         )
         task_summary = self._panel(tasks, "TASK COVERAGE", "Windows Scheduled Task の確認結果")
-        task_summary.pack(fill="x", pady=(0, 10))
-        self.task_canvas = self._canvas(task_summary, height=96)
+        task_summary.pack(fill="x", pady=(0, self._px(8)))
+        self.task_canvas = self._canvas(task_summary, height=84)
         self.task_canvas.pack(fill="x", padx=12, pady=(0, 12))
         task_table = self._panel(tasks, "TASK DETAILS", "unknown は未登録または取得不能")
         task_table.pack(fill="both", expand=True)
         self.tasks = self._tree(task_table, (("task", "タスク", 390), ("status", "状態", 180), ("result", "最終結果", 230)))
         log_summary = self._panel(logs, "LOG SIGNAL", "直近100行の重要語を集計")
-        log_summary.pack(fill="x", pady=(0, 10))
-        self.log_canvas = self._canvas(log_summary, height=96)
+        log_summary.pack(fill="x", pady=(0, self._px(8)))
+        self.log_canvas = self._canvas(log_summary, height=84)
         self.log_canvas.pack(fill="x", padx=12, pady=(0, 12))
         log_detail = self._panel(logs, "RECENT LOGS", "生ログは調査用。異常はIncidentsで確認")
         log_detail.pack(fill="both", expand=True)
@@ -622,7 +632,7 @@ class Dashboard:
         for canvas in (self.session_canvas, self.activity_canvas, self.incident_canvas, self.task_canvas, self.log_canvas):
             canvas.bind("<Configure>", lambda _event: self._draw_tab_visuals())
         footer = ttk.Frame(outer, style="App.TFrame")
-        footer.pack(fill="x", pady=(10, 0))
+        footer.pack(fill="x", pady=(self._px(8), 0))
         ttk.Label(footer, text=f"Project  {PROJECT_ROOT.name}    Runtime  {RUNTIME_ROOT.name}", style="Subtitle.TLabel").pack(side="left")
         ttk.Label(footer, textvariable=self.refresh_state, style="Subtitle.TLabel").pack(side="right")
 
@@ -713,7 +723,22 @@ class Dashboard:
         canvas.delete("all")
         width = max(canvas.winfo_width(), 400)
         height = max(canvas.winfo_height(), 180)
-        nodes = [("SMAI UI", "PC UI", 0.13, 0.34), ("Streamlit", "Tablet Web App", 0.42, 0.34), ("Runtime", "Local Server", 0.78, 0.34), ("Analytics", "Ops Console", 0.42, 0.76)]
+        # A tall sidebar needs a vertical route; keeping all three upstream
+        # nodes on one row makes labels collide at ordinary desktop widths.
+        if width < height * 1.25:
+            nodes = [
+                ("SMAI UI", "PC UI", 0.24, 0.20),
+                ("Streamlit", "Tablet Web App", 0.72, 0.32),
+                ("Runtime", "Local Server", 0.70, 0.61),
+                ("Analytics", "Ops Console", 0.30, 0.82),
+            ]
+        else:
+            nodes = [
+                ("SMAI UI", "PC UI", 0.13, 0.34),
+                ("Streamlit", "Tablet Web App", 0.42, 0.34),
+                ("Runtime", "Local Server", 0.78, 0.34),
+                ("Analytics", "Ops Console", 0.42, 0.76),
+            ]
         points = {}
         for label, _, x, y in nodes:
             points[label] = (width * x, height * y)
