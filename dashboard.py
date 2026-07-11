@@ -8,6 +8,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from tkinter import ttk
 
+try:
+    from PIL import Image, ImageTk
+except ImportError:  # pragma: no cover - exercised on minimal Python installs
+    Image = None
+    ImageTk = None
+
 PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"))
 RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
 SNAPSHOT = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
@@ -158,6 +164,7 @@ class Dashboard:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("SMAI Analytics  |  Operations Console")
+        self._configure_dpi_scaling()
         self._fit_window_to_screen()
         self.root.configure(bg=COLORS["page"])
         self.status = tk.StringVar(value="CHECKING")
@@ -170,25 +177,47 @@ class Dashboard:
         self.session_rows: list[tuple[str, object, str]] = []
         self.activity_events: list[dict[str, object]] = []
         self.incident_events: list[dict[str, object]] = []
+        self.incident_source_events: list[dict[str, object]] = []
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
-        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=72)
-        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=148)
-        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=330)
+        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=72, max_height=72)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=170, max_height=170)
+        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=380, max_height=130)
         self._configure_style()
         self._build()
         self.refresh()
 
+    def _configure_dpi_scaling(self) -> None:
+        """Align Tk logical units with the current Windows monitor DPI."""
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+
+            dpi = int(ctypes.windll.user32.GetDpiForWindow(self.root.winfo_id()))
+            if dpi > 0:
+                self.root.tk.call("tk", "scaling", max(1.0, min(2.5, dpi / 72.0)))
+        except (AttributeError, OSError, tk.TclError, TypeError, ValueError):
+            return
+
     @staticmethod
-    def _load_brand_image(path: Path, *, max_width: int) -> tk.PhotoImage | None:
-        """Load a bounded header image without making the console depend on it."""
+    def _load_brand_image(path: Path, *, max_width: int, max_height: int) -> object | None:
+        """Load a high-quality bounded header image with a Tk-only fallback."""
         if not path.is_file():
             return None
         try:
-            image = tk.PhotoImage(file=str(path))
-            factor = max(1, image.width() // max_width)
+            if Image is not None and ImageTk is not None:
+                with Image.open(path) as source:
+                    source = source.convert("RGBA")
+                    scale = min(max_width / source.width, max_height / source.height, 1.0)
+                    size = (max(1, round(source.width * scale)), max(1, round(source.height * scale)))
+                    resized = source.resize(size, Image.Resampling.LANCZOS)
+                    return ImageTk.PhotoImage(resized)
+            fallback_path = path.with_name(f"{path.stem}-header{path.suffix}")
+            image = tk.PhotoImage(file=str(fallback_path if fallback_path.is_file() else path))
+            factor = max(1, image.width() // max_width, image.height() // max_height)
             return image.subsample(factor, factor) if factor > 1 else image
-        except tk.TclError:
+        except (AttributeError, OSError, ValueError, tk.TclError):
             return None
 
     def _fit_window_to_screen(self) -> None:
@@ -331,12 +360,25 @@ class Dashboard:
         ttk.Label(controls, text="結果フィルター", style="Section.TLabel").pack(side="left")
         self.history_filter = tk.StringVar(value="all")
         ttk.Combobox(controls, textvariable=self.history_filter, values=("all", "ok", "failed", "cancelled"), state="readonly", width=14).pack(side="left", padx=10)
-        ttk.Button(controls, text="適用", command=self.refresh_history).pack(side="left")
+        ttk.Label(controls, text="ユーザー", style="Section.TLabel").pack(side="left", padx=(12, 4))
+        self.history_user_filter = tk.StringVar()
+        ttk.Entry(controls, textvariable=self.history_user_filter, width=16).pack(side="left")
+        ttk.Label(controls, text="操作", style="Section.TLabel").pack(side="left", padx=(12, 4))
+        self.history_action_filter = tk.StringVar()
+        ttk.Entry(controls, textvariable=self.history_action_filter, width=18).pack(side="left")
+        ttk.Button(controls, text="適用", command=self.refresh_history).pack(side="left", padx=(10, 4))
+        ttk.Button(controls, text="クリア", command=self._clear_history_filters).pack(side="left")
         self.history = self._tree(history, (("time", "時刻", 180), ("user", "ユーザー", 140), ("action", "操作", 190), ("target", "対象", 220), ("result", "結果", 110), ("device", "端末", 130), ("duration", "所要時間", 100)))
         incident_summary = self._panel(incidents, "INCIDENT STATUS", "障害・失敗イベントと復旧確認")
         incident_summary.pack(fill="x", pady=(0, 10))
         self.incident_canvas = self._canvas(incident_summary, height=112)
         self.incident_canvas.pack(fill="x", padx=12, pady=(0, 12))
+        incident_controls = ttk.Frame(incidents, style="Surface.TFrame")
+        incident_controls.pack(fill="x", pady=(0, 10))
+        ttk.Label(incident_controls, text="重要度フィルター", style="Section.TLabel").pack(side="left")
+        self.incident_filter = tk.StringVar(value="all")
+        ttk.Combobox(incident_controls, textvariable=self.incident_filter, values=("all", "failed", "error", "critical"), state="readonly", width=14).pack(side="left", padx=10)
+        ttk.Button(incident_controls, text="適用", command=self.refresh_incidents).pack(side="left")
         incident_table = self._panel(incidents, "INCIDENT DETAILS", "failed / error / critical の直近イベント")
         incident_table.pack(fill="both", expand=True)
         self.incidents = self._tree(incident_table, (("time", "時刻", 190), ("action", "操作", 210), ("target", "対象", 280), ("result", "結果", 130)))
@@ -353,8 +395,17 @@ class Dashboard:
         self.log_canvas.pack(fill="x", padx=12, pady=(0, 12))
         log_detail = self._panel(logs, "RECENT LOGS", "生ログは調査用。異常はIncidentsで確認")
         log_detail.pack(fill="both", expand=True)
-        self.logs = tk.Text(log_detail, state="disabled", wrap="none", bg=COLORS["card"], fg=COLORS["text"], relief="flat", padx=14, pady=12, font=("Consolas", 9), highlightthickness=0)
-        self.logs.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        log_body = ttk.Frame(log_detail, style="Card.TFrame")
+        log_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.logs = tk.Text(log_body, state="disabled", wrap="none", bg=COLORS["card"], fg=COLORS["text"], relief="flat", padx=14, pady=12, font=("Consolas", 9), highlightthickness=0)
+        log_y_scroll = ttk.Scrollbar(log_body, orient="vertical", command=self.logs.yview)
+        log_x_scroll = ttk.Scrollbar(log_body, orient="horizontal", command=self.logs.xview)
+        self.logs.configure(yscrollcommand=log_y_scroll.set, xscrollcommand=log_x_scroll.set)
+        self.logs.grid(row=0, column=0, sticky="nsew")
+        log_y_scroll.grid(row=0, column=1, sticky="ns")
+        log_x_scroll.grid(row=1, column=0, sticky="ew")
+        log_body.rowconfigure(0, weight=1)
+        log_body.columnconfigure(0, weight=1)
         for canvas in (self.session_canvas, self.activity_canvas, self.incident_canvas, self.task_canvas, self.log_canvas):
             canvas.bind("<Configure>", lambda _event: self._draw_tab_visuals())
         footer = ttk.Frame(outer, style="App.TFrame")
@@ -377,11 +428,20 @@ class Dashboard:
 
     @staticmethod
     def _tree(parent: ttk.Frame, columns: tuple[tuple[str, str, int], ...]) -> ttk.Treeview:
-        tree = ttk.Treeview(parent, columns=tuple(item[0] for item in columns), show="headings")
+        body = ttk.Frame(parent, style="Card.TFrame")
+        body.pack(fill="both", expand=True)
+        tree = ttk.Treeview(body, columns=tuple(item[0] for item in columns), show="headings")
         for name, title, width in columns:
             tree.heading(name, text=title)
             tree.column(name, width=width, anchor="w")
-        tree.pack(fill="both", expand=True)
+        y_scroll = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
+        x_scroll = ttk.Scrollbar(body, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        body.rowconfigure(0, weight=1)
+        body.columnconfigure(0, weight=1)
         return tree
 
     @staticmethod
@@ -595,28 +655,27 @@ class Dashboard:
         activity = read_json(ACTIVITY)
         sessions = activity.get("sessions", {})
         operations = activity.get("operations", {})
-        self.session.set(str(len(sessions) if isinstance(sessions, dict) else 0))
-        self.operations.set(str(len(operations) if isinstance(operations, dict) else 0))
+        activity_readable = ACTIVITY.is_file() and isinstance(sessions, dict) and isinstance(operations, dict)
+        self.session.set(str(len(sessions)) if activity_readable else "—")
+        self.operations.set(str(len(operations)) if activity_readable else "—")
         self.session_rows = []
         for item in self.sessions.get_children():
             self.sessions.delete(item)
-        if isinstance(sessions, dict):
+        if activity_readable:
             for session_id, heartbeat in sessions.items():
                 state = self._session_state(heartbeat)
                 self.session_rows.append((str(session_id), heartbeat, state))
                 state_label = {"active": "● 接続中", "stale": "● 要確認", "unknown": "● 不明"}.get(state, "● 不明")
                 self.sessions.insert("", "end", values=(compact_id(session_id), f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}", state_label))
-        if not self.session_rows:
+        if not activity_readable:
+            self.session_rows.append(("activity-state", None, "unknown"))
+            self.sessions.insert("", "end", values=("—", "activity state を読み取れません", "● 不明"))
+        elif not self.session_rows:
             self.sessions.insert("", "end", values=("—", "接続中のセッションはありません", "—"))
         self.activity_events = read_events()
         self.refresh_history()
-        self.incident_events = [event for event in self.activity_events if str(event.get("result", "")).lower() in {"failed", "error", "critical"}]
-        for item in self.incidents.get_children():
-            self.incidents.delete(item)
-        for event in self.incident_events:
-            self.incidents.insert("", "end", values=(format_timestamp(event.get("timestamp")), event.get("action", ""), event.get("target", ""), str(event.get("result", "")).upper()))
-        if not self.incident_events:
-            self.incidents.insert("", "end", values=("—", "障害は記録されていません", "現在の監査イベントに failed / error / critical はありません", "OK"))
+        self.incident_source_events = [event for event in self.activity_events if str(event.get("result", "")).lower() in {"failed", "error", "critical"}]
+        self.refresh_incidents()
         self.task_rows = read_task_status()
         for item in self.tasks.get_children():
             self.tasks.delete(item)
@@ -633,14 +692,48 @@ class Dashboard:
         if not hasattr(self, "history"):
             return
         selected = self.history_filter.get()
+        user_query = self.history_user_filter.get().strip().lower()
+        action_query = self.history_action_filter.get().strip().lower()
         for item in self.history.get_children():
             self.history.delete(item)
+        matched = 0
         for event in self.activity_events:
             if selected != "all" and str(event.get("result", "")).lower() != selected:
                 continue
+            if user_query and user_query not in str(event.get("user_id", "")).lower():
+                continue
+            if action_query and action_query not in str(event.get("action", "")).lower():
+                continue
+            matched += 1
             self.history.insert("", "end", values=(format_timestamp(event.get("timestamp")), compact_id(event.get("user_id")), event.get("action", ""), event.get("target", ""), str(event.get("result", "")).upper(), compact_id(event.get("device_id")), event.get("duration_ms", "")))
         if not self.activity_events:
             self.history.insert("", "end", values=("—", "—", "操作履歴はまだありません", "SMAI本体からの監査イベント連携後に表示されます", "—", "—", "—"))
+        elif matched == 0:
+            self.history.insert("", "end", values=("—", "—", "条件に一致するイベントはありません", "フィルター条件を変更して再検索してください", "—", "—", "—"))
+
+    def _clear_history_filters(self) -> None:
+        self.history_filter.set("all")
+        self.history_user_filter.set("")
+        self.history_action_filter.set("")
+        self.refresh_history()
+
+    def refresh_incidents(self) -> None:
+        if not hasattr(self, "incidents"):
+            return
+        selected = self.incident_filter.get()
+        self.incident_events = [
+            event
+            for event in self.incident_source_events
+            if selected == "all" or str(event.get("result", "")).lower() == selected
+        ]
+        for item in self.incidents.get_children():
+            self.incidents.delete(item)
+        for event in self.incident_events:
+            self.incidents.insert("", "end", values=(format_timestamp(event.get("timestamp")), event.get("action", ""), event.get("target", ""), str(event.get("result", "")).upper()))
+        if not self.incident_source_events:
+            self.incidents.insert("", "end", values=("—", "障害は記録されていません", "現在の監査イベントに failed / error / critical はありません", "OK"))
+        elif not self.incident_events:
+            self.incidents.insert("", "end", values=("—", "条件に一致する障害はありません", "重要度フィルターを変更して再検索してください", "—"))
 
 
 def main() -> None:

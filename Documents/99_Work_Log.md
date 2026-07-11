@@ -15,3 +15,7 @@
 - シールドと「SMAI Analytics」のアプリ名を一体化した横長ワードマークを追加
 - `dashboard.py` のヘッダー左側へロゴ、右側の状態表示へマスコットを配置
 - 画像欠損時もテキストUIで起動を継続するフォールバックを追加
+- TkinterのWindows DPI scalingを明示し、PillowのLANCZOS縮小と2倍密度ヘッダー画像のフォールバックを追加
+- 全TreeviewとLogsへ縦・横スクロールバーを追加
+- Activity Historyの結果・ユーザー・操作フィルター、Incidentsの重要度フィルター、該当なし表示を追加
+- activity state欠損時にセッション数・処理数を正常な0と誤表示しないよう改善
