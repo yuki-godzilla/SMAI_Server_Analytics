@@ -22,9 +22,9 @@ ACTIVITY = PROJECT_ROOT / "data/ops/server_ops/activity_state.json"
 EVENT_LOG = RUNTIME_ROOT / "audit/events.jsonl"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
 ASSET_ROOT = Path(__file__).with_name("assets")
-ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo.png"
+ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
-ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark.png"
+ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-v2-transparent.png"
 TASKS = (
     "SMAI-Server-Analytics",
     "SmartMarketAI-Server-Autostart",
@@ -185,9 +185,11 @@ class Dashboard:
         self.incident_source_events: list[dict[str, object]] = []
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
-        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=80, max_height=80)
-        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=190, max_height=190)
-        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=500, max_height=140)
+        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=56, max_height=56)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=133, max_height=133)
+        # Keep the regenerated 3:1 wordmark's natural ratio; never stretch it to fill a wider slot.
+        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=360, max_height=120)
+        self.check_statuses: dict[str, str] = {}
         self._configure_style()
         self._build()
         self.refresh()
@@ -283,12 +285,13 @@ class Dashboard:
         style.configure("TButton", background=COLORS["elevated"], foreground=COLORS["heading"], borderwidth=1, padding=(12, 7), font=("Segoe UI", 9, "bold"))
         style.map("TButton", background=[("active", COLORS["card_hover"])], foreground=[("active", COLORS["cyan"])])
         style.configure("TCombobox", fieldbackground=COLORS["surface"], background=COLORS["surface"], foreground=COLORS["text"])
+        style.configure("TEntry", fieldbackground=COLORS["surface"], foreground=COLORS["text"], insertcolor=COLORS["text"])
 
     def _build(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20, 24, 14))
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer, style="App.TFrame")
-        header.pack(fill="x", pady=(0, 18))
+        header.pack(fill="x", pady=(0, 12))
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
         if self.wordmark_image is not None:
@@ -312,7 +315,7 @@ class Dashboard:
         ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
-        facts.pack(fill="x", pady=(0, 18))
+        facts.pack(fill="x", pady=(0, 14))
         facts.pack_propagate(False)
         facts.configure(height=112)
         facts.columnconfigure(0, weight=1, uniform="kpi")
@@ -332,8 +335,8 @@ class Dashboard:
             notebook.add(frame, text=name)
         overview.columnconfigure(0, weight=3)
         overview.columnconfigure(1, weight=2)
-        overview.rowconfigure(0, weight=3)
-        overview.rowconfigure(1, weight=2)
+        overview.rowconfigure(0, weight=1)
+        overview.rowconfigure(1, weight=1)
         map_panel = self._panel(overview, "SERVICE TOPOLOGY", "Live local service path")
         map_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         gauge_panel = self._panel(overview, "SYSTEM HEALTH", "Current health score")
@@ -342,13 +345,13 @@ class Dashboard:
         trend_panel.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         checks_panel = self._panel(overview, "CHECK MATRIX", "L1 / L2 / L3 checks")
         checks_panel.grid(row=1, column=1, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        self.map_canvas = self._canvas(map_panel, height=225)
+        self.map_canvas = self._canvas(map_panel, height=190)
         self.map_canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.gauge_canvas = self._canvas(gauge_panel, height=225)
+        self.gauge_canvas = self._canvas(gauge_panel, height=190)
         self.gauge_canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.trend_canvas = self._canvas(trend_panel, height=150)
+        self.trend_canvas = self._canvas(trend_panel, height=170)
         self.trend_canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.health = self._canvas(checks_panel, height=150)
+        self.health = self._canvas(checks_panel, height=170)
         self.health.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
@@ -442,6 +445,10 @@ class Dashboard:
         for name, title, width in columns:
             tree.heading(name, text=title)
             tree.column(name, width=width, anchor="w")
+        tree.tag_configure("healthy", foreground=COLORS["green"])
+        tree.tag_configure("degraded", foreground=COLORS["amber"])
+        tree.tag_configure("critical", foreground=COLORS["red"])
+        tree.tag_configure("unknown", foreground=COLORS["muted"])
         y_scroll = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
         x_scroll = ttk.Scrollbar(body, orient="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
@@ -467,6 +474,17 @@ class Dashboard:
     def _status_color(status: str) -> str:
         return {"ok": COLORS["green"], "healthy": COLORS["green"], "active": COLORS["green"], "running": COLORS["green"], "ready": COLORS["green"], "degraded": COLORS["amber"], "stale": COLORS["amber"], "failed": COLORS["red"], "critical": COLORS["red"], "error": COLORS["red"], "unknown": COLORS["muted"]}.get(status.lower(), COLORS["muted"])
 
+    @staticmethod
+    def _tree_status_tag(status: object) -> str:
+        normalized = str(status or "unknown").lower()
+        if normalized in {"failed", "critical", "error"}:
+            return "critical"
+        if normalized in {"degraded", "stale", "cancelled", "disabled", "queued"}:
+            return "degraded"
+        if normalized in {"ok", "healthy", "active", "running", "ready"}:
+            return "healthy"
+        return "unknown"
+
     def _redraw_visuals(self) -> None:
         if not hasattr(self, "map_canvas"):
             return
@@ -479,7 +497,7 @@ class Dashboard:
         canvas.delete("all")
         width = max(canvas.winfo_width(), 400)
         height = max(canvas.winfo_height(), 180)
-        nodes = [("SMAI UI", 0.17, 0.32), ("Streamlit", 0.50, 0.32), ("Runtime", 0.83, 0.32), ("Analytics", 0.50, 0.78)]
+        nodes = [("SMAI UI", 0.17, 0.28), ("Streamlit", 0.50, 0.28), ("Runtime", 0.83, 0.28), ("Analytics", 0.50, 0.68)]
         points = {}
         for label, x, y in nodes:
             points[label] = (width * x, height * y)
@@ -488,14 +506,32 @@ class Dashboard:
             x2, y2 = points[right]
             canvas.create_line(x1, y1, x2, y2, fill=COLORS["border_strong"], width=2)
             canvas.create_oval((x1 + x2) / 2 - 3, (y1 + y2) / 2 - 3, (x1 + x2) / 2 + 3, (y1 + y2) / 2 + 3, fill=COLORS["cyan"], outline="")
-        statuses = {"SMAI UI": "ok", "Streamlit": "ok", "Runtime": "ok", "Analytics": self.status.get().lower()}
+        statuses = {
+            "SMAI UI": self._service_status("smai ui"),
+            "Streamlit": self._service_status("streamlit"),
+            "Runtime": self._service_status("server ops", "runtime"),
+            "Analytics": self.status.get().lower(),
+        }
         for label, _, _ in nodes:
             x, y = points[label]
             color = self._status_color(statuses[label])
             canvas.create_oval(x - 27, y - 27, x + 27, y + 27, fill=COLORS["elevated"], outline=color, width=2)
             canvas.create_oval(x - 8, y - 8, x + 8, y + 8, fill=color, outline="")
-            canvas.create_text(x, y + 45, text=label, fill=COLORS["heading"], font=("Segoe UI", 9, "bold"))
+            canvas.create_text(x, min(y + 38, height - 10), text=label, fill=COLORS["heading"], font=("Segoe UI", 9, "bold"))
         canvas.create_text(16, 16, text="LOCAL SERVICE FLOW", anchor="nw", fill=COLORS["muted"], font=("Segoe UI", 8, "bold"))
+        canvas.create_text(width - 12, height - 10, text="灰色 = health check 未計測", anchor="se", fill=COLORS["muted"], font=("Segoe UI", 8))
+
+    def _service_status(self, *keywords: str) -> str:
+        """Resolve topology nodes only from readable health-check evidence."""
+        matches = [
+            status
+            for name, status in self.check_statuses.items()
+            if any(keyword in name for keyword in keywords)
+        ]
+        if not matches:
+            return "unknown"
+        priority = {"critical": 4, "error": 4, "failed": 4, "degraded": 3, "unknown": 2, "healthy": 1, "ok": 1}
+        return max(matches, key=lambda item: priority.get(item, 2))
 
     def _draw_gauge(self) -> None:
         canvas = self.gauge_canvas
@@ -540,16 +576,17 @@ class Dashboard:
         canvas.delete("all")
         width = max(canvas.winfo_width(), 300)
         canvas.create_text(0, 4, text=f"OVERALL  {overall.upper()}   ·   {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=("Segoe UI", 8, "bold"))
-        y = 32
-        for item in checks:
-            if not isinstance(item, dict):
-                continue
+        height = max(canvas.winfo_height(), 90)
+        valid_checks = [item for item in checks if isinstance(item, dict)]
+        line_height = max(14, min(22, (height - 40) / max(len(valid_checks), 1)))
+        y = 28
+        for item in valid_checks:
             status = str(item.get("status", "unknown"))
             canvas.create_oval(0, y + 3, 8, y + 11, fill=self._status_color(status), outline="")
             canvas.create_text(16, y, text=f"{item.get('level', '??')}  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=("Segoe UI", 8))
             canvas.create_text(width - 4, y, text=status.upper(), anchor="ne", fill=self._status_color(status), font=("Segoe UI", 8, "bold"))
-            y += 23
-        if not checks:
+            y += line_height
+        if not valid_checks:
             canvas.create_text(0, y, text="No readable health checks are available.", anchor="nw", fill=COLORS["muted"], font=("Segoe UI", 9))
 
     @staticmethod
@@ -600,21 +637,21 @@ class Dashboard:
         latest = relative_time(self.incident_events[0].get("timestamp")) if self.incident_events else "記録なし"
         critical = sum(1 for event in self.incident_events if str(event.get("result", "")).lower() == "critical")
         card_width = (width - 24) / 3
-        self._canvas_metric(canvas, 0, card_width - 6, "未解決候補", str(count), "failed / error / critical", COLORS["red"] if count else COLORS["green"])
-        self._canvas_metric(canvas, card_width + 6, card_width - 6, "直近の障害", latest, "現在の監査ログから判定", COLORS["amber"] if count else COLORS["green"])
+        self._canvas_metric(canvas, 0, card_width - 6, "障害イベント", str(count), "現在のフィルター対象", COLORS["red"] if count else COLORS["green"])
+        self._canvas_metric(canvas, card_width + 6, card_width - 6, "直近の記録", latest, "復旧状態は別途確認が必要", COLORS["amber"] if count else COLORS["green"])
         self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "Critical", str(critical), "critical result の件数", COLORS["red"] if critical else COLORS["green"])
 
     def _draw_tasks(self) -> None:
         canvas = self.task_canvas
         canvas.delete("all")
         width = max(canvas.winfo_width(), 450)
-        ready = sum(1 for _, status, _ in self.task_rows if status.lower() not in {"unknown", "disabled"})
+        ready = sum(1 for _, status, _ in self.task_rows if status.lower() in {"ready", "running"})
         unknown = sum(1 for _, status, _ in self.task_rows if status.lower() == "unknown")
-        disabled = sum(1 for _, status, _ in self.task_rows if status.lower() == "disabled")
+        attention = len(self.task_rows) - ready - unknown
         card_width = (width - 24) / 3
-        self._canvas_metric(canvas, 0, card_width - 6, "確認済み", str(ready), "状態を取得できたタスク", COLORS["green"])
+        self._canvas_metric(canvas, 0, card_width - 6, "稼働可能", str(ready), "Ready / Running", COLORS["green"])
         self._canvas_metric(canvas, card_width + 6, card_width - 6, "取得不能", str(unknown), "未登録または権限・取得の問題", COLORS["amber"] if unknown else COLORS["green"])
-        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "無効", str(disabled), "disabled task", COLORS["red"] if disabled else COLORS["green"])
+        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "要確認", str(attention), "Disabled / Queued / その他", COLORS["red"] if attention else COLORS["green"])
 
     def _draw_logs(self) -> None:
         canvas = self.log_canvas
@@ -656,6 +693,11 @@ class Dashboard:
         self.checked.set(compact_timestamp(checked_at))
         checks = snapshot.get("checks", [])
         check_items = checks if isinstance(checks, list) else []
+        self.check_statuses = {
+            str(item.get("name", "")).lower(): str(item.get("status", "unknown")).lower()
+            for item in check_items
+            if isinstance(item, dict)
+        }
         self.health_history.append((str(checked_at), self._health_score(overall)))
         self.health_history = self.health_history[-30:]
         self._draw_checks(check_items, overall, checked_at)
@@ -674,10 +716,10 @@ class Dashboard:
                 state = self._session_state(heartbeat)
                 self.session_rows.append((str(session_id), heartbeat, state))
                 state_label = {"active": "● 接続中", "stale": "● 要確認", "unknown": "● 不明"}.get(state, "● 不明")
-                self.sessions.insert("", "end", values=(compact_id(session_id), f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}", state_label))
+                self.sessions.insert("", "end", values=(compact_id(session_id), f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}", state_label), tags=(self._tree_status_tag(state),))
         if not activity_readable:
             self.session_rows.append(("activity-state", None, "unknown"))
-            self.sessions.insert("", "end", values=("—", "activity state を読み取れません", "● 不明"))
+            self.sessions.insert("", "end", values=("—", "activity state を読み取れません", "● 不明"), tags=("unknown",))
         elif not self.session_rows:
             self.sessions.insert("", "end", values=("—", "接続中のセッションはありません", "—"))
         self.activity_events = read_events()
@@ -689,7 +731,7 @@ class Dashboard:
             self.tasks.delete(item)
         for task, status, result in self.task_rows:
             status_label = {"unknown": "● 取得不能", "disabled": "● 無効"}.get(status.lower(), f"● {status}")
-            self.tasks.insert("", "end", values=(task, status_label, result))
+            self.tasks.insert("", "end", values=(task, status_label, result), tags=(self._tree_status_tag(status),))
         self.log_lines = recent_logs()
         self.set_text(self.logs, self.log_lines)
         self._draw_tab_visuals()
@@ -713,7 +755,8 @@ class Dashboard:
             if action_query and action_query not in str(event.get("action", "")).lower():
                 continue
             matched += 1
-            self.history.insert("", "end", values=(format_timestamp(event.get("timestamp")), compact_id(event.get("user_id")), event.get("action", ""), event.get("target", ""), str(event.get("result", "")).upper(), compact_id(event.get("device_id")), event.get("duration_ms", "")))
+            result = str(event.get("result", ""))
+            self.history.insert("", "end", values=(format_timestamp(event.get("timestamp")), compact_id(event.get("user_id")), event.get("action", ""), event.get("target", ""), result.upper(), compact_id(event.get("device_id")), event.get("duration_ms", "")), tags=(self._tree_status_tag(result),))
         if not self.activity_events:
             self.history.insert("", "end", values=("—", "—", "操作履歴はまだありません", "SMAI本体からの監査イベント連携後に表示されます", "—", "—", "—"))
         elif matched == 0:
@@ -737,7 +780,8 @@ class Dashboard:
         for item in self.incidents.get_children():
             self.incidents.delete(item)
         for event in self.incident_events:
-            self.incidents.insert("", "end", values=(format_timestamp(event.get("timestamp")), event.get("action", ""), event.get("target", ""), str(event.get("result", "")).upper()))
+            result = str(event.get("result", ""))
+            self.incidents.insert("", "end", values=(format_timestamp(event.get("timestamp")), event.get("action", ""), event.get("target", ""), result.upper()), tags=(self._tree_status_tag(result),))
         if not self.incident_source_events:
             self.incidents.insert("", "end", values=("—", "障害は記録されていません", "現在の監査イベントに failed / error / critical はありません", "OK"))
         elif not self.incident_events:
