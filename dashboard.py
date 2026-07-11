@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tkinter import ttk
 
+import incident_automation
+
 try:
     from PIL import Image, ImageTk
 except ImportError:  # pragma: no cover - exercised on minimal Python installs
@@ -32,11 +34,16 @@ TASKS = (
     "SmartMarketAI-Server-Autostart",
     "SmartMarketAI-Server-Watch",
     "SmartMarketAI-Symbol-Maintenance-IfDue",
+    "SMAI-Incident-Automation",
 )
 
 
 def expected_task_root(task: str) -> Path:
-    return Path(__file__).resolve().parent if task == "SMAI-Server-Analytics" else PROJECT_ROOT
+    return (
+        Path(__file__).resolve().parent
+        if task in {"SMAI-Server-Analytics", "SMAI-Incident-Automation"}
+        else PROJECT_ROOT
+    )
 
 
 def task_path_status(task: str, task_xml: str) -> str:
@@ -485,8 +492,18 @@ class Dashboard:
 
         notebook = ttk.Notebook(outer)
         notebook.pack(fill="both", expand=True)
-        overview, sessions, history, incidents, tasks, logs = [ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(6)]
-        for frame, name in ((overview, "Overview"), (sessions, "Sessions"), (history, "Activity History"), (incidents, "Incidents"), (tasks, "Tasks"), (logs, "Logs")):
+        overview, sessions, history, incidents, reports, tasks, logs = [
+            ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(7)
+        ]
+        for frame, name in (
+            (overview, "Overview"),
+            (sessions, "Sessions"),
+            (history, "Activity History"),
+            (incidents, "Incidents"),
+            (reports, "Reports"),
+            (tasks, "Tasks"),
+            (logs, "Logs"),
+        ):
             notebook.add(frame, text=name)
         overview.columnconfigure(0, weight=5)
         overview.columnconfigure(1, weight=4)
@@ -554,6 +571,30 @@ class Dashboard:
         incident_table = self._panel(incidents, "INCIDENT DETAILS", "failed / error / critical の直近イベント")
         incident_table.pack(fill="both", expand=True)
         self.incidents = self._tree(incident_table, (("time", "時刻", 190), ("action", "操作", 210), ("target", "対象", 280), ("result", "結果", 130)))
+        report_summary = self._panel(
+            reports,
+            "CODEX IMPROVEMENT REPORTS",
+            "重大警告の調査依頼、改善結果、管理者メールOutboxの追跡",
+        )
+        report_summary.pack(fill="x", pady=(0, 10))
+        ttk.Label(
+            report_summary,
+            text="Runtimeのincident_operations/reportsへ蓄積。SMTP設定がない場合、メールは送信せずOutboxに保留します。",
+            style="CardMeta.TLabel",
+            wraplength=self._px(950),
+        ).pack(anchor="w", padx=self._px(14), pady=(0, self._px(12)))
+        report_table = self._panel(reports, "REPORT INDEX", "最新の100件を表示")
+        report_table.pack(fill="both", expand=True)
+        self.reports = self._tree(
+            report_table,
+            (
+                ("time", "記録時刻", 190),
+                ("request", "調査依頼", 290),
+                ("severity", "重要度", 120),
+                ("status", "状態", 180),
+                ("summary", "改善結果", 460),
+            ),
+        )
         task_summary = self._panel(tasks, "TASK COVERAGE", "Windows Scheduled Task の確認結果")
         task_summary.pack(fill="x", pady=(0, 10))
         self.task_canvas = self._canvas(task_summary, height=96)
@@ -961,6 +1002,36 @@ class Dashboard:
         self.refresh_history()
         self.incident_source_events = [event for event in self.activity_events if str(event.get("result", "")).lower() in {"failed", "error", "critical"}]
         self.refresh_incidents()
+        if hasattr(self, "reports"):
+            for item in self.reports.get_children():
+                self.reports.delete(item)
+            report_rows = incident_automation.report_rows()
+            for report in report_rows:
+                status = str(report.get("status", "unknown"))
+                self.reports.insert(
+                    "",
+                    "end",
+                    values=(
+                        format_timestamp(report.get("reported_at")),
+                        compact_id(report.get("request_id"), limit=28),
+                        str(report.get("severity", "" )).upper(),
+                        status,
+                        str(report.get("summary", "Pending Codex or operator investigation.")),
+                    ),
+                    tags=(self._tree_status_tag(status),),
+                )
+            if not report_rows:
+                self.reports.insert(
+                    "",
+                    "end",
+                    values=(
+                        "—",
+                        "調査依頼はまだありません",
+                        "—",
+                        "OK",
+                        "重大なhealth警告が検知されると、ここにCodex調査・改善レポートが蓄積されます。",
+                    ),
+                )
         self.task_rows = read_task_status()
         for item in self.tasks.get_children():
             self.tasks.delete(item)

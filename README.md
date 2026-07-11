@@ -76,3 +76,13 @@ The task starts `run_dashboard.bat` after a one-minute delay. This is intentiona
 To restart only the local Analytics dashboard without stopping SMAI Streamlit,
 run `restart_dashboard.bat`. It identifies Python processes by the absolute
 `dashboard.py` path, then starts the standard dashboard launcher again.
+
+## Critical incident operations
+
+`incident_automation.py` converts only fail-closed `critical` health conditions
+into local Codex investigation requests. It stores the request, improvement
+report, and administrator-mail outbox under `SMAI_Server_Runtime` and never
+changes SMAI source code automatically. See
+[`Documents/08_Incident_Automation_Operations.md`](Documents/08_Incident_Automation_Operations.md)
+for the 5-minute task registration, report completion, and opt-in SMTP delivery
+procedure.

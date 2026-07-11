@@ -80,6 +80,12 @@ class DashboardFormattingTests(unittest.TestCase):
             "path mismatch",
         )
 
+    def test_incident_automation_task_is_bound_to_analytics_project(self) -> None:
+        self.assertEqual(
+            dashboard.expected_task_root("SMAI-Incident-Automation"),
+            dashboard.Path(__file__).resolve().parents[1],
+        )
+
     def test_tree_status_tag_prioritizes_attention_states(self) -> None:
         self.assertEqual(dashboard.Dashboard._tree_status_tag("failed"), "critical")
         self.assertEqual(dashboard.Dashboard._tree_status_tag("stale"), "degraded")
