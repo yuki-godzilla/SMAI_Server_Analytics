@@ -14,6 +14,9 @@ SNAPSHOT = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
 ACTIVITY = PROJECT_ROOT / "data/ops/server_ops/activity_state.json"
 EVENT_LOG = RUNTIME_ROOT / "audit/events.jsonl"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
+ASSET_ROOT = Path(__file__).with_name("assets")
+ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo.png"
+ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 TASKS = (
     "SMAI-Server-Analytics",
     "SmartMarketAI-Server-Autostart",
@@ -168,9 +171,23 @@ class Dashboard:
         self.incident_events: list[dict[str, object]] = []
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
+        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=58)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=82)
         self._configure_style()
         self._build()
         self.refresh()
+
+    @staticmethod
+    def _load_brand_image(path: Path, *, max_width: int) -> tk.PhotoImage | None:
+        """Load a bounded header image without making the console depend on it."""
+        if not path.is_file():
+            return None
+        try:
+            image = tk.PhotoImage(file=str(path))
+            factor = max(1, image.width() // max_width)
+            return image.subsample(factor, factor) if factor > 1 else image
+        except tk.TclError:
+            return None
 
     def _fit_window_to_screen(self) -> None:
         """Fit the console inside the current display, including notebook PCs."""
@@ -233,15 +250,23 @@ class Dashboard:
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer, style="App.TFrame")
         header.pack(fill="x", pady=(0, 18))
-        title_block = ttk.Frame(header, style="App.TFrame")
+        brand_block = ttk.Frame(header, style="App.TFrame")
+        brand_block.pack(side="left")
+        if self.logo_image is not None:
+            tk.Label(brand_block, image=self.logo_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
+        title_block = ttk.Frame(brand_block, style="App.TFrame")
         title_block.pack(side="left")
         ttk.Label(title_block, text="SMAI Analytics", style="Title.TLabel").pack(anchor="w")
         ttk.Label(title_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 0))
         status_block = ttk.Frame(header, style="App.TFrame")
         status_block.pack(side="right", anchor="n")
-        self.status_label = tk.Label(status_block, textvariable=self.status, bg=COLORS["elevated"], fg=COLORS["cyan"], font=("Segoe UI", 11, "bold"), padx=14, pady=7)
+        if self.mascot_image is not None:
+            tk.Label(status_block, image=self.mascot_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
+        status_text = ttk.Frame(status_block, style="App.TFrame")
+        status_text.pack(side="left", anchor="n")
+        self.status_label = tk.Label(status_text, textvariable=self.status, bg=COLORS["elevated"], fg=COLORS["cyan"], font=("Segoe UI", 11, "bold"), padx=14, pady=7)
         self.status_label.pack(anchor="e")
-        ttk.Label(status_block, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
+        ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
         facts.pack(fill="x", pady=(0, 18))
