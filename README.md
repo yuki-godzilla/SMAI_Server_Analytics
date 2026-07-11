@@ -17,3 +17,38 @@ python .\dashboard.py
 ```
 
 螟夜Κ萓晏ｭ倥↑縺励・Tkinter逕ｻ髱｢縺ｧ縺吶４MAI譛ｬ菴薙′蛛懈ｭ｢縺励※縺・※繧ら判髱｢縺ｯ谿九ｊ縲∵怙蠕後・迥ｶ諷九→繝ｭ繧ｰ繧定｡ｨ遉ｺ縺ｧ縺阪∪縺吶・
+
+## Backup operations
+
+```powershell
+# Create a backup
+python .\backup.py create
+
+# Verify a backup
+python .\backup.py verify <backup-path>
+
+# Restore from a backup
+python .\backup.py restore <backup-path>
+```
+
+- `create` creates a timestamped backup under the runtime backup directory.
+- `verify` checks the manifest and file hashes.
+- `restore` copies the backed-up files back to the project data directories.
+- If a source file cannot be copied because it is locked, it is recorded as skipped in the manifest and the backup still completes.
+
+## Always-on dashboard
+
+The Analytics console follows the SMAI dark navy / cyan visual language and refreshes health, sessions, operations, tasks, incidents, and recent logs every five seconds. Its Overview includes a service topology map, a 0-100 health gauge, a health timeline, and an L1/L2/L3 check matrix. These visuals describe operations only; they do not calculate or interpret investment results.
+
+Register it to open automatically after the interactive Windows user logs on:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\register_smai_analytics_autostart_task.ps1
+```
+
+The task starts `run_dashboard.bat` after a one-minute delay. This is intentionally an interactive logon task so that the Tkinter window is visible to the operator. To remove it:
+
+```powershell
+.\scripts\unregister_smai_analytics_autostart_task.ps1
+```
