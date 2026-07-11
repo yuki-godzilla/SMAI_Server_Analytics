@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import tkinter as tk
@@ -166,6 +167,10 @@ class Dashboard:
         self.root.title("SMAI Analytics  |  Operations Console")
         self._configure_dpi_scaling()
         self._fit_window_to_screen()
+        try:
+            self.ui_scale = max(1.0, min(2.5, float(self.root.tk.call("tk", "scaling"))))
+        except (tk.TclError, TypeError, ValueError):
+            self.ui_scale = 1.0
         self.root.configure(bg=COLORS["page"])
         self.status = tk.StringVar(value="CHECKING")
         self.status_detail = tk.StringVar(value="Collecting server health")
@@ -180,9 +185,9 @@ class Dashboard:
         self.incident_source_events: list[dict[str, object]] = []
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
-        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=72, max_height=72)
-        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=170, max_height=170)
-        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=380, max_height=130)
+        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=80, max_height=80)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=190, max_height=190)
+        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=500, max_height=140)
         self._configure_style()
         self._build()
         self.refresh()
@@ -200,11 +205,12 @@ class Dashboard:
         except (AttributeError, OSError, tk.TclError, TypeError, ValueError):
             return
 
-    @staticmethod
-    def _load_brand_image(path: Path, *, max_width: int, max_height: int) -> object | None:
+    def _load_brand_image(self, path: Path, *, max_width: int, max_height: int) -> object | None:
         """Load a high-quality bounded header image with a Tk-only fallback."""
         if not path.is_file():
             return None
+        max_width = max(1, round(max_width * self.ui_scale))
+        max_height = max(1, round(max_height * self.ui_scale))
         try:
             if Image is not None and ImageTk is not None:
                 with Image.open(path) as source:
@@ -214,8 +220,10 @@ class Dashboard:
                     resized = source.resize(size, Image.Resampling.LANCZOS)
                     return ImageTk.PhotoImage(resized)
             fallback_path = path.with_name(f"{path.stem}-header{path.suffix}")
+            if self.ui_scale > 1.05:
+                fallback_path = path
             image = tk.PhotoImage(file=str(fallback_path if fallback_path.is_file() else path))
-            factor = max(1, image.width() // max_width, image.height() // max_height)
+            factor = max(1, math.ceil(image.width() / max_width), math.ceil(image.height() / max_height))
             return image.subsample(factor, factor) if factor > 1 else image
         except (AttributeError, OSError, ValueError, tk.TclError):
             return None
