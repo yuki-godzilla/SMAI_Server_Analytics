@@ -40,6 +40,20 @@ python .\backup.py restore <backup-path> --destination <restore-directory>
 - Use `--destination` to restore into an isolated directory before considering a production restore. Without it, files are copied back to the project data directories.
 - If a source file cannot be copied because it is locked, it is recorded as skipped in the manifest and the backup still completes.
 
+## Runtime retention
+
+```powershell
+# Inspect only; no runtime files are removed.
+python .\retention.py --dry-run
+
+# Apply the local retention policy.
+python .\retention.py
+```
+
+Retention removes only expired files directly under `Runtime/logs/` and complete,
+tool-created backup directories named `smai_*` with a `manifest.json`.  Incomplete
+or manually named backup directories are left untouched for operator review.
+
 ## Always-on dashboard
 
 The Analytics console follows the SMAI dark navy / cyan visual language and refreshes health, sessions, operations, tasks, incidents, and recent logs every five seconds. Its Overview includes a service topology map, a 0-100 health gauge, a health timeline, and an L1/L2/L3 check matrix. These visuals describe operations only; they do not calculate or interpret investment results.
