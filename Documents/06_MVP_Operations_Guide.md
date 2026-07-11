@@ -22,6 +22,15 @@ L1失敗は `critical`、L2/L3のみの失敗は `degraded`、全成功は `heal
 
 日付別レポート、raw HTML、ログ、再生成可能なcacheはバックアップ対象外です。バックアップ作成後はmanifestのSHA-256を検証し、月1回は別フォルダへ復元する実地確認を行います。
 
+復元はmanifest、全ファイルのSHA-256、パスの逸脱を確認してから開始します。1件でも破損、欠落、コピー未完了（`skipped`）があれば、復元先へ書き込みません。通常の実地確認は本体を上書きせず、隔離先へ行います。
+
+```powershell
+python .\backup.py verify <backup-path>
+python .\backup.py restore <backup-path> --destination <isolated-restore-directory>
+```
+
+本体データへの復元は、隔離先で内容とhashを確認した後に、対象と上書き範囲を明示して実施します。
+
 ## 4. ログ保持
 
 通常ログは30日、障害ログは90日を基準とします。RuntimeはGit管理しません。ログにはsecret、通知topic、token、Cookie、ユーザー入力本文を記録しません。

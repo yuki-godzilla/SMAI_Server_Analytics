@@ -29,11 +29,15 @@ python .\backup.py verify <backup-path>
 
 # Restore from a backup
 python .\backup.py restore <backup-path>
+
+# Restore into an isolated directory for a smoke check
+python .\backup.py restore <backup-path> --destination <restore-directory>
 ```
 
 - `create` creates a timestamped backup under the runtime backup directory.
-- `verify` checks the manifest and file hashes.
-- `restore` copies the backed-up files back to the project data directories.
+- `verify` checks the manifest, file hashes, and that every manifest path remains inside the backup.
+- `restore` performs the same verification before copying. If any file is missing, changed, skipped, or outside the backup, it aborts before writing a destination file.
+- Use `--destination` to restore into an isolated directory before considering a production restore. Without it, files are copied back to the project data directories.
 - If a source file cannot be copied because it is locked, it is recorded as skipped in the manifest and the backup still completes.
 
 ## Always-on dashboard
