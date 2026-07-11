@@ -22,8 +22,10 @@ class DashboardFormattingTests(unittest.TestCase):
     def test_analytics_brand_assets_are_project_bound(self) -> None:
         self.assertTrue(dashboard.ANALYTICS_LOGO.is_file())
         self.assertTrue(dashboard.ANALYTICS_MASCOT.is_file())
+        self.assertTrue(dashboard.ANALYTICS_WORDMARK.is_file())
         self.assertEqual(dashboard.ANALYTICS_LOGO.parent, dashboard.ASSET_ROOT)
         self.assertEqual(dashboard.ANALYTICS_MASCOT.parent, dashboard.ASSET_ROOT)
+        self.assertEqual(dashboard.ANALYTICS_WORDMARK.parent, dashboard.ASSET_ROOT)
 
 
 if __name__ == "__main__":

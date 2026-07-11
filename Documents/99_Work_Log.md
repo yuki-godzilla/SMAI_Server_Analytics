@@ -12,5 +12,6 @@
 - セッションID短縮、heartbeat相対時刻、空状態の説明、Windows Taskのunknown表示、ログ重要語集計を追加
 - SMAI本体のマスコット画像を参照し、Analytics専用の運用監視マスコットを生成
 - heartbeat、health、status bar、shieldをモチーフにしたAnalytics専用ロゴを生成
+- シールドと「SMAI Analytics」のアプリ名を一体化した横長ワードマークを追加
 - `dashboard.py` のヘッダー左側へロゴ、右側の状態表示へマスコットを配置
 - 画像欠損時もテキストUIで起動を継続するフォールバックを追加

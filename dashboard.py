@@ -17,6 +17,7 @@ LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_RO
 ASSET_ROOT = Path(__file__).with_name("assets")
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
+ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark.png"
 TASKS = (
     "SMAI-Server-Analytics",
     "SmartMarketAI-Server-Autostart",
@@ -171,8 +172,9 @@ class Dashboard:
         self.incident_events: list[dict[str, object]] = []
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
-        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=58)
-        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=82)
+        self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=72)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=148)
+        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=330)
         self._configure_style()
         self._build()
         self.refresh()
@@ -252,12 +254,16 @@ class Dashboard:
         header.pack(fill="x", pady=(0, 18))
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
-        if self.logo_image is not None:
-            tk.Label(brand_block, image=self.logo_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
-        title_block = ttk.Frame(brand_block, style="App.TFrame")
-        title_block.pack(side="left")
-        ttk.Label(title_block, text="SMAI Analytics", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(title_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 0))
+        if self.wordmark_image is not None:
+            tk.Label(brand_block, image=self.wordmark_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(anchor="w")
+            ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(2, 0))
+        else:
+            if self.logo_image is not None:
+                tk.Label(brand_block, image=self.logo_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
+            title_block = ttk.Frame(brand_block, style="App.TFrame")
+            title_block.pack(side="left")
+            ttk.Label(title_block, text="SMAI Analytics", style="Title.TLabel").pack(anchor="w")
+            ttk.Label(title_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 0))
         status_block = ttk.Frame(header, style="App.TFrame")
         status_block.pack(side="right", anchor="n")
         if self.mascot_image is not None:
