@@ -72,6 +72,14 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(dashboard.Dashboard._service_status(dashboard_like, "smai ui"), "unknown")
         self.assertEqual(dashboard.Dashboard._service_status(dashboard_like, "streamlit"), "ok")
 
+    def test_scheduled_task_path_mismatch_is_not_treated_as_ready(self) -> None:
+        expected = str(dashboard.expected_task_root("SmartMarketAI-Server-Watch"))
+        self.assertEqual(dashboard.task_path_status("SmartMarketAI-Server-Watch", f"<Command>{expected}</Command>"), "ready")
+        self.assertEqual(
+            dashboard.task_path_status("SmartMarketAI-Server-Watch", r"<Command>C:\Users\user\workspace\Smart_Market_AI\scripts\watch.bat</Command>"),
+            "path mismatch",
+        )
+
     def test_tree_status_tag_prioritizes_attention_states(self) -> None:
         self.assertEqual(dashboard.Dashboard._tree_status_tag("failed"), "critical")
         self.assertEqual(dashboard.Dashboard._tree_status_tag("stale"), "degraded")

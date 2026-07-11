@@ -32,6 +32,18 @@ TASKS = (
     "SmartMarketAI-Symbol-Maintenance-IfDue",
 )
 
+
+def expected_task_root(task: str) -> Path:
+    return Path(__file__).resolve().parent if task == "SMAI-Server-Analytics" else PROJECT_ROOT
+
+
+def task_path_status(task: str, task_xml: str) -> str:
+    """Return a fail-closed status when a scheduled task points at an old workspace."""
+
+    expected = str(expected_task_root(task)).replace("/", "\\").casefold()
+    configured = task_xml.replace("/", "\\").casefold()
+    return "ready" if expected in configured else "path mismatch"
+
 COLORS = {
     "app": "#020510",
     "page": "#070D19",
@@ -132,6 +144,22 @@ def read_task_status() -> list[tuple[str, str, str]]:
                     values[key.strip()] = value.strip()
             status = values.get("Status", "unknown") if result.returncode == 0 else "unknown"
             result_text = values.get("Last Result", "unknown") if result.returncode == 0 else "task query unavailable"
+            if result.returncode == 0:
+                contract = subprocess.run(
+                ["schtasks.exe", "/Query", "/TN", f"\\{task}", "/XML"],
+                capture_output=True,
+                timeout=2,
+                check=False,
+            )
+                if contract.returncode != 0:
+                    status = "unknown"
+                    result_text = "task execution path unavailable"
+                elif task_path_status(task, contract.stdout.decode(errors="replace")) != "ready":
+                    status = "path mismatch"
+                    result_text = f"expected path: {expected_task_root(task)}"
+                elif status == "unknown":
+                    status = "path verified"
+                    result_text = "execution path verified; scheduler state unavailable"
             rows.append((task, status, result_text))
         except (OSError, subprocess.TimeoutExpired):
             rows.append((task, "unknown", "task query unavailable"))
@@ -544,9 +572,9 @@ class Dashboard:
         normalized = str(status or "unknown").lower()
         if normalized in {"failed", "critical", "error"}:
             return "critical"
-        if normalized in {"degraded", "stale", "cancelled", "disabled", "queued"}:
+        if normalized in {"degraded", "stale", "cancelled", "disabled", "queued", "path mismatch"}:
             return "degraded"
-        if normalized in {"ok", "healthy", "active", "running", "ready"}:
+        if normalized in {"ok", "healthy", "active", "running", "ready", "path verified"}:
             return "healthy"
         return "unknown"
 
@@ -716,7 +744,7 @@ class Dashboard:
         canvas = self.task_canvas
         canvas.delete("all")
         width = max(canvas.winfo_width(), 450)
-        ready = sum(1 for _, status, _ in self.task_rows if status.lower() in {"ready", "running"})
+        ready = sum(1 for _, status, _ in self.task_rows if status.lower() in {"ready", "running", "path verified"})
         unknown = sum(1 for _, status, _ in self.task_rows if status.lower() == "unknown")
         attention = len(self.task_rows) - ready - unknown
         card_width = (width - 24) / 3
@@ -809,7 +837,7 @@ class Dashboard:
         for item in self.tasks.get_children():
             self.tasks.delete(item)
         for task, status, result in self.task_rows:
-            status_label = {"unknown": "● 取得不能", "disabled": "● 無効"}.get(status.lower(), f"● {status}")
+            status_label = {"unknown": "● 取得不能", "disabled": "● 無効", "path mismatch": "● パス要確認", "path verified": "● パス確認済み"}.get(status.lower(), f"● {status}")
             self.tasks.insert("", "end", values=(task, status_label, result), tags=(self._tree_status_tag(status),))
         self.log_lines = recent_logs()
         self.set_text(self.logs, self.log_lines)
