@@ -108,16 +108,39 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertTrue(dashboard.ANALYTICS_LOGO.is_file())
         self.assertTrue(dashboard.ANALYTICS_MASCOT.is_file())
         self.assertTrue(dashboard.ANALYTICS_WORDMARK.is_file())
+        self.assertTrue(dashboard.TOPOLOGY_SMARTPHONE.is_file())
+        self.assertTrue(dashboard.TOPOLOGY_TABLET.is_file())
         self.assertEqual(dashboard.ANALYTICS_LOGO.parent, dashboard.ASSET_ROOT)
         self.assertEqual(dashboard.ANALYTICS_MASCOT.parent, dashboard.ASSET_ROOT)
         self.assertEqual(dashboard.ANALYTICS_WORDMARK.parent, dashboard.ASSET_ROOT)
 
     def test_header_wordmark_is_an_alpha_png(self) -> None:
         # PNG IHDR color type 6 denotes RGBA, which keeps the header background transparent.
-        for asset in (dashboard.ANALYTICS_LOGO, dashboard.ANALYTICS_WORDMARK):
+        for asset in (
+            dashboard.ANALYTICS_LOGO,
+            dashboard.ANALYTICS_WORDMARK,
+            dashboard.TOPOLOGY_SMARTPHONE,
+            dashboard.TOPOLOGY_TABLET,
+        ):
             header = asset.read_bytes()[:26]
             self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
             self.assertEqual(header[25], 6)
+
+
+    @unittest.skipIf(dashboard.Image is None, "Pillow is optional at runtime")
+    def test_topology_client_assets_have_transparent_corners(self) -> None:
+        for asset in (dashboard.TOPOLOGY_SMARTPHONE, dashboard.TOPOLOGY_TABLET):
+            with dashboard.Image.open(asset) as image:
+                self.assertEqual(image.convert("RGBA").getpixel((0, 0))[3], 0)
+
+    @unittest.skipIf(dashboard.Image is None, "Pillow is optional at runtime")
+    def test_wordmark_split_uses_the_transparent_gap_between_shield_and_text(self) -> None:
+        with dashboard.Image.open(dashboard.ANALYTICS_WORDMARK) as source:
+            split = dashboard.Dashboard._wordmark_split(source.convert("RGBA"))
+
+        self.assertIsNotNone(split)
+        self.assertGreater(split, 574)
+        self.assertLess(split, 599)
 
     def test_topology_status_is_unknown_without_check_evidence(self) -> None:
         dashboard_like = SimpleNamespace(check_statuses={"streamlit health": "ok"})

@@ -28,6 +28,8 @@ ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-luminous.png"
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
+TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
+TOPOLOGY_TABLET = ASSET_ROOT / "smai-topology-tablet-v1.png"
 TASKS = (
     "SMAI-Server-Analytics",
     "SmartMarketAI-Server-Autostart",
@@ -495,6 +497,16 @@ class Dashboard:
             "Streamlit": self._load_sprite_tile(TOPOLOGY_SPRITE, 1, max_width=icon_size, max_height=icon_size),
             "Runtime": self._load_sprite_tile(TOPOLOGY_SPRITE, 2, max_width=icon_size, max_height=icon_size),
             "Analytics": self._load_sprite_tile(TOPOLOGY_SPRITE, 3, max_width=icon_size, max_height=icon_size),
+            "スマートフォン": self._load_brand_image(
+                TOPOLOGY_SMARTPHONE,
+                max_width=26 if compact else 38,
+                max_height=42 if compact else 60,
+            ),
+            "タブレット": self._load_brand_image(
+                TOPOLOGY_TABLET,
+                max_width=42 if compact else 60,
+                max_height=28 if compact else 40,
+            ),
         }
 
     def _load_brand_image(self, path: Path, *, max_width: int, max_height: int) -> object | None:
@@ -548,9 +560,9 @@ class Dashboard:
         try:
             with Image.open(path) as source:
                 source = source.convert("RGBA")
-                # The generated 3D shield occupies roughly the first third;
-                # split after it so the lettering crop has no shield padding.
-                split = int(source.width * 0.285)
+                split = self._wordmark_split(source)
+                if split is None:
+                    return None, None
                 images: list[object] = []
                 for crop, desired_height in ((source.crop((0, 0, split, source.height)), shield_height), (source.crop((split, 0, source.width, source.height)), lettering_height)):
                     bounds = self._visible_bounds(crop)
@@ -563,6 +575,36 @@ class Dashboard:
                 return images[0], images[1]
         except (OSError, ValueError, tk.TclError):
             return None, None
+
+    @staticmethod
+    def _wordmark_split(source: object) -> int | None:
+        """Split between the shield and lettering at their actual transparent gap.
+
+        A fixed percentage cut through the luminous source image's right shield
+        trim, which made the trim look like a detached vertical logo fragment.
+        """
+
+        if Image is None or not hasattr(source, "getchannel") or not hasattr(source, "width"):
+            return None
+        alpha = source.getchannel("A")
+        occupied = [False] * source.width
+        values = alpha.get_flattened_data() if hasattr(alpha, "get_flattened_data") else alpha.getdata()
+        for index, value in enumerate(values):
+            if value >= 48:
+                occupied[index % source.width] = True
+        try:
+            shield_start = next(index for index, value in enumerate(occupied) if value)
+        except StopIteration:
+            return None
+        shield_end = shield_start
+        while shield_end < source.width and occupied[shield_end]:
+            shield_end += 1
+        lettering_start = shield_end
+        while lettering_start < source.width and not occupied[lettering_start]:
+            lettering_start += 1
+        if shield_end == shield_start or lettering_start >= source.width:
+            return None
+        return (shield_end + lettering_start) // 2
 
     @staticmethod
     def _visible_bounds(image: object) -> tuple[int, int, int, int] | None:
