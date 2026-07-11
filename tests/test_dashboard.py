@@ -24,6 +24,12 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertFalse(dashboard.event_within_window("not-a-time", "7d", now=now))
         self.assertTrue(dashboard.event_within_window("not-a-time", "all", now=now))
 
+    def test_japanese_filter_labels_preserve_stable_storage_keys(self) -> None:
+        self.assertEqual(dashboard.time_window_key("過去24時間"), "24h")
+        self.assertEqual(dashboard.time_window_key("すべて"), "all")
+        self.assertEqual(dashboard.result_filter_key("失敗"), "failed")
+        self.assertEqual(dashboard.result_filter_key("重大"), "critical")
+
     def test_parse_timestamp_accepts_utc_z_suffix(self) -> None:
         parsed = dashboard.parse_timestamp("2026-07-11T04:24:17Z")
         self.assertIsNotNone(parsed)
@@ -38,6 +44,7 @@ class DashboardFormattingTests(unittest.TestCase):
                 "user_id": "local_user",
                 "profile_name": "Local User",
                 "device_id": "smai_client_0123456789abcdef",
+                "client_type": "smartphone",
                 "connection_state": "connected",
             },
         )
@@ -46,7 +53,52 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(legacy["user_id"], "")
         self.assertEqual(detailed["user_id"], "local_user")
         self.assertEqual(detailed["profile_name"], "Local User")
+        self.assertEqual(detailed["client_type"], "smartphone")
         self.assertEqual(detailed["connection_state"], "connected")
+
+    def test_client_connection_status_needs_category_specific_heartbeat_evidence(self) -> None:
+        now = datetime(2026, 7, 12, 9, 0, tzinfo=UTC)
+        sessions = [
+            {
+                "client_type": "smartphone",
+                "last_seen_at": "2026-07-12T08:59:20+00:00",
+                "connection_state": "connected",
+            },
+            {
+                "client_type": "tablet",
+                "last_seen_at": "2026-07-12T08:55:00+00:00",
+                "connection_state": "connected",
+            },
+        ]
+
+        self.assertEqual(
+            dashboard.client_connection_status(sessions, "smartphone", activity_readable=True, now=now),
+            "ok",
+        )
+        self.assertEqual(
+            dashboard.client_connection_status(sessions, "tablet", activity_readable=True, now=now),
+            "degraded",
+        )
+        self.assertEqual(
+            dashboard.client_connection_status(sessions, "desktop", activity_readable=True, now=now),
+            "unknown",
+        )
+        self.assertEqual(
+            dashboard.client_connection_status(sessions, "smartphone", activity_readable=False, now=now),
+            "unknown",
+        )
+
+    def test_explicit_client_communication_failure_is_critical(self) -> None:
+        session = {
+            "client_type": "tablet",
+            "last_seen_at": "2026-07-12T08:59:59+00:00",
+            "connection_state": "failed",
+        }
+
+        self.assertEqual(
+            dashboard.session_connection_status(session, now=datetime(2026, 7, 12, 9, 0, tzinfo=UTC)),
+            "critical",
+        )
 
     def test_health_score_is_fail_closed_for_unknown(self) -> None:
         self.assertEqual(dashboard.Dashboard._health_score("unknown"), 0)

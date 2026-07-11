@@ -71,6 +71,113 @@ COLORS = {
     "red": "#F87171",
 }
 
+TIME_WINDOW_OPTIONS = ("過去24時間", "過去7日間", "過去30日間", "すべて")
+TIME_WINDOW_KEYS = {
+    "過去24時間": "24h",
+    "過去7日間": "7d",
+    "過去30日間": "30d",
+    "すべて": "all",
+}
+HISTORY_RESULT_OPTIONS = ("すべて", "成功", "失敗", "取り消し")
+INCIDENT_SEVERITY_OPTIONS = ("すべて", "失敗", "エラー", "重大")
+RESULT_FILTER_KEYS = {
+    "すべて": "all",
+    "成功": "ok",
+    "失敗": "failed",
+    "取り消し": "cancelled",
+    "エラー": "error",
+    "重大": "critical",
+}
+CLIENT_TYPES = ("desktop", "smartphone", "tablet")
+CLIENT_TYPE_LABELS = {
+    "desktop": "PC",
+    "smartphone": "スマートフォン",
+    "tablet": "タブレット",
+    "unknown": "種別不明",
+}
+CLIENT_HEARTBEAT_SECONDS = 90
+STATUS_PRIORITY = {
+    "critical": 5,
+    "error": 5,
+    "failed": 5,
+    "degraded": 4,
+    "stale": 4,
+    "unknown": 3,
+    "healthy": 1,
+    "ok": 1,
+    "active": 1,
+    "running": 1,
+}
+
+
+def time_window_key(value: object) -> str:
+    """Translate the concise Japanese UI label into the stable filter key."""
+
+    return TIME_WINDOW_KEYS.get(str(value), str(value))
+
+
+def result_filter_key(value: object) -> str:
+    """Translate a UI result label without coupling storage values to the UI."""
+
+    return RESULT_FILTER_KEYS.get(str(value), str(value))
+
+
+def client_type(value: object) -> str:
+    """Map the privacy-safe session category to a topology client node."""
+
+    normalized = str(value or "").strip().casefold()
+    if normalized in {"tablet", "ipad"} or "tablet" in normalized:
+        return "tablet"
+    if normalized in {"smartphone", "phone", "mobile", "iphone", "android"}:
+        return "smartphone"
+    if normalized in {"desktop", "pc", "windows", "macos", "linux", "web"}:
+        return "desktop"
+    return "unknown"
+
+
+def heartbeat_state(value: object, *, now: datetime | None = None) -> str:
+    """Classify the freshness of one client heartbeat without assuming success."""
+
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        return "unknown"
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    age = (current - parsed.astimezone(UTC)).total_seconds()
+    return "active" if age <= CLIENT_HEARTBEAT_SECONDS else "stale"
+
+
+def session_connection_status(session: dict[str, str], *, now: datetime | None = None) -> str:
+    """Use explicit disconnect evidence first, then the last received heartbeat."""
+
+    connection = str(session.get("connection_state") or "").strip().casefold()
+    if connection in {"critical", "failed", "error"}:
+        return "critical"
+    if connection in {"degraded", "disconnected", "offline", "closed", "stale"}:
+        return "degraded"
+    state = heartbeat_state(session.get("last_seen_at"), now=now)
+    return "ok" if state == "active" else "degraded" if state == "stale" else "unknown"
+
+
+def worst_status(*statuses: str) -> str:
+    """Return the most cautious status, keeping absent evidence as unknown."""
+
+    return max(statuses or ("unknown",), key=lambda item: STATUS_PRIORITY.get(item.lower(), 3))
+
+
+def client_connection_status(
+    sessions: list[dict[str, str]],
+    requested_type: str,
+    *,
+    activity_readable: bool,
+    now: datetime | None = None,
+) -> str:
+    """Resolve one client category only from readable, category-specific evidence."""
+
+    if not activity_readable:
+        return "unknown"
+    matching = [session_connection_status(session, now=now) for session in sessions if session.get("client_type") == requested_type]
+    return worst_status(*matching) if matching else "unknown"
+
 
 def read_json(path: Path) -> dict[str, object]:
     try:
@@ -102,6 +209,7 @@ def session_details(session_id: object, value: object) -> dict[str, str]:
     """Read legacy timestamp sessions and the v2 descriptive session contract."""
 
     if isinstance(value, dict):
+        raw_client_type = value.get("client_type") or value.get("device_type") or value.get("platform")
         return {
             "session_id": str(session_id),
             "last_seen_at": str(value.get("last_seen_at") or ""),
@@ -109,6 +217,7 @@ def session_details(session_id: object, value: object) -> dict[str, str]:
             "profile_name": str(value.get("profile_name") or ""),
             "device_id": str(value.get("device_id") or ""),
             "platform": str(value.get("platform") or ""),
+            "client_type": client_type(raw_client_type),
             "connection_state": str(value.get("connection_state") or "unknown"),
         }
     return {
@@ -118,6 +227,7 @@ def session_details(session_id: object, value: object) -> dict[str, str]:
         "profile_name": "",
         "device_id": "",
         "platform": "",
+        "client_type": "unknown",
         "connection_state": "unknown",
     }
 
@@ -258,6 +368,7 @@ class Dashboard:
         except (tk.TclError, TypeError, ValueError):
             self.ui_scale = 1.0
         self.content_scale = ui_scale_for_display(self.root.winfo_screenwidth(), self.root.winfo_screenheight())
+        self.compact_layout = False
         self.root.configure(bg=COLORS["page"])
         self.status = tk.StringVar(value="CHECKING")
         self.status_detail = tk.StringVar(value="Collecting server health")
@@ -267,6 +378,8 @@ class Dashboard:
         self.refresh_state = tk.StringVar(value="Auto-refresh 5s")
         self.health_history: list[tuple[str, int]] = []
         self.session_rows: list[tuple[str, object, str]] = []
+        self.client_sessions: list[dict[str, str]] = []
+        self.activity_readable = False
         self.activity_events: list[dict[str, object]] = []
         self.incident_events: list[dict[str, object]] = []
         self.incident_source_events: list[dict[str, object]] = []
@@ -289,6 +402,8 @@ class Dashboard:
         self.check_statuses: dict[str, str] = {}
         self._configure_style()
         self._build()
+        self.root.bind("<Configure>", self._on_root_configure, add="+")
+        self.root.after_idle(self._sync_layout_density)
         self.refresh()
         self._animate_topology()
 
@@ -304,6 +419,83 @@ class Dashboard:
                 self.root.tk.call("tk", "scaling", max(1.0, min(2.5, dpi / 72.0)))
         except (AttributeError, OSError, tk.TclError, TypeError, ValueError):
             return
+
+    def _on_root_configure(self, event: tk.Event[tk.Misc]) -> None:
+        """Use a denser hierarchy when a PC window has limited height."""
+
+        if event.widget != self.root:
+            return
+        self._apply_layout_density(event.width, event.height)
+
+    def _sync_layout_density(self) -> None:
+        self._apply_layout_density(self.root.winfo_width(), self.root.winfo_height())
+
+    def _apply_layout_density(self, width: int, height: int) -> None:
+        """Apply the appropriate visual hierarchy for the current window size."""
+
+        # Compare like-for-like Tk units so this remains correct at Windows
+        # 125%/150% DPI scaling.  A window that occupies less than 72% of a
+        # monitor switches to the compact hierarchy.
+        screen_width = max(1, self.root.winfo_screenwidth())
+        screen_height = max(1, self.root.winfo_screenheight())
+        compact = width / screen_width < 0.72 or height / screen_height < 0.72
+        summary_visible = bool(self.overview_summary.winfo_ismapped())
+        if compact == self.compact_layout and summary_visible == (not compact):
+            return
+        self.compact_layout = compact
+        if compact:
+            self.overview_summary.grid_remove()
+            self.overview.rowconfigure(0, weight=1)
+            self.overview.rowconfigure(1, weight=0, minsize=0)
+        else:
+            self.overview_summary.grid()
+            self.overview.rowconfigure(0, weight=4)
+            self.overview.rowconfigure(1, weight=1)
+        self.facts.configure(height=self._px(60 if compact else 76))
+        for canvas, regular, compact_height in self._overview_canvas_sizes:
+            canvas.configure(height=self._px(compact_height if compact else regular))
+        for canvas in self._summary_canvases:
+            canvas.configure(height=self._px(64 if compact else 84))
+        self._resize_brand_images(compact)
+        self._resize_topology_images(compact)
+        self.root.after_idle(self._redraw_visuals)
+        self.root.after_idle(self._draw_tab_visuals)
+
+    def _resize_brand_images(self, compact: bool) -> None:
+        """Keep the header recognisable without letting it consume a short window."""
+
+        if self.wordmark_shield_label is not None and self.wordmark_lettering_label is not None:
+            self.wordmark_shield_image, self.wordmark_lettering_image = self._load_wordmark_parts(
+                ANALYTICS_WORDMARK,
+                shield_height=66 if compact else 88,
+                lettering_height=52 if compact else 70,
+            )
+            if self.wordmark_shield_image is not None and self.wordmark_lettering_image is not None:
+                self.wordmark_shield_label.configure(image=self.wordmark_shield_image)
+                self.wordmark_lettering_label.configure(image=self.wordmark_lettering_image)
+        if self.mascot_label is not None:
+            if compact:
+                self.mascot_label.pack_forget()
+                return
+            self.mascot_image = self._load_brand_image(
+                ANALYTICS_MASCOT,
+                max_width=76 if compact else 108,
+                max_height=76 if compact else 108,
+            )
+            if self.mascot_image is not None:
+                self.mascot_label.configure(image=self.mascot_image)
+                self.mascot_label.pack(side="left", padx=(0, 12), before=self.status_text)
+
+    def _resize_topology_images(self, compact: bool) -> None:
+        """Scale the decorative device icons with the compact topology."""
+
+        icon_size = 40 if compact else 60
+        self.topology_images = {
+            "SMAI UI": self._load_sprite_tile(TOPOLOGY_SPRITE, 0, max_width=icon_size, max_height=icon_size),
+            "Streamlit": self._load_sprite_tile(TOPOLOGY_SPRITE, 1, max_width=icon_size, max_height=icon_size),
+            "Runtime": self._load_sprite_tile(TOPOLOGY_SPRITE, 2, max_width=icon_size, max_height=icon_size),
+            "Analytics": self._load_sprite_tile(TOPOLOGY_SPRITE, 3, max_width=icon_size, max_height=icon_size),
+        }
 
     def _load_brand_image(self, path: Path, *, max_width: int, max_height: int) -> object | None:
         """Load a high-quality bounded header image with a Tk-only fallback."""
@@ -437,6 +629,7 @@ class Dashboard:
         style.configure("CardLabel.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=self._font(9, "bold"))
         style.configure("CardValue.TLabel", background=COLORS["card"], foreground=COLORS["heading"], font=self._font(16, "bold"))
         style.configure("CardMeta.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=self._font(10))
+        style.configure("FilterMeta.TLabel", background=COLORS["surface"], foreground=COLORS["muted"], font=self._font(9))
         style.configure("TNotebook", background=COLORS["page"], borderwidth=0, tabmargins=(0, 0, 0, 0))
         style.configure("TNotebook.Tab", background=COLORS["surface"], foreground=COLORS["muted"], padding=(self._px(16), self._px(7)), borderwidth=0, font=self._font(10, "bold"))
         style.map("TNotebook.Tab", background=[("selected", COLORS["card"])], foreground=[("selected", COLORS["cyan"])], expand=[("selected", (0, 1, 0, 0))])
@@ -458,34 +651,43 @@ class Dashboard:
         if self.wordmark_shield_image is not None and self.wordmark_lettering_image is not None:
             mark = ttk.Frame(brand_block, style="App.TFrame")
             mark.pack(anchor="w")
-            tk.Label(mark, image=self.wordmark_shield_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left")
-            tk.Label(mark, image=self.wordmark_lettering_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(self._px(14), 0))
-            ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(2), 0))
+            self.wordmark_shield_label = tk.Label(mark, image=self.wordmark_shield_image, bg=COLORS["page"], bd=0, highlightthickness=0)
+            self.wordmark_shield_label.pack(side="left")
+            self.wordmark_lettering_label = tk.Label(mark, image=self.wordmark_lettering_image, bg=COLORS["page"], bd=0, highlightthickness=0)
+            self.wordmark_lettering_label.pack(side="left", padx=(self._px(14), 0))
+            ttk.Label(brand_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(2), 0))
         else:
+            self.wordmark_shield_label = None
+            self.wordmark_lettering_label = None
             if self.logo_image is not None:
                 tk.Label(brand_block, image=self.logo_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
             title_block = ttk.Frame(brand_block, style="App.TFrame")
             title_block.pack(side="left")
             ttk.Label(title_block, text="SMAI Analytics", style="Title.TLabel").pack(anchor="w")
-            ttk.Label(title_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 0))
+            ttk.Label(title_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 0))
         status_block = ttk.Frame(header, style="App.TFrame")
         status_block.pack(side="right", anchor="n")
         if self.mascot_image is not None:
-            tk.Label(status_block, image=self.mascot_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
+            self.mascot_label = tk.Label(status_block, image=self.mascot_image, bg=COLORS["page"], bd=0, highlightthickness=0)
+            self.mascot_label.pack(side="left", padx=(0, 12))
+        else:
+            self.mascot_label = None
         status_text = ttk.Frame(status_block, style="App.TFrame")
         status_text.pack(side="left", anchor="n")
+        self.status_text = status_text
         self.status_label = tk.Label(status_text, textvariable=self.status, bg=COLORS["elevated"], fg=COLORS["cyan"], font=self._font(11, "bold"), padx=self._px(16), pady=self._px(8))
         self.status_label.pack(anchor="e")
         ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
+        self.facts = facts
         facts.pack(fill="x", pady=(0, self._px(8)))
         facts.pack_propagate(False)
         facts.configure(height=self._px(76))
         facts.columnconfigure(0, weight=1, uniform="kpi")
         facts.columnconfigure(1, weight=1, uniform="kpi")
         facts.columnconfigure(2, weight=1, uniform="kpi")
-        for index, (label, variable, meta) in enumerate((("ACTIVE SESSIONS", self.session, "Current activity state"), ("RUNNING OPERATIONS", self.operations, "In-progress work items"), ("LAST CHECK", self.checked, "Snapshot time / local"))):
+        for index, (label, variable, meta) in enumerate((("接続セッション", self.session, "現在の接続状態"), ("実行中の処理", self.operations, "進行中の処理数"), ("最終確認", self.checked, "ローカル時刻"))):
             card = ttk.Frame(facts, style="Card.TFrame", padding=(self._px(14), self._px(8)))
             card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(12) if index < 2 else 0))
             ttk.Label(card, text=label, style="CardLabel.TLabel").pack(anchor="w")
@@ -497,14 +699,15 @@ class Dashboard:
         overview, sessions, history, incidents, reports, tasks, logs = [
             ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(7)
         ]
+        self.overview = overview
         for frame, name in (
-            (overview, "Overview"),
-            (sessions, "Sessions"),
-            (history, "Activity History"),
-            (incidents, "Incidents"),
-            (reports, "Reports"),
-            (tasks, "Tasks"),
-            (logs, "Logs"),
+            (overview, "概要"),
+            (sessions, "セッション"),
+            (history, "操作履歴"),
+            (incidents, "障害"),
+            (reports, "改善レポート"),
+            (tasks, "タスク"),
+            (logs, "ログ"),
         ):
             notebook.add(frame, text=name)
         # Make the service path a tall, scan-friendly sidebar.  The timeline
@@ -514,18 +717,19 @@ class Dashboard:
         overview.columnconfigure(1, weight=7, minsize=self._px(520))
         overview.rowconfigure(0, weight=4)
         overview.rowconfigure(1, weight=1)
-        map_panel = self._panel(overview, "SERVICE TOPOLOGY", "Live local service path")
+        map_panel = self._panel(overview, "SERVICE TOPOLOGY", "接続経路と状態")
         map_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, self._px(10)))
-        trend_panel = self._panel(overview, "HEALTH TIMELINE", "Recent refresh history")
+        trend_panel = self._panel(overview, "HEALTH TIMELINE", "直近の状態推移")
         trend_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(0, self._px(8)))
         overview_summary = ttk.Frame(overview, style="Surface.TFrame")
+        self.overview_summary = overview_summary
         overview_summary.grid(row=1, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(self._px(8), 0))
         overview_summary.columnconfigure(0, weight=1, uniform="overview_summary")
         overview_summary.columnconfigure(1, weight=1, uniform="overview_summary")
         overview_summary.rowconfigure(0, weight=1)
-        gauge_panel = self._panel(overview_summary, "SYSTEM HEALTH", "Current health score")
+        gauge_panel = self._panel(overview_summary, "SYSTEM HEALTH", "現在の状態スコア")
         gauge_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(8)))
-        checks_panel = self._panel(overview_summary, "CHECK MATRIX", "接続 / 画面 / 保存の確認")
+        checks_panel = self._panel(overview_summary, "CHECK MATRIX", "接続・画面・保存")
         checks_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(8), 0))
         self.map_canvas = self._canvas(map_panel, height=300)
         self.map_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
@@ -535,65 +739,85 @@ class Dashboard:
         self.trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         self.health = self._canvas(checks_panel, height=128)
         self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        self._overview_canvas_sizes = (
+            (self.map_canvas, 300, 180),
+            (self.trend_canvas, 230, 160),
+            (self.gauge_canvas, 128, 60),
+            (self.health, 128, 60),
+        )
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
-        sessions_summary = self._panel(sessions, "SESSION PULSE", "接続中ユーザーとheartbeatの鮮度")
+        sessions_summary = self._panel(sessions, "接続状況", "接続中セッションと最終通信の状態")
         sessions_summary.pack(fill="x", pady=(0, self._px(8)))
         self.session_canvas = self._canvas(sessions_summary, height=84)
         self.session_canvas.pack(fill="x", padx=12, pady=(0, 12))
-        sessions_table = self._panel(sessions, "SESSION DETAILS", "詳細は診断用。識別子は短縮表示")
+        sessions_table = self._panel(sessions, "セッション一覧", "識別子は短縮表示")
         sessions_table.pack(fill="both", expand=True)
-        self.sessions = self._tree(sessions_table, (("user", "ユーザー / プロフィール", 240), ("heartbeat", "最終通信", 230), ("device", "端末擬似ID", 150), ("state", "状態", 150)))
-        activity_summary = self._panel(history, "ACTIVITY PULSE", "操作量と結果の分布")
+        self.sessions = self._tree(
+            sessions_table,
+            (
+                ("user", "ユーザー / プロフィール", 210),
+                ("client", "端末種別", 130),
+                ("heartbeat", "最終通信", 230),
+                ("device", "端末擬似ID", 150),
+                ("state", "状態", 150),
+            ),
+        )
+        activity_summary = self._panel(history, "操作サマリー", "直近の操作と結果")
         activity_summary.pack(fill="x", pady=(0, self._px(8)))
         self.activity_canvas = self._canvas(activity_summary, height=84)
         self.activity_canvas.pack(fill="x", padx=12, pady=(0, 12))
         controls = ttk.Frame(history, style="Surface.TFrame")
         controls.pack(fill="x", pady=(0, self._px(8)))
         ttk.Label(controls, text="期間", style="Section.TLabel").pack(side="left")
-        self.history_window_filter = tk.StringVar(value="24h")
-        ttk.Combobox(controls, textvariable=self.history_window_filter, values=("24h", "7d", "30d", "all"), state="readonly", width=8).pack(side="left", padx=(8, 12))
-        ttk.Label(controls, text="結果フィルター", style="Section.TLabel").pack(side="left")
-        self.history_filter = tk.StringVar(value="all")
-        ttk.Combobox(controls, textvariable=self.history_filter, values=("all", "ok", "failed", "cancelled"), state="readonly", width=14).pack(side="left", padx=10)
-        ttk.Label(controls, text="ユーザー", style="Section.TLabel").pack(side="left", padx=(12, 4))
+        self.history_window_filter = tk.StringVar(value="過去24時間")
+        ttk.Combobox(controls, textvariable=self.history_window_filter, values=TIME_WINDOW_OPTIONS, state="readonly", width=11).pack(side="left", padx=(8, 12))
+        ttk.Label(controls, text="結果", style="Section.TLabel").pack(side="left")
+        self.history_filter = tk.StringVar(value="すべて")
+        ttk.Combobox(controls, textvariable=self.history_filter, values=HISTORY_RESULT_OPTIONS, state="readonly", width=10).pack(side="left", padx=10)
+        ttk.Label(controls, text="ユーザーID", style="Section.TLabel").pack(side="left", padx=(12, 4))
         self.history_user_filter = tk.StringVar()
         ttk.Entry(controls, textvariable=self.history_user_filter, width=16).pack(side="left")
-        ttk.Label(controls, text="操作", style="Section.TLabel").pack(side="left", padx=(12, 4))
+        ttk.Label(controls, text="操作名", style="Section.TLabel").pack(side="left", padx=(12, 4))
         self.history_action_filter = tk.StringVar()
         ttk.Entry(controls, textvariable=self.history_action_filter, width=18).pack(side="left")
-        ttk.Button(controls, text="適用", command=self.refresh_history).pack(side="left", padx=(10, 4))
-        ttk.Button(controls, text="クリア", command=self._clear_history_filters).pack(side="left")
+        ttk.Button(controls, text="絞り込む", command=self.refresh_history).pack(side="left", padx=(10, 4))
+        ttk.Button(controls, text="リセット", command=self._clear_history_filters).pack(side="left")
+        self.history_result_summary = tk.StringVar(value="表示件数: —")
+        ttk.Label(controls, textvariable=self.history_result_summary, style="FilterMeta.TLabel").pack(side="left", padx=(12, 0))
         self.history = self._tree(history, (("time", "時刻", 180), ("user", "ユーザー", 140), ("action", "操作", 190), ("target", "対象", 220), ("result", "結果", 110), ("device", "端末", 130), ("duration", "所要時間", 100)))
-        incident_summary = self._panel(incidents, "INCIDENT STATUS", "障害・失敗イベントと復旧確認")
+        incident_summary = self._panel(incidents, "障害状況", "失敗した操作と確認状況")
         incident_summary.pack(fill="x", pady=(0, self._px(8)))
         self.incident_canvas = self._canvas(incident_summary, height=84)
         self.incident_canvas.pack(fill="x", padx=12, pady=(0, 12))
         incident_controls = ttk.Frame(incidents, style="Surface.TFrame")
         incident_controls.pack(fill="x", pady=(0, self._px(8)))
         ttk.Label(incident_controls, text="期間", style="Section.TLabel").pack(side="left")
-        self.incident_window_filter = tk.StringVar(value="7d")
-        ttk.Combobox(incident_controls, textvariable=self.incident_window_filter, values=("24h", "7d", "30d", "all"), state="readonly", width=8).pack(side="left", padx=(8, 12))
-        ttk.Label(incident_controls, text="重要度フィルター", style="Section.TLabel").pack(side="left")
-        self.incident_filter = tk.StringVar(value="all")
-        ttk.Combobox(incident_controls, textvariable=self.incident_filter, values=("all", "failed", "error", "critical"), state="readonly", width=14).pack(side="left", padx=10)
-        ttk.Button(incident_controls, text="適用", command=self.refresh_incidents).pack(side="left")
-        incident_table = self._panel(incidents, "INCIDENT DETAILS", "failed / error / critical の直近イベント")
+        self.incident_window_filter = tk.StringVar(value="過去7日間")
+        ttk.Combobox(incident_controls, textvariable=self.incident_window_filter, values=TIME_WINDOW_OPTIONS, state="readonly", width=11).pack(side="left", padx=(8, 12))
+        ttk.Label(incident_controls, text="重要度", style="Section.TLabel").pack(side="left")
+        self.incident_filter = tk.StringVar(value="すべて")
+        ttk.Combobox(incident_controls, textvariable=self.incident_filter, values=INCIDENT_SEVERITY_OPTIONS, state="readonly", width=10).pack(side="left", padx=10)
+        ttk.Button(incident_controls, text="絞り込む", command=self.refresh_incidents).pack(side="left")
+        ttk.Button(incident_controls, text="リセット", command=self._clear_incident_filters).pack(side="left", padx=(4, 0))
+        self.incident_result_summary = tk.StringVar(value="表示件数: —")
+        ttk.Label(incident_controls, textvariable=self.incident_result_summary, style="FilterMeta.TLabel").pack(side="left", padx=(12, 0))
+        incident_table = self._panel(incidents, "障害一覧", "失敗・エラー・重大な操作")
         incident_table.pack(fill="both", expand=True)
         self.incidents = self._tree(incident_table, (("time", "時刻", 190), ("action", "操作", 210), ("target", "対象", 280), ("result", "結果", 130)))
         report_summary = self._panel(
             reports,
-            "CODEX IMPROVEMENT REPORTS",
-            "重大警告の調査依頼、改善結果、管理者メールOutboxの追跡",
+            "改善レポート",
+            "重大な障害の調査結果",
         )
         report_summary.pack(fill="x", pady=(0, self._px(8)))
         ttk.Label(
             report_summary,
-            text="Runtimeのincident_operations/reportsへ蓄積。SMTP設定がない場合、メールは送信せずOutboxに保留します。",
+            text="重大な障害の調査結果を表示します。通知メールは設定済みの場合のみ送信されます。",
             style="CardMeta.TLabel",
             wraplength=self._px(950),
         ).pack(anchor="w", padx=self._px(14), pady=(0, self._px(12)))
-        report_table = self._panel(reports, "REPORT INDEX", "最新の100件を表示")
+        report_table = self._panel(reports, "レポート一覧", "最新100件")
         report_table.pack(fill="both", expand=True)
         self.reports = self._tree(
             report_table,
@@ -605,18 +829,18 @@ class Dashboard:
                 ("summary", "改善結果", 460),
             ),
         )
-        task_summary = self._panel(tasks, "TASK COVERAGE", "Windows Scheduled Task の確認結果")
+        task_summary = self._panel(tasks, "タスク状況", "Windowsタスクの確認結果")
         task_summary.pack(fill="x", pady=(0, self._px(8)))
         self.task_canvas = self._canvas(task_summary, height=84)
         self.task_canvas.pack(fill="x", padx=12, pady=(0, 12))
-        task_table = self._panel(tasks, "TASK DETAILS", "unknown は未登録または取得不能")
+        task_table = self._panel(tasks, "タスク一覧", "状態が不明な項目は確認が必要")
         task_table.pack(fill="both", expand=True)
         self.tasks = self._tree(task_table, (("task", "タスク", 390), ("status", "状態", 180), ("result", "最終結果", 230)))
-        log_summary = self._panel(logs, "LOG SIGNAL", "直近100行の重要語を集計")
+        log_summary = self._panel(logs, "ログ概要", "直近100行の集計")
         log_summary.pack(fill="x", pady=(0, self._px(8)))
         self.log_canvas = self._canvas(log_summary, height=84)
         self.log_canvas.pack(fill="x", padx=12, pady=(0, 12))
-        log_detail = self._panel(logs, "RECENT LOGS", "生ログは調査用。異常はIncidentsで確認")
+        log_detail = self._panel(logs, "ログ一覧", "最新100行")
         log_detail.pack(fill="both", expand=True)
         log_body = ttk.Frame(log_detail, style="Card.TFrame")
         log_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
@@ -629,7 +853,8 @@ class Dashboard:
         log_x_scroll.grid(row=1, column=0, sticky="ew")
         log_body.rowconfigure(0, weight=1)
         log_body.columnconfigure(0, weight=1)
-        for canvas in (self.session_canvas, self.activity_canvas, self.incident_canvas, self.task_canvas, self.log_canvas):
+        self._summary_canvases = (self.session_canvas, self.activity_canvas, self.incident_canvas, self.task_canvas, self.log_canvas)
+        for canvas in self._summary_canvases:
             canvas.bind("<Configure>", lambda _event: self._draw_tab_visuals())
         footer = ttk.Frame(outer, style="App.TFrame")
         footer.pack(fill="x", pady=(self._px(8), 0))
@@ -723,27 +948,56 @@ class Dashboard:
         canvas.delete("all")
         width = max(canvas.winfo_width(), 400)
         height = max(canvas.winfo_height(), 180)
-        # A tall sidebar needs a vertical route; keeping all three upstream
-        # nodes on one row makes labels collide at ordinary desktop widths.
-        if width < height * 1.25:
+        compact = self.compact_layout or height < self._px(230)
+        # The three client categories make device coverage explicit.  Their
+        # connection state is based on the last received heartbeat, never on
+        # an assumption that an unobserved device is healthy.
+        if compact:
             nodes = [
-                ("SMAI UI", "PC UI", 0.24, 0.20),
-                ("Streamlit", "Tablet Web App", 0.72, 0.32),
-                ("Runtime", "Local Server", 0.70, 0.61),
-                ("Analytics", "Ops Console", 0.30, 0.82),
+                ("SMAI UI", "PC ブラウザ", 0.16, 0.24),
+                ("スマートフォン", "スマートフォン", 0.50, 0.16),
+                ("タブレット", "タブレット", 0.84, 0.24),
+                ("Streamlit", "Web App", 0.50, 0.51),
+                ("Runtime", "Local Server", 0.76, 0.77),
+                ("Analytics", "Ops Console", 0.23, 0.77),
+            ]
+        elif width < height * 1.25:
+            nodes = [
+                ("SMAI UI", "PC ブラウザ", 0.16, 0.20),
+                ("スマートフォン", "スマートフォン", 0.50, 0.20),
+                ("タブレット", "タブレット", 0.84, 0.20),
+                ("Streamlit", "Web App", 0.50, 0.53),
+                ("Runtime", "Local Server", 0.74, 0.79),
+                ("Analytics", "Ops Console", 0.26, 0.79),
             ]
         else:
             nodes = [
-                ("SMAI UI", "PC UI", 0.13, 0.34),
-                ("Streamlit", "Tablet Web App", 0.42, 0.34),
-                ("Runtime", "Local Server", 0.78, 0.34),
-                ("Analytics", "Ops Console", 0.42, 0.76),
+                ("SMAI UI", "PC ブラウザ", 0.13, 0.20),
+                ("スマートフォン", "スマートフォン", 0.50, 0.20),
+                ("タブレット", "タブレット", 0.87, 0.20),
+                ("Streamlit", "Web App", 0.50, 0.53),
+                ("Runtime", "Local Server", 0.78, 0.79),
+                ("Analytics", "Ops Console", 0.22, 0.79),
             ]
         points = {}
         for label, _, x, y in nodes:
             points[label] = (width * x, height * y)
-        statuses = {"SMAI UI": self._service_status("smai ui"), "Streamlit": self._service_status("streamlit"), "Runtime": self._service_status("server ops", "runtime"), "Analytics": self.status.get().lower()}
-        for left, right in (("SMAI UI", "Streamlit"), ("Streamlit", "Runtime"), ("Streamlit", "Analytics")):
+        statuses = {
+            "SMAI UI": self._client_status("desktop"),
+            "スマートフォン": self._client_status("smartphone"),
+            "タブレット": self._client_status("tablet"),
+            "Streamlit": self._service_status("streamlit"),
+            "Runtime": self._service_status("server ops", "runtime"),
+            "Analytics": self.status.get().lower(),
+        }
+        edges = (
+            ("SMAI UI", "Streamlit"),
+            ("スマートフォン", "Streamlit"),
+            ("タブレット", "Streamlit"),
+            ("Streamlit", "Runtime"),
+            ("Streamlit", "Analytics"),
+        )
+        for index, (left, right) in enumerate(edges):
             x1, y1 = points[left]
             x2, y2 = points[right]
             edge = self._worst_status(statuses[left], statuses[right])
@@ -751,26 +1005,59 @@ class Dashboard:
             connected = edge in {"ok", "healthy", "active", "running"}
             canvas.create_line(x1, y1, x2, y2, fill=color if connected else COLORS["border_strong"], width=self._px(3), dash=() if connected else (self._px(5), self._px(4)))
             if connected:
-                progress = ((self.flow_phase + (0 if left == "SMAI UI" else 8)) % 24) / 24
+                progress = ((self.flow_phase + index * 5) % 24) / 24
                 px, py = x1 + (x2 - x1) * progress, y1 + (y2 - y1) * progress
                 dot = self._px(5)
                 canvas.create_oval(px - dot, py - dot, px + dot, py + dot, fill=COLORS["cyan"], outline="")
-            else:
-                canvas.create_text((x1 + x2) / 2, (y1 + y2) / 2 - self._px(10), text="LINK CHECK", fill=color, font=self._font(8, "bold"))
         for label, device, _, _ in nodes:
             x, y = points[label]
             color = self._status_color(statuses[label])
-            radius = self._px(33)
+            radius = self._px(23 if compact else 33)
             canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=COLORS["elevated"], outline=color, width=self._px(2))
             icon = self.topology_images.get(label)
             if icon is not None:
                 canvas.create_image(x, y, image=icon)
+            elif label == "スマートフォン":
+                self._draw_client_device(canvas, x, y, color, phone=True, compact=compact)
+            elif label == "タブレット":
+                self._draw_client_device(canvas, x, y, color, phone=False, compact=compact)
             else:
                 canvas.create_text(x, y, text=device, fill=color, font=self._font(9, "bold"))
-            canvas.create_text(x, min(y + self._px(45), height - self._px(20)), text=label, fill=COLORS["heading"], font=self._font(10, "bold"))
-            canvas.create_text(x, min(y + self._px(61), height - self._px(6)), text=f"{device} · {statuses[label].upper()}", fill=color, font=self._font(8))
-        canvas.create_text(self._px(16), self._px(16), text="LOCAL SERVICE FLOW  ·  moving cyan pulse = confirmed live path", anchor="nw", fill=COLORS["muted"], font=self._font(9, "bold"))
-        canvas.create_text(width - self._px(12), height - self._px(10), text="灰色破線 = 未計測  /  黄色・赤 = 要確認", anchor="se", fill=COLORS["muted"], font=self._font(9))
+            if compact:
+                canvas.create_text(
+                    x,
+                    min(y + radius + self._px(10), height - self._px(8)),
+                    text=label,
+                    fill=color,
+                    font=self._font(7, "bold"),
+                )
+            else:
+                canvas.create_text(x, min(y + self._px(45), height - self._px(20)), text=label, fill=COLORS["heading"], font=self._font(10, "bold"))
+                canvas.create_text(x, min(y + self._px(61), height - self._px(6)), text=f"{device} · {statuses[label].upper()}", fill=color, font=self._font(8))
+        canvas.create_text(
+            self._px(16),
+            self._px(14),
+            text="端末からの接続経路" if compact else "端末からの接続経路 · 水色の点は90秒以内の通信確認",
+            anchor="nw",
+            fill=COLORS["muted"],
+            font=self._font(8 if compact else 9, "bold"),
+        )
+        if not compact:
+            canvas.create_text(width - self._px(12), height - self._px(10), text="点線=通信証跡なし  /  黄色・赤=要確認", anchor="se", fill=COLORS["muted"], font=self._font(9))
+
+    def _draw_client_device(self, canvas: tk.Canvas, x: float, y: float, color: str, *, phone: bool, compact: bool) -> None:
+        """Draw code-native phone/tablet icons so the topology needs no tracking asset."""
+
+        scale = self._px(0.70 if compact else 1.0)
+        half_width = scale * (7 if phone else 15)
+        half_height = scale * (15 if phone else 10)
+        canvas.create_rectangle(x - half_width, y - half_height, x + half_width, y + half_height, fill=COLORS["page"], outline=color, width=self._px(2))
+        inset = self._px(3)
+        canvas.create_rectangle(x - half_width + inset, y - half_height + inset, x + half_width - inset, y + half_height - inset, fill=COLORS["surface"], outline=COLORS["blue"])
+        if phone:
+            canvas.create_oval(x - self._px(1), y + half_height - self._px(4), x + self._px(1), y + half_height - self._px(2), fill=color, outline="")
+        else:
+            canvas.create_oval(x + half_width - self._px(4), y - self._px(1), x + half_width - self._px(2), y + self._px(1), fill=color, outline="")
 
     def _service_status(self, *keywords: str) -> str:
         """Resolve topology nodes only from readable health-check evidence."""
@@ -786,8 +1073,7 @@ class Dashboard:
 
     @staticmethod
     def _worst_status(*statuses: str) -> str:
-        priority = {"critical": 5, "error": 5, "failed": 5, "degraded": 4, "stale": 4, "unknown": 3, "healthy": 1, "ok": 1, "active": 1, "running": 1}
-        return max(statuses, key=lambda item: priority.get(item.lower(), 3))
+        return worst_status(*statuses)
 
     def _draw_gauge(self) -> None:
         canvas = self.gauge_canvas
@@ -848,8 +1134,8 @@ class Dashboard:
             radius = self._px(3)
             point_color = self._status_color("healthy" if values[index // 2] >= 80 else "degraded" if values[index // 2] >= 50 else "critical")
             canvas.create_oval(points[index] - radius, points[index + 1] - radius, points[index] + radius, points[index + 1] + radius, fill=point_color, outline=COLORS["card"])
-        message = "安定推移" if all(value >= 80 for value in values) else "注意: 閾値を下回った履歴があります"
-        canvas.create_text(left, self._px(4), text=f"HEALTH SCORE（折れ線 = 各チェック時点の総合スコア） · {message}", anchor="nw", fill=COLORS["heading"], font=self._font(9, "bold"))
+        message = "安定" if all(value >= 80 for value in values) else "注意: 閾値を下回った履歴あり"
+        canvas.create_text(left, self._px(4), text=f"総合スコア · {message}", anchor="nw", fill=COLORS["heading"], font=self._font(9, "bold"))
         canvas.create_text(right, self._px(22), text="緑: 正常  /  黄: 注意  /  赤: 早期対応", anchor="ne", fill=COLORS["muted"], font=self._font(8))
 
     def _draw_checks(self, checks: list[object], overall: str, checked_at: object) -> None:
@@ -891,11 +1177,16 @@ class Dashboard:
         canvas.create_text(x + inset, top + card_height * 0.80, text=detail, anchor="w", fill=COLORS["muted"], font=self._font(8))
 
     def _session_state(self, session: dict[str, str]) -> str:
-        parsed = parse_timestamp(session.get("last_seen_at"))
-        if parsed is None:
-            return "unknown"
-        age = (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
-        return "active" if age <= 90 else "stale"
+        return heartbeat_state(session.get("last_seen_at"))
+
+    def _client_status(self, requested_type: str) -> str:
+        """Expose per-device communication only when its session evidence is readable."""
+
+        return client_connection_status(
+            self.client_sessions,
+            requested_type,
+            activity_readable=self.activity_readable,
+        )
 
     def _draw_sessions(self) -> None:
         canvas = self.session_canvas
@@ -905,9 +1196,9 @@ class Dashboard:
         stale = sum(1 for _, _, state in self.session_rows if state == "stale")
         unknown = len(self.session_rows) - active - stale
         card_width = (width - 24) / 3
-        self._canvas_metric(canvas, 0, card_width - 6, "接続中", str(active), "heartbeat が90秒以内", COLORS["green"])
-        self._canvas_metric(canvas, card_width + 6, card_width - 6, "要確認", str(stale), "heartbeat が90秒超過", COLORS["amber"])
-        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "状態不明", str(unknown), "時刻を読み取れません", COLORS["muted"])
+        self._canvas_metric(canvas, 0, card_width - 6, "接続中", str(active), "90秒以内に通信", COLORS["green"])
+        self._canvas_metric(canvas, card_width + 6, card_width - 6, "要確認", str(stale), "90秒以上通信なし", COLORS["amber"])
+        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "状態不明", str(unknown), "時刻を確認できません", COLORS["muted"])
 
     def _draw_activity(self) -> None:
         canvas = self.activity_canvas
@@ -919,7 +1210,7 @@ class Dashboard:
         cancelled = sum(1 for event in events if str(event.get("result", "")).lower() == "cancelled")
         card_width = (width - 24) / 3
         self._canvas_metric(canvas, 0, card_width - 6, "直近イベント", str(len(events)), "最大200件を表示", COLORS["blue"])
-        self._canvas_metric(canvas, card_width + 6, card_width - 6, "成功", str(ok), "result = ok", COLORS["green"])
+        self._canvas_metric(canvas, card_width + 6, card_width - 6, "成功", str(ok), "成功した操作", COLORS["green"])
         self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "失敗 / 取消", str(failed + cancelled), f"失敗 {failed} / 取消 {cancelled}", COLORS["red"] if failed else COLORS["amber"])
 
     def _draw_incidents(self) -> None:
@@ -930,9 +1221,9 @@ class Dashboard:
         latest = relative_time(self.incident_events[0].get("timestamp")) if self.incident_events else "記録なし"
         critical = sum(1 for event in self.incident_events if str(event.get("result", "")).lower() == "critical")
         card_width = (width - 24) / 3
-        self._canvas_metric(canvas, 0, card_width - 6, "障害イベント", str(count), "現在のフィルター対象", COLORS["red"] if count else COLORS["green"])
-        self._canvas_metric(canvas, card_width + 6, card_width - 6, "直近の記録", latest, "復旧状態は別途確認が必要", COLORS["amber"] if count else COLORS["green"])
-        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "Critical", str(critical), "critical result の件数", COLORS["red"] if critical else COLORS["green"])
+        self._canvas_metric(canvas, 0, card_width - 6, "該当件数", str(count), "現在の絞り込み結果", COLORS["red"] if count else COLORS["green"])
+        self._canvas_metric(canvas, card_width + 6, card_width - 6, "直近の記録", latest, "復旧状況は対象画面で確認", COLORS["amber"] if count else COLORS["green"])
+        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "重大", str(critical), "重大な障害の件数", COLORS["red"] if critical else COLORS["green"])
 
     def _draw_tasks(self) -> None:
         canvas = self.task_canvas
@@ -968,7 +1259,7 @@ class Dashboard:
         self._draw_logs()
 
     def _set_status(self, overall: str) -> None:
-        labels = {"healthy": ("HEALTHY", COLORS["green"], "All checks passing"), "degraded": ("DEGRADED", COLORS["amber"], "Attention required"), "critical": ("CRITICAL", COLORS["red"], "Critical checks failing"), "unknown": ("UNKNOWN", COLORS["muted"], "Snapshot unavailable")}
+        labels = {"healthy": ("HEALTHY", COLORS["green"], "すべてのチェックが正常"), "degraded": ("DEGRADED", COLORS["amber"], "確認が必要な項目があります"), "critical": ("CRITICAL", COLORS["red"], "重要なチェックが失敗しています"), "unknown": ("UNKNOWN", COLORS["muted"], "状態を確認できません")}
         label, color, detail = labels.get(overall, labels["unknown"])
         self.status.set(label)
         self.status_detail.set(detail)
@@ -978,7 +1269,7 @@ class Dashboard:
         try:
             subprocess.run([os.environ.get("PYTHON", "python"), str(Path(__file__).with_name("health.py"))], timeout=4, check=False, capture_output=True)
         except (OSError, subprocess.TimeoutExpired):
-            self.refresh_state.set("Health command unavailable  /  showing last snapshot")
+            self.refresh_state.set("ヘルスチェックを起動できないため、直近の状態を表示しています")
         snapshot = read_json(SNAPSHOT)
         overall = str(snapshot.get("overall", "unknown"))
         self._set_status(overall)
@@ -994,35 +1285,56 @@ class Dashboard:
         self.health_history.append((str(checked_at), self._health_score(overall)))
         self.health_history = self.health_history[-30:]
         self._draw_checks(check_items, overall, checked_at)
-        self._redraw_visuals()
         activity = read_json(ACTIVITY)
         sessions = activity.get("sessions", {})
         operations = activity.get("operations", {})
         activity_readable = ACTIVITY.is_file() and isinstance(sessions, dict) and isinstance(operations, dict)
+        self.activity_readable = activity_readable
         self.session.set(str(len(sessions)) if activity_readable else "—")
         self.operations.set(str(len(operations)) if activity_readable else "—")
         self.session_rows = []
+        self.client_sessions = []
         for item in self.sessions.get_children():
             self.sessions.delete(item)
         if activity_readable:
             for session_id, raw_session in sessions.items():
                 session = session_details(session_id, raw_session)
                 heartbeat = session["last_seen_at"]
-                state = self._session_state(session)
-                self.session_rows.append((str(session_id), heartbeat, state))
-                state_label = {"active": "● 接続中", "stale": "● 要確認", "unknown": "● 不明"}.get(state, "● 不明")
+                communication = session_connection_status(session)
+                summary_state = "active" if communication == "ok" else "stale" if communication in {"degraded", "critical"} else "unknown"
+                self.session_rows.append((str(session_id), heartbeat, summary_state))
+                self.client_sessions.append(session)
+                state_label = {
+                    "ok": "● 接続中",
+                    "degraded": "● 要確認",
+                    "critical": "● 通信失敗",
+                    "unknown": "● 不明",
+                }.get(communication, "● 不明")
                 user_label = session["profile_name"] or session["user_id"] or compact_id(session_id)
                 if session["profile_name"] and session["user_id"]:
                     user_label = f"{session['profile_name']} / {compact_id(session['user_id'])}"
+                client_label = CLIENT_TYPE_LABELS[session["client_type"]]
                 device_label = compact_id(session["device_id"]) if session["device_id"] else "—"
-                if session["connection_state"] not in {"", "connected", "unknown"}:
+                if session["connection_state"] not in {"", "connected", "unknown"} and communication != "critical":
                     state_label = f"{state_label} / {session['connection_state']}"
-                self.sessions.insert("", "end", values=(user_label, f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}", device_label, state_label), tags=(self._tree_status_tag(state),))
+                self.sessions.insert(
+                    "",
+                    "end",
+                    values=(
+                        user_label,
+                        client_label,
+                        f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}",
+                        device_label,
+                        state_label,
+                    ),
+                    tags=(self._tree_status_tag(session_connection_status(session)),),
+                )
         if not activity_readable:
             self.session_rows.append(("activity-state", None, "unknown"))
-            self.sessions.insert("", "end", values=("—", "activity state を読み取れません", "—", "● 不明"), tags=("unknown",))
+            self.sessions.insert("", "end", values=("—", "種別不明", "activity state を読み取れません", "—", "● 不明"), tags=("unknown",))
         elif not self.session_rows:
-            self.sessions.insert("", "end", values=("—", "接続中のセッションはありません", "—", "—"))
+            self.sessions.insert("", "end", values=("—", "—", "接続中のセッションはありません", "—", "—"))
+        self._redraw_visuals()
         self.activity_events = read_events()
         self.refresh_history()
         self.incident_source_events = [event for event in self.activity_events if str(event.get("result", "")).lower() in {"failed", "error", "critical"}]
@@ -1041,7 +1353,7 @@ class Dashboard:
                         compact_id(report.get("request_id"), limit=28),
                         str(report.get("severity", "" )).upper(),
                         status,
-                        str(report.get("summary", "Pending Codex or operator investigation.")),
+                        str(report.get("summary", "調査結果はまだ記録されていません。")),
                     ),
                     tags=(self._tree_status_tag(status),),
                 )
@@ -1051,10 +1363,10 @@ class Dashboard:
                     "end",
                     values=(
                         "—",
-                        "調査依頼はまだありません",
+                        "改善レポートはまだありません",
                         "—",
                         "OK",
-                        "重大なhealth警告が検知されると、ここにCodex調査・改善レポートが蓄積されます。",
+                        "重大な障害が検知されると、調査結果がここに追加されます。",
                     ),
                 )
         self.task_rows = read_task_status()
@@ -1066,14 +1378,14 @@ class Dashboard:
         self.log_lines = recent_logs()
         self.set_text(self.logs, self.log_lines)
         self._draw_tab_visuals()
-        self.refresh_state.set("Auto-refresh 5s  /  Last refresh " + datetime.now().astimezone().strftime("%H:%M:%S"))
+        self.refresh_state.set("5秒ごとに更新  /  最終更新 " + datetime.now().astimezone().strftime("%H:%M:%S"))
         self.root.after(5000, self.refresh)
 
     def refresh_history(self) -> None:
         if not hasattr(self, "history"):
             return
-        selected = self.history_filter.get()
-        window = self.history_window_filter.get()
+        selected = result_filter_key(self.history_filter.get())
+        window = time_window_key(self.history_window_filter.get())
         user_query = self.history_user_filter.get().strip().lower()
         action_query = self.history_action_filter.get().strip().lower()
         for item in self.history.get_children():
@@ -1095,10 +1407,11 @@ class Dashboard:
             self.history.insert("", "end", values=("—", "—", "操作履歴はまだありません", "SMAI本体からの監査イベント連携後に表示されます", "—", "—", "—"))
         elif matched == 0:
             self.history.insert("", "end", values=("—", "—", "条件に一致するイベントはありません", "フィルター条件を変更して再検索してください", "—", "—", "—"))
+        self.history_result_summary.set(f"表示件数: {matched}")
 
     def _clear_history_filters(self) -> None:
-        self.history_window_filter.set("24h")
-        self.history_filter.set("all")
+        self.history_window_filter.set("過去24時間")
+        self.history_filter.set("すべて")
         self.history_user_filter.set("")
         self.history_action_filter.set("")
         self.refresh_history()
@@ -1106,8 +1419,8 @@ class Dashboard:
     def refresh_incidents(self) -> None:
         if not hasattr(self, "incidents"):
             return
-        selected = self.incident_filter.get()
-        window = self.incident_window_filter.get()
+        selected = result_filter_key(self.incident_filter.get())
+        window = time_window_key(self.incident_window_filter.get())
         self.incident_events = [
             event
             for event in self.incident_source_events
@@ -1123,6 +1436,12 @@ class Dashboard:
             self.incidents.insert("", "end", values=("—", "障害は記録されていません", "現在の監査イベントに failed / error / critical はありません", "OK"))
         elif not self.incident_events:
             self.incidents.insert("", "end", values=("—", "条件に一致する障害はありません", "重要度フィルターを変更して再検索してください", "—"))
+        self.incident_result_summary.set(f"表示件数: {len(self.incident_events)}")
+
+    def _clear_incident_filters(self) -> None:
+        self.incident_window_filter.set("過去7日間")
+        self.incident_filter.set("すべて")
+        self.refresh_incidents()
 
 
 def main() -> None:
