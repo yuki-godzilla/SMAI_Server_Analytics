@@ -5,7 +5,7 @@ import math
 import os
 import subprocess
 import tkinter as tk
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tkinter import ttk
 
@@ -178,6 +178,20 @@ def relative_time(value: object) -> str:
     if seconds < 86400:
         return f"{seconds // 3600}時間前"
     return f"{seconds // 86400}日前"
+
+
+def event_within_window(value: object, window: str, *, now: datetime | None = None) -> bool:
+    """Filter audit events by a fixed recent window without treating bad times as recent."""
+
+    hours_by_window = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
+    if window == "all":
+        return True
+    parsed = parse_timestamp(value)
+    hours = hours_by_window.get(window)
+    if parsed is None or hours is None:
+        return False
+    current = now or datetime.now(UTC)
+    return parsed.astimezone(UTC) >= current.astimezone(UTC) - timedelta(hours=hours)
 
 
 def compact_id(value: object, limit: int = 18) -> str:
@@ -416,6 +430,9 @@ class Dashboard:
         self.activity_canvas.pack(fill="x", padx=12, pady=(0, 12))
         controls = ttk.Frame(history, style="Surface.TFrame")
         controls.pack(fill="x", pady=(0, 10))
+        ttk.Label(controls, text="期間", style="Section.TLabel").pack(side="left")
+        self.history_window_filter = tk.StringVar(value="24h")
+        ttk.Combobox(controls, textvariable=self.history_window_filter, values=("24h", "7d", "30d", "all"), state="readonly", width=8).pack(side="left", padx=(8, 12))
         ttk.Label(controls, text="結果フィルター", style="Section.TLabel").pack(side="left")
         self.history_filter = tk.StringVar(value="all")
         ttk.Combobox(controls, textvariable=self.history_filter, values=("all", "ok", "failed", "cancelled"), state="readonly", width=14).pack(side="left", padx=10)
@@ -434,6 +451,9 @@ class Dashboard:
         self.incident_canvas.pack(fill="x", padx=12, pady=(0, 12))
         incident_controls = ttk.Frame(incidents, style="Surface.TFrame")
         incident_controls.pack(fill="x", pady=(0, 10))
+        ttk.Label(incident_controls, text="期間", style="Section.TLabel").pack(side="left")
+        self.incident_window_filter = tk.StringVar(value="7d")
+        ttk.Combobox(incident_controls, textvariable=self.incident_window_filter, values=("24h", "7d", "30d", "all"), state="readonly", width=8).pack(side="left", padx=(8, 12))
         ttk.Label(incident_controls, text="重要度フィルター", style="Section.TLabel").pack(side="left")
         self.incident_filter = tk.StringVar(value="all")
         ttk.Combobox(incident_controls, textvariable=self.incident_filter, values=("all", "failed", "error", "critical"), state="readonly", width=14).pack(side="left", padx=10)
@@ -801,12 +821,15 @@ class Dashboard:
         if not hasattr(self, "history"):
             return
         selected = self.history_filter.get()
+        window = self.history_window_filter.get()
         user_query = self.history_user_filter.get().strip().lower()
         action_query = self.history_action_filter.get().strip().lower()
         for item in self.history.get_children():
             self.history.delete(item)
         matched = 0
         for event in self.activity_events:
+            if not event_within_window(event.get("timestamp"), window):
+                continue
             if selected != "all" and str(event.get("result", "")).lower() != selected:
                 continue
             if user_query and user_query not in str(event.get("user_id", "")).lower():
@@ -822,6 +845,7 @@ class Dashboard:
             self.history.insert("", "end", values=("—", "—", "条件に一致するイベントはありません", "フィルター条件を変更して再検索してください", "—", "—", "—"))
 
     def _clear_history_filters(self) -> None:
+        self.history_window_filter.set("24h")
         self.history_filter.set("all")
         self.history_user_filter.set("")
         self.history_action_filter.set("")
@@ -831,10 +855,12 @@ class Dashboard:
         if not hasattr(self, "incidents"):
             return
         selected = self.incident_filter.get()
+        window = self.incident_window_filter.get()
         self.incident_events = [
             event
             for event in self.incident_source_events
-            if selected == "all" or str(event.get("result", "")).lower() == selected
+            if event_within_window(event.get("timestamp"), window)
+            and (selected == "all" or str(event.get("result", "")).lower() == selected)
         ]
         for item in self.incidents.get_children():
             self.incidents.delete(item)

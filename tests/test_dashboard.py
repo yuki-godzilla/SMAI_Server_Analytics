@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import dashboard
@@ -15,6 +16,13 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(dashboard.ui_scale_for_display(1920, 1080), 1.0)
         self.assertGreater(dashboard.ui_scale_for_display(3840, 2160), 1.5)
         self.assertLessEqual(dashboard.ui_scale_for_display(7680, 4320), 1.65)
+
+    def test_event_window_rejects_bad_and_expired_timestamps(self) -> None:
+        now = datetime(2026, 7, 11, 12, tzinfo=UTC)
+        self.assertTrue(dashboard.event_within_window("2026-07-11T11:00:00Z", "24h", now=now))
+        self.assertFalse(dashboard.event_within_window("2026-07-10T11:00:00Z", "24h", now=now))
+        self.assertFalse(dashboard.event_within_window("not-a-time", "7d", now=now))
+        self.assertTrue(dashboard.event_within_window("not-a-time", "all", now=now))
 
     def test_parse_timestamp_accepts_utc_z_suffix(self) -> None:
         parsed = dashboard.parse_timestamp("2026-07-11T04:24:17Z")
