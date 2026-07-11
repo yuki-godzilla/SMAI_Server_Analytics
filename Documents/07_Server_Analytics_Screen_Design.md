@@ -49,3 +49,14 @@ token、secret、password、通知topic、入力本文、完全なIPアドレス
 
 空データを正常稼働と表示しない。
 
+## UI妥当性評価スプリント（2026-07-11）
+
+実際に起動したTkinter画面をOverview、Sessions、Activity History、Incidents、Tasks、Logsの順に確認した。以下を画面設計の受け入れ基準とする。
+
+- 各タブの上部に、まず運用判断に使う要約カードまたは可視化を置く。詳細表・生ログは下段の調査用情報とする。
+- SessionsはセッションIDの全表示やUTCの生表記を主表示にしない。IDは短縮し、heartbeatは相対時刻とローカル時刻を併記する。90秒を超えるheartbeatは`stale`として要確認に分類する。
+- Activity HistoryとIncidentsはイベントがない場合、空の表だけを表示しない。データが未連携または障害未記録である理由を表示する。
+- Tasksの`unknown`は正常ではない。未登録、権限不足、タスク取得不能のいずれかとして、要確認数に含める。
+- Logsは生ログだけを主表示にしない。表示行数、warning、error/failed/criticalの検出数を先に表示し、障害の一次判断を助ける。
+- 地理的な地図は単一PCのlocal-first運用では優先しない。代わりにSMAI UI、Streamlit、Runtime、Analyticsの依存関係を表すservice topologyを使用する。
+- Notebook表示では、DPI倍率を考慮して起動時に画面内へ自動フィットする。KPIカードは均等幅のgridで配置し、長い時刻・状態説明・パス文字列によって右端が押し出されないことを確認する。
