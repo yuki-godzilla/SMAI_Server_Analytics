@@ -24,7 +24,8 @@ LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_RO
 ASSET_ROOT = Path(__file__).with_name("assets")
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
-ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-v2-transparent.png"
+ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-professional.png"
+TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TASKS = (
     "SMAI-Server-Analytics",
     "SmartMarketAI-Server-Autostart",
@@ -264,14 +265,21 @@ class Dashboard:
         self.incident_source_events: list[dict[str, object]] = []
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
+        self.flow_phase = 0
         self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=56, max_height=56)
         self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=150, max_height=150)
-        # Keep the regenerated 3:1 wordmark's natural ratio; never stretch it to fill a wider slot.
-        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=500, max_height=130)
+        self.wordmark_shield_image, self.wordmark_lettering_image = self._load_wordmark_parts(ANALYTICS_WORDMARK, max_height=150)
+        self.topology_images = {
+            "SMAI UI": self._load_sprite_tile(TOPOLOGY_SPRITE, 0, max_width=74, max_height=74),
+            "Streamlit": self._load_sprite_tile(TOPOLOGY_SPRITE, 1, max_width=74, max_height=74),
+            "Runtime": self._load_sprite_tile(TOPOLOGY_SPRITE, 2, max_width=74, max_height=74),
+            "Analytics": self._load_sprite_tile(TOPOLOGY_SPRITE, 3, max_width=74, max_height=74),
+        }
         self.check_statuses: dict[str, str] = {}
         self._configure_style()
         self._build()
         self.refresh()
+        self._animate_topology()
 
     def _configure_dpi_scaling(self) -> None:
         """Align Tk logical units with the current Windows monitor DPI."""
@@ -296,18 +304,60 @@ class Dashboard:
             if Image is not None and ImageTk is not None:
                 with Image.open(path) as source:
                     source = source.convert("RGBA")
+                    bounds = source.getbbox()
+                    if bounds is not None:
+                        source = source.crop(bounds)
                     scale = min(max_width / source.width, max_height / source.height, 1.0)
                     size = (max(1, round(source.width * scale)), max(1, round(source.height * scale)))
-                    resized = source.resize(size, Image.Resampling.LANCZOS)
-                    return ImageTk.PhotoImage(resized)
+                    return ImageTk.PhotoImage(source.resize(size, Image.Resampling.LANCZOS))
             fallback_path = path.with_name(f"{path.stem}-header{path.suffix}")
-            if self.ui_scale > 1.05:
-                fallback_path = path
             image = tk.PhotoImage(file=str(fallback_path if fallback_path.is_file() else path))
             factor = max(1, math.ceil(image.width() / max_width), math.ceil(image.height() / max_height))
             return image.subsample(factor, factor) if factor > 1 else image
         except (AttributeError, OSError, ValueError, tk.TclError):
             return None
+
+    def _load_sprite_tile(self, path: Path, index: int, *, max_width: int, max_height: int) -> object | None:
+        """Load one of four generated topology illustrations without a visible sprite sheet."""
+        if Image is None or ImageTk is None or not path.is_file():
+            return None
+        try:
+            with Image.open(path) as source:
+                source = source.convert("RGBA")
+                tile_width, tile_height = source.width // 2, source.height // 2
+                column, row = index % 2, index // 2
+                tile = source.crop((column * tile_width, row * tile_height, (column + 1) * tile_width, (row + 1) * tile_height))
+                bounds = tile.getbbox()
+                if bounds is not None:
+                    tile = tile.crop(bounds)
+                width = max(1, round(max_width * self.ui_scale))
+                height = max(1, round(max_height * self.ui_scale))
+                ratio = min(width / tile.width, height / tile.height, 1.0)
+                tile = tile.resize((max(1, round(tile.width * ratio)), max(1, round(tile.height * ratio))), Image.Resampling.LANCZOS)
+                return ImageTk.PhotoImage(tile)
+        except (OSError, ValueError, tk.TclError):
+            return None
+
+    def _load_wordmark_parts(self, path: Path, *, max_height: int) -> tuple[object | None, object | None]:
+        """Keep shield and lettering equally prominent without distorting either."""
+        if Image is None or ImageTk is None or not path.is_file():
+            return None, None
+        try:
+            with Image.open(path) as source:
+                source = source.convert("RGBA")
+                split = int(source.width * 0.205)
+                images: list[object] = []
+                for crop in (source.crop((0, 0, split, source.height)), source.crop((split, 0, source.width, source.height))):
+                    bounds = crop.getbbox()
+                    if bounds is None:
+                        return None, None
+                    crop = crop.crop(bounds)
+                    target_height = max(1, round(max_height * self.ui_scale))
+                    target_width = max(1, round(crop.width * target_height / crop.height))
+                    images.append(ImageTk.PhotoImage(crop.resize((target_width, target_height), Image.Resampling.LANCZOS)))
+                return images[0], images[1]
+        except (OSError, ValueError, tk.TclError):
+            return None, None
 
     def _fit_window_to_screen(self) -> None:
         """Fit the console inside the current display, including notebook PCs."""
@@ -384,8 +434,11 @@ class Dashboard:
         header.pack(fill="x", pady=(0, self._px(16)))
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
-        if self.wordmark_image is not None:
-            tk.Label(brand_block, image=self.wordmark_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(anchor="w")
+        if self.wordmark_shield_image is not None and self.wordmark_lettering_image is not None:
+            mark = ttk.Frame(brand_block, style="App.TFrame")
+            mark.pack(anchor="w")
+            tk.Label(mark, image=self.wordmark_shield_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left")
+            tk.Label(mark, image=self.wordmark_lettering_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(self._px(14), 0))
             ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(4), 0))
         else:
             if self.logo_image is not None:
@@ -585,37 +638,61 @@ class Dashboard:
         self._draw_gauge()
         self._draw_trend()
 
+    def _animate_topology(self) -> None:
+        self.flow_phase = (self.flow_phase + 1) % 24
+        if hasattr(self, "map_canvas"):
+            self._draw_service_map()
+        self.root.after(420, self._animate_topology)
+
+    def _health_narrative(self) -> tuple[str, str, str]:
+        overall = self.status.get().lower()
+        checked = self.checked.get()
+        if overall == "healthy":
+            return ("運用は安定", "L1 接続・L2 画面応答・L3 ローカル保存の全観点が直近チェックで正常です。", f"最終チェック {checked}。通常監視を継続します。")
+        if overall == "degraded":
+            return ("一部の観測点に注意", "入口は到達可能ですが、アプリ応答またはローカル状態に確認が必要な項目があります。", "CHECK MATRIX の黄色行から対象と詳細を確認してください。")
+        if overall == "critical":
+            return ("サービス継続性に影響", "L1 の入口到達性に失敗があります。利用者影響が発生し得るため優先調査が必要です。", "接続経路とStreamlitプロセスを最優先で確認してください。")
+        return ("監視証跡を取得できません", "現在の状態を正常と判断できるスナップショットがありません。", "health.py とRuntimeへの書き込み状態を確認してください。")
+
     def _draw_service_map(self) -> None:
         canvas = self.map_canvas
         canvas.delete("all")
         width = max(canvas.winfo_width(), 400)
         height = max(canvas.winfo_height(), 180)
-        nodes = [("SMAI UI", 0.17, 0.28), ("Streamlit", 0.50, 0.28), ("Runtime", 0.83, 0.28), ("Analytics", 0.50, 0.68)]
+        nodes = [("SMAI UI", "PC UI", 0.17, 0.40), ("Streamlit", "Tablet Web App", 0.50, 0.40), ("Runtime", "Local Server", 0.83, 0.40), ("Analytics", "Ops Console", 0.50, 0.68)]
         points = {}
-        for label, x, y in nodes:
+        for label, _, x, y in nodes:
             points[label] = (width * x, height * y)
+        statuses = {"SMAI UI": self._service_status("smai ui"), "Streamlit": self._service_status("streamlit"), "Runtime": self._service_status("server ops", "runtime"), "Analytics": self.status.get().lower()}
         for left, right in (("SMAI UI", "Streamlit"), ("Streamlit", "Runtime"), ("Streamlit", "Analytics")):
             x1, y1 = points[left]
             x2, y2 = points[right]
-            canvas.create_line(x1, y1, x2, y2, fill=COLORS["border_strong"], width=self._px(2))
-            dot = self._px(3)
-            canvas.create_oval((x1 + x2) / 2 - dot, (y1 + y2) / 2 - dot, (x1 + x2) / 2 + dot, (y1 + y2) / 2 + dot, fill=COLORS["cyan"], outline="")
-        statuses = {
-            "SMAI UI": self._service_status("smai ui"),
-            "Streamlit": self._service_status("streamlit"),
-            "Runtime": self._service_status("server ops", "runtime"),
-            "Analytics": self.status.get().lower(),
-        }
-        for label, _, _ in nodes:
+            edge = self._worst_status(statuses[left], statuses[right])
+            color = self._status_color(edge)
+            connected = edge in {"ok", "healthy", "active", "running"}
+            canvas.create_line(x1, y1, x2, y2, fill=color if connected else COLORS["border_strong"], width=self._px(3), dash=() if connected else (self._px(5), self._px(4)))
+            if connected:
+                progress = ((self.flow_phase + (0 if left == "SMAI UI" else 8)) % 24) / 24
+                px, py = x1 + (x2 - x1) * progress, y1 + (y2 - y1) * progress
+                dot = self._px(5)
+                canvas.create_oval(px - dot, py - dot, px + dot, py + dot, fill=COLORS["cyan"], outline="")
+            else:
+                canvas.create_text((x1 + x2) / 2, (y1 + y2) / 2 - self._px(10), text="LINK CHECK", fill=color, font=self._font(8, "bold"))
+        for label, device, _, _ in nodes:
             x, y = points[label]
             color = self._status_color(statuses[label])
-            radius = self._px(27)
-            core = self._px(8)
+            radius = self._px(38)
             canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=COLORS["elevated"], outline=color, width=self._px(2))
-            canvas.create_oval(x - core, y - core, x + core, y + core, fill=color, outline="")
-            canvas.create_text(x, min(y + self._px(40), height - self._px(10)), text=label, fill=COLORS["heading"], font=self._font(10, "bold"))
-        canvas.create_text(self._px(16), self._px(16), text="LOCAL SERVICE FLOW", anchor="nw", fill=COLORS["muted"], font=self._font(9, "bold"))
-        canvas.create_text(width - self._px(12), height - self._px(10), text="灰色 = health check 未計測", anchor="se", fill=COLORS["muted"], font=self._font(9))
+            icon = self.topology_images.get(label)
+            if icon is not None:
+                canvas.create_image(x, y, image=icon)
+            else:
+                canvas.create_text(x, y, text=device, fill=color, font=self._font(9, "bold"))
+            canvas.create_text(x, min(y + self._px(55), height - self._px(20)), text=label, fill=COLORS["heading"], font=self._font(10, "bold"))
+            canvas.create_text(x, min(y + self._px(72), height - self._px(6)), text=f"{device} · {statuses[label].upper()}", fill=color, font=self._font(8))
+        canvas.create_text(self._px(16), self._px(16), text="LOCAL SERVICE FLOW  ·  moving cyan pulse = confirmed live path", anchor="nw", fill=COLORS["muted"], font=self._font(9, "bold"))
+        canvas.create_text(width - self._px(12), height - self._px(10), text="灰色破線 = 未計測  /  黄色・赤 = 要確認", anchor="se", fill=COLORS["muted"], font=self._font(9))
 
     def _service_status(self, *keywords: str) -> str:
         """Resolve topology nodes only from readable health-check evidence."""
@@ -629,6 +706,11 @@ class Dashboard:
         priority = {"critical": 4, "error": 4, "failed": 4, "degraded": 3, "unknown": 2, "healthy": 1, "ok": 1}
         return max(matches, key=lambda item: priority.get(item, 2))
 
+    @staticmethod
+    def _worst_status(*statuses: str) -> str:
+        priority = {"critical": 5, "error": 5, "failed": 5, "degraded": 4, "stale": 4, "unknown": 3, "healthy": 1, "ok": 1, "active": 1, "running": 1}
+        return max(statuses, key=lambda item: priority.get(item.lower(), 3))
+
     def _draw_gauge(self) -> None:
         canvas = self.gauge_canvas
         canvas.delete("all")
@@ -636,22 +718,34 @@ class Dashboard:
         height = max(canvas.winfo_height(), 180)
         score = self._health_score(self.status.get().lower())
         color = self._status_color(self.status.get().lower())
-        size = min(self._px(180), max(self._px(128), min(width - self._px(40), height - self._px(44))))
-        cx, cy = width / 2, height / 2 + 8
+        title, summary, action = self._health_narrative()
+        size = min(self._px(180), max(self._px(128), min(width * 0.42, height - self._px(44))))
+        cx, cy = width * 0.29, height / 2 + self._px(8)
         box = (cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
         canvas.create_arc(*box, start=135, extent=-270, style="arc", outline=COLORS["elevated"], width=self._px(13))
         canvas.create_arc(*box, start=135, extent=-270 * score / 100, style="arc", outline=color, width=self._px(13))
         canvas.create_text(cx, cy - self._px(4), text=str(score), fill=COLORS["heading"], font=self._font(30, "bold"))
         canvas.create_text(cx, cy + self._px(30), text="/ 100", fill=COLORS["muted"], font=self._font(10))
         canvas.create_text(cx, self._px(18), text=self.status.get(), fill=color, font=self._font(11, "bold"))
+        text_x = width * 0.54
+        canvas.create_text(text_x, self._px(34), text=title, anchor="nw", fill=color, font=self._font(14, "bold"))
+        canvas.create_text(text_x, self._px(66), text=summary, anchor="nw", width=width - text_x - self._px(18), fill=COLORS["text"], font=self._font(10), justify="left")
+        canvas.create_text(text_x, height - self._px(52), text=action, anchor="nw", width=width - text_x - self._px(18), fill=COLORS["muted"], font=self._font(9), justify="left")
+        canvas.create_text(text_x, height - self._px(22), text="SCORE: L1 到達性  /  L2 画面応答  /  L3 ローカル状態", anchor="nw", fill=COLORS["blue"], font=self._font(8, "bold"))
 
     def _draw_trend(self) -> None:
         canvas = self.trend_canvas
         canvas.delete("all")
         width = max(canvas.winfo_width(), 400)
         height = max(canvas.winfo_height(), 120)
-        left, right, top, bottom = 30, width - 18, 20, height - 26
-        for ratio in (0.0, 0.5, 1.0):
+        left, right, top, bottom = self._px(38), width - self._px(18), self._px(34), height - self._px(32)
+        zones = ((80, 100, "#123C39", "NORMAL ≥80"), (50, 80, "#3C3518", "WATCH 50–79"), (0, 50, "#40222A", "CRITICAL <50"))
+        for low, high, fill, label in zones:
+            y1 = bottom - (bottom - top) * high / 100
+            y2 = bottom - (bottom - top) * low / 100
+            canvas.create_rectangle(left, y1, right, y2, fill=fill, outline="")
+            canvas.create_text(right - self._px(4), (y1 + y2) / 2, text=label, anchor="e", fill=COLORS["muted"], font=self._font(7, "bold"))
+        for ratio in (0.0, 0.5, 0.8, 1.0):
             y = bottom - (bottom - top) * ratio
             canvas.create_line(left, y, right, y, fill=COLORS["border"], dash=(2, 4))
             canvas.create_text(self._px(4), y, text=str(int(ratio * 100)), anchor="w", fill=COLORS["muted"], font=self._font(8))
@@ -662,30 +756,44 @@ class Dashboard:
             y = bottom - (bottom - top) * value / 100
             points.extend((x, y))
         if len(points) >= 4:
-            canvas.create_line(*points, fill=COLORS["cyan"], width=self._px(2), smooth=True)
+            for index in range(0, len(points) - 2, 2):
+                segment_score = values[index + 1]
+                canvas.create_line(*points[index:index + 4], fill=self._status_color("healthy" if segment_score >= 80 else "degraded" if segment_score >= 50 else "critical"), width=self._px(3), smooth=True)
         for index in range(0, len(points), 2):
             radius = self._px(3)
-            canvas.create_oval(points[index] - radius, points[index + 1] - radius, points[index] + radius, points[index + 1] + radius, fill=COLORS["cyan"], outline=COLORS["card"])
-        canvas.create_text(left, self._px(3), text="HEALTH SCORE", anchor="nw", fill=COLORS["muted"], font=self._font(9, "bold"))
+            point_color = self._status_color("healthy" if values[index // 2] >= 80 else "degraded" if values[index // 2] >= 50 else "critical")
+            canvas.create_oval(points[index] - radius, points[index + 1] - radius, points[index] + radius, points[index + 1] + radius, fill=point_color, outline=COLORS["card"])
+        times = [timestamp for timestamp, _ in self.health_history[-30:]]
+        for index in range(0, len(times), max(1, len(times) // 4)):
+            x = left if len(times) == 1 else left + (right - left) * index / (len(times) - 1)
+            canvas.create_text(x, bottom + self._px(14), text=compact_timestamp(times[index]), fill=COLORS["muted"], font=self._font(7))
+        message = "安定推移" if all(value >= 80 for value in values) else "注意: 閾値を下回った履歴があります"
+        canvas.create_text(left, self._px(4), text=f"HEALTH SCORE  ·  {message}", anchor="nw", fill=COLORS["heading"], font=self._font(9, "bold"))
 
     def _draw_checks(self, checks: list[object], overall: str, checked_at: object) -> None:
         canvas = self.health
         canvas.delete("all")
         width = max(canvas.winfo_width(), 300)
-        canvas.create_text(0, self._px(4), text=f"OVERALL  {overall.upper()}   ·   {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=self._font(9, "bold"))
+        title, _, action = self._health_narrative()
+        canvas.create_text(0, self._px(4), text=f"{title}  ·  {overall.upper()}  ·  {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=self._font(9, "bold"))
         height = max(canvas.winfo_height(), 90)
         valid_checks = [item for item in checks if isinstance(item, dict)]
-        line_height = max(self._px(18), min(self._px(28), (height - self._px(44)) / max(len(valid_checks), 1)))
-        y = self._px(30)
+        line_height = max(self._px(18), min(self._px(25), (height - self._px(100)) / max(len(valid_checks), 1)))
+        y = self._px(34)
         for item in valid_checks:
             status = str(item.get("status", "unknown"))
             dot = self._px(5)
             canvas.create_oval(0, y + self._px(3), dot * 2, y + self._px(3) + dot * 2, fill=self._status_color(status), outline="")
-            canvas.create_text(self._px(18), y, text=f"{item.get('level', '??')}  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=self._font(9))
+            level = str(item.get("level", "??"))
+            meaning = {"L1": "入口", "L2": "画面", "L3": "保存"}.get(level, "観測")
+            canvas.create_text(self._px(18), y, text=f"{level} {meaning}  ·  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=self._font(9))
             canvas.create_text(width - self._px(4), y, text=status.upper(), anchor="ne", fill=self._status_color(status), font=self._font(9, "bold"))
             y += line_height
         if not valid_checks:
             canvas.create_text(0, y, text="No readable health checks are available.", anchor="nw", fill=COLORS["muted"], font=self._font(10))
+        if height >= self._px(250):
+            canvas.create_text(0, height - self._px(26), text="見方: L1 入口到達性（失敗=critical）  /  L2 画面応答  /  L3 ローカル保存（失敗=degraded）", anchor="nw", fill=COLORS["blue"], font=self._font(8, "bold"))
+            canvas.create_text(0, height - self._px(10), text=action, anchor="nw", fill=COLORS["muted"], font=self._font(8))
 
     def _canvas_metric(self, canvas: tk.Canvas, x: float, width: float, label: str, value: str, detail: str, color: str) -> None:
         top, bottom = self._px(12), self._px(112)
