@@ -78,6 +78,30 @@ def read_events(limit: int = 200) -> list[dict[str, object]]:
     return list(reversed(events))
 
 
+def session_details(session_id: object, value: object) -> dict[str, str]:
+    """Read legacy timestamp sessions and the v2 descriptive session contract."""
+
+    if isinstance(value, dict):
+        return {
+            "session_id": str(session_id),
+            "last_seen_at": str(value.get("last_seen_at") or ""),
+            "user_id": str(value.get("user_id") or ""),
+            "profile_name": str(value.get("profile_name") or ""),
+            "device_id": str(value.get("device_id") or ""),
+            "platform": str(value.get("platform") or ""),
+            "connection_state": str(value.get("connection_state") or "unknown"),
+        }
+    return {
+        "session_id": str(session_id),
+        "last_seen_at": str(value or ""),
+        "user_id": "",
+        "profile_name": "",
+        "device_id": "",
+        "platform": "",
+        "connection_state": "unknown",
+    }
+
+
 def recent_logs() -> list[str]:
     files = [path for root in LOG_ROOTS if root.exists() for path in root.glob("*.log")]
     files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
@@ -161,6 +185,18 @@ def compact_id(value: object, limit: int = 18) -> str:
     return text if len(text) <= limit else f"{text[:8]}…{text[-6:]}"
 
 
+def ui_scale_for_display(width: int, height: int) -> float:
+    """Return a conservative content scale for large desktop displays.
+
+    Tk's DPI scaling keeps fonts sharp, but it intentionally does not make a
+    9pt operations console more legible just because there are twice as many
+    pixels available.  This scale handles that layout decision separately.
+    """
+
+    desktop_scale = max(width / 1920, height / 1080)
+    return max(1.0, min(1.65, desktop_scale))
+
+
 class Dashboard:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -171,6 +207,7 @@ class Dashboard:
             self.ui_scale = max(1.0, min(2.5, float(self.root.tk.call("tk", "scaling"))))
         except (tk.TclError, TypeError, ValueError):
             self.ui_scale = 1.0
+        self.content_scale = ui_scale_for_display(self.root.winfo_screenwidth(), self.root.winfo_screenheight())
         self.root.configure(bg=COLORS["page"])
         self.status = tk.StringVar(value="CHECKING")
         self.status_detail = tk.StringVar(value="Collecting server health")
@@ -186,9 +223,9 @@ class Dashboard:
         self.task_rows: list[tuple[str, str, str]] = []
         self.log_lines: list[str] = []
         self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=56, max_height=56)
-        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=133, max_height=133)
+        self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=150, max_height=150)
         # Keep the regenerated 3:1 wordmark's natural ratio; never stretch it to fill a wider slot.
-        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=360, max_height=120)
+        self.wordmark_image = self._load_brand_image(ANALYTICS_WORDMARK, max_width=500, max_height=130)
         self.check_statuses: dict[str, str] = {}
         self._configure_style()
         self._build()
@@ -251,12 +288,16 @@ class Dashboard:
                 base_height = max(600, int(get_metrics(1, 96)))
             except (AttributeError, OSError):
                 pass
-        # Tk geometry units are DPI-aware on Windows. Convert the base
-        # desktop size into Tk units so a crisp window still fits physically.
-        min_width = max(420, int(640 / scaling))
-        min_height = max(320, int(460 / scaling))
-        width = min(1360, max(min_width, int(base_width * 0.92 / scaling)))
-        height = min(860, max(min_height, int(base_height * 0.88 / scaling)))
+        # Use the available desktop rather than a fixed 1360px ceiling.  The
+        # console is designed for an always-on desktop and should make useful
+        # use of 1440p/4K displays while still fitting smaller notebooks.
+        min_width = max(720, int(980 / scaling))
+        min_height = max(520, int(680 / scaling))
+        # Geometry is already expressed in the monitor's desktop units.  Do
+        # not divide by Tk scaling here: doing so makes a 200%-scaled 4K
+        # desktop occupy only about half of the usable screen.
+        width = max(min_width, int(base_width * 0.96))
+        height = max(min_height, int(base_height * 0.92))
         width = min(width, screen_width - 20)
         height = min(height, screen_height - 56)
         self.root.minsize(min(min_width, width), min(min_height, height))
@@ -264,39 +305,46 @@ class Dashboard:
         y = max(0, (screen_height - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
+    def _font(self, size: float, weight: str = "normal", family: str = "Segoe UI") -> tuple[str, int, str]:
+        """Use one legible typography scale across widgets and drawings."""
+        return (family, max(8, round(size * self.content_scale)), weight)
+
+    def _px(self, value: float, minimum: int = 1) -> int:
+        return max(minimum, round(value * self.content_scale))
+
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
         style.theme_use("clam")
         style.configure("App.TFrame", background=COLORS["page"])
         style.configure("Surface.TFrame", background=COLORS["surface"])
         style.configure("Card.TFrame", background=COLORS["card"])
-        style.configure("Title.TLabel", background=COLORS["page"], foreground=COLORS["heading"], font=("Segoe UI", 22, "bold"))
-        style.configure("Subtitle.TLabel", background=COLORS["page"], foreground=COLORS["muted"], font=("Segoe UI", 10))
-        style.configure("Section.TLabel", background=COLORS["surface"], foreground=COLORS["heading"], font=("Segoe UI", 11, "bold"))
-        style.configure("CardLabel.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=("Segoe UI", 9, "bold"))
-        style.configure("CardValue.TLabel", background=COLORS["card"], foreground=COLORS["heading"], font=("Segoe UI", 18, "bold"))
-        style.configure("CardMeta.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=("Segoe UI", 9))
+        style.configure("Title.TLabel", background=COLORS["page"], foreground=COLORS["heading"], font=self._font(24, "bold"))
+        style.configure("Subtitle.TLabel", background=COLORS["page"], foreground=COLORS["muted"], font=self._font(11))
+        style.configure("Section.TLabel", background=COLORS["surface"], foreground=COLORS["heading"], font=self._font(11, "bold"))
+        style.configure("CardLabel.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=self._font(9, "bold"))
+        style.configure("CardValue.TLabel", background=COLORS["card"], foreground=COLORS["heading"], font=self._font(20, "bold"))
+        style.configure("CardMeta.TLabel", background=COLORS["card"], foreground=COLORS["muted"], font=self._font(10))
         style.configure("TNotebook", background=COLORS["page"], borderwidth=0, tabmargins=(0, 0, 0, 0))
-        style.configure("TNotebook.Tab", background=COLORS["surface"], foreground=COLORS["muted"], padding=(16, 8), borderwidth=0, font=("Segoe UI", 9, "bold"))
+        style.configure("TNotebook.Tab", background=COLORS["surface"], foreground=COLORS["muted"], padding=(self._px(18), self._px(9)), borderwidth=0, font=self._font(10, "bold"))
         style.map("TNotebook.Tab", background=[("selected", COLORS["card"])], foreground=[("selected", COLORS["cyan"])], expand=[("selected", (0, 1, 0, 0))])
-        style.configure("Treeview", background=COLORS["surface"], fieldbackground=COLORS["surface"], foreground=COLORS["text"], rowheight=30, borderwidth=0, font=("Segoe UI", 9))
-        style.configure("Treeview.Heading", background=COLORS["elevated"], foreground=COLORS["heading"], relief="flat", font=("Segoe UI", 9, "bold"))
+        style.configure("Treeview", background=COLORS["surface"], fieldbackground=COLORS["surface"], foreground=COLORS["text"], rowheight=self._px(32), borderwidth=0, font=self._font(10))
+        style.configure("Treeview.Heading", background=COLORS["elevated"], foreground=COLORS["heading"], relief="flat", font=self._font(10, "bold"))
         style.map("Treeview", background=[("selected", COLORS["card_hover"])], foreground=[("selected", COLORS["heading"])])
-        style.configure("TButton", background=COLORS["elevated"], foreground=COLORS["heading"], borderwidth=1, padding=(12, 7), font=("Segoe UI", 9, "bold"))
+        style.configure("TButton", background=COLORS["elevated"], foreground=COLORS["heading"], borderwidth=1, padding=(self._px(12), self._px(7)), font=self._font(10, "bold"))
         style.map("TButton", background=[("active", COLORS["card_hover"])], foreground=[("active", COLORS["cyan"])])
         style.configure("TCombobox", fieldbackground=COLORS["surface"], background=COLORS["surface"], foreground=COLORS["text"])
         style.configure("TEntry", fieldbackground=COLORS["surface"], foreground=COLORS["text"], insertcolor=COLORS["text"])
 
     def _build(self) -> None:
-        outer = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20, 24, 14))
+        outer = ttk.Frame(self.root, style="App.TFrame", padding=(self._px(28), self._px(24), self._px(28), self._px(16)))
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer, style="App.TFrame")
-        header.pack(fill="x", pady=(0, 12))
+        header.pack(fill="x", pady=(0, self._px(16)))
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
         if self.wordmark_image is not None:
             tk.Label(brand_block, image=self.wordmark_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(anchor="w")
-            ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(2, 0))
+            ttk.Label(brand_block, text="Operations Console  /  Always-on local monitoring", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(4), 0))
         else:
             if self.logo_image is not None:
                 tk.Label(brand_block, image=self.logo_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
@@ -310,27 +358,27 @@ class Dashboard:
             tk.Label(status_block, image=self.mascot_image, bg=COLORS["page"], bd=0, highlightthickness=0).pack(side="left", padx=(0, 12))
         status_text = ttk.Frame(status_block, style="App.TFrame")
         status_text.pack(side="left", anchor="n")
-        self.status_label = tk.Label(status_text, textvariable=self.status, bg=COLORS["elevated"], fg=COLORS["cyan"], font=("Segoe UI", 11, "bold"), padx=14, pady=7)
+        self.status_label = tk.Label(status_text, textvariable=self.status, bg=COLORS["elevated"], fg=COLORS["cyan"], font=self._font(11, "bold"), padx=self._px(16), pady=self._px(8))
         self.status_label.pack(anchor="e")
         ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
-        facts.pack(fill="x", pady=(0, 14))
+        facts.pack(fill="x", pady=(0, self._px(16)))
         facts.pack_propagate(False)
-        facts.configure(height=112)
+        facts.configure(height=self._px(124))
         facts.columnconfigure(0, weight=1, uniform="kpi")
         facts.columnconfigure(1, weight=1, uniform="kpi")
         facts.columnconfigure(2, weight=1, uniform="kpi")
         for index, (label, variable, meta) in enumerate((("ACTIVE SESSIONS", self.session, "Current activity state"), ("RUNNING OPERATIONS", self.operations, "In-progress work items"), ("LAST CHECK", self.checked, "Snapshot time / local"))):
-            card = ttk.Frame(facts, style="Card.TFrame", padding=(16, 13))
-            card.grid(row=0, column=index, sticky="nsew", padx=(0, 10 if index < 2 else 0))
+            card = ttk.Frame(facts, style="Card.TFrame", padding=(self._px(18), self._px(15)))
+            card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(12) if index < 2 else 0))
             ttk.Label(card, text=label, style="CardLabel.TLabel").pack(anchor="w")
             ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w", pady=(5, 2))
             ttk.Label(card, text=meta, style="CardMeta.TLabel").pack(anchor="w")
 
         notebook = ttk.Notebook(outer)
         notebook.pack(fill="both", expand=True)
-        overview, sessions, history, incidents, tasks, logs = [ttk.Frame(notebook, style="Surface.TFrame", padding=14) for _ in range(6)]
+        overview, sessions, history, incidents, tasks, logs = [ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(6)]
         for frame, name in ((overview, "Overview"), (sessions, "Sessions"), (history, "Activity History"), (incidents, "Incidents"), (tasks, "Tasks"), (logs, "Logs")):
             notebook.add(frame, text=name)
         overview.columnconfigure(0, weight=3)
@@ -345,14 +393,14 @@ class Dashboard:
         trend_panel.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         checks_panel = self._panel(overview, "CHECK MATRIX", "L1 / L2 / L3 checks")
         checks_panel.grid(row=1, column=1, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        self.map_canvas = self._canvas(map_panel, height=190)
-        self.map_canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.gauge_canvas = self._canvas(gauge_panel, height=190)
-        self.gauge_canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.trend_canvas = self._canvas(trend_panel, height=170)
-        self.trend_canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.health = self._canvas(checks_panel, height=170)
-        self.health.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.map_canvas = self._canvas(map_panel, height=220)
+        self.map_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        self.gauge_canvas = self._canvas(gauge_panel, height=220)
+        self.gauge_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        self.trend_canvas = self._canvas(trend_panel, height=190)
+        self.trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        self.health = self._canvas(checks_panel, height=190)
+        self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
         sessions_summary = self._panel(sessions, "SESSION PULSE", "接続中ユーザーとheartbeatの鮮度")
@@ -361,7 +409,7 @@ class Dashboard:
         self.session_canvas.pack(fill="x", padx=12, pady=(0, 12))
         sessions_table = self._panel(sessions, "SESSION DETAILS", "詳細は診断用。識別子は短縮表示")
         sessions_table.pack(fill="both", expand=True)
-        self.sessions = self._tree(sessions_table, (("user", "セッション", 300), ("heartbeat", "最終通信", 240), ("state", "状態", 150)))
+        self.sessions = self._tree(sessions_table, (("user", "ユーザー / プロフィール", 240), ("heartbeat", "最終通信", 230), ("device", "端末擬似ID", 150), ("state", "状態", 150)))
         activity_summary = self._panel(history, "ACTIVITY PULSE", "操作量と結果の分布")
         activity_summary.pack(fill="x", pady=(0, 10))
         self.activity_canvas = self._canvas(activity_summary, height=112)
@@ -408,7 +456,7 @@ class Dashboard:
         log_detail.pack(fill="both", expand=True)
         log_body = ttk.Frame(log_detail, style="Card.TFrame")
         log_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.logs = tk.Text(log_body, state="disabled", wrap="none", bg=COLORS["card"], fg=COLORS["text"], relief="flat", padx=14, pady=12, font=("Consolas", 9), highlightthickness=0)
+        self.logs = tk.Text(log_body, state="disabled", wrap="none", bg=COLORS["card"], fg=COLORS["text"], relief="flat", padx=self._px(14), pady=self._px(12), font=self._font(10, family="Consolas"), highlightthickness=0)
         log_y_scroll = ttk.Scrollbar(log_body, orient="vertical", command=self.logs.yview)
         log_x_scroll = ttk.Scrollbar(log_body, orient="horizontal", command=self.logs.xview)
         self.logs.configure(yscrollcommand=log_y_scroll.set, xscrollcommand=log_x_scroll.set)
@@ -424,27 +472,24 @@ class Dashboard:
         ttk.Label(footer, text=f"Project  {PROJECT_ROOT.name}    Runtime  {RUNTIME_ROOT.name}", style="Subtitle.TLabel").pack(side="left")
         ttk.Label(footer, textvariable=self.refresh_state, style="Subtitle.TLabel").pack(side="right")
 
-    @staticmethod
-    def _panel(parent: ttk.Frame, title: str, subtitle: str) -> ttk.Frame:
-        panel = ttk.Frame(parent, style="Card.TFrame", padding=(12, 10))
+    def _panel(self, parent: ttk.Frame, title: str, subtitle: str) -> ttk.Frame:
+        panel = ttk.Frame(parent, style="Card.TFrame", padding=(self._px(14), self._px(12)))
         header = ttk.Frame(panel, style="Card.TFrame")
-        header.pack(fill="x", pady=(0, 8))
+        header.pack(fill="x", pady=(0, self._px(10)))
         ttk.Label(header, text=title, style="CardLabel.TLabel").pack(side="left")
         ttk.Label(header, text=subtitle, style="CardMeta.TLabel").pack(side="right")
         return panel
 
-    @staticmethod
-    def _canvas(parent: ttk.Frame, *, height: int) -> tk.Canvas:
-        return tk.Canvas(parent, height=height, bg=COLORS["card"], highlightthickness=0, bd=0)
+    def _canvas(self, parent: ttk.Frame, *, height: int) -> tk.Canvas:
+        return tk.Canvas(parent, height=self._px(height), bg=COLORS["card"], highlightthickness=0, bd=0)
 
-    @staticmethod
-    def _tree(parent: ttk.Frame, columns: tuple[tuple[str, str, int], ...]) -> ttk.Treeview:
+    def _tree(self, parent: ttk.Frame, columns: tuple[tuple[str, str, int], ...]) -> ttk.Treeview:
         body = ttk.Frame(parent, style="Card.TFrame")
         body.pack(fill="both", expand=True)
         tree = ttk.Treeview(body, columns=tuple(item[0] for item in columns), show="headings")
         for name, title, width in columns:
             tree.heading(name, text=title)
-            tree.column(name, width=width, anchor="w")
+            tree.column(name, width=self._px(width), minwidth=self._px(80), anchor="w")
         tree.tag_configure("healthy", foreground=COLORS["green"])
         tree.tag_configure("degraded", foreground=COLORS["amber"])
         tree.tag_configure("critical", foreground=COLORS["red"])
@@ -504,8 +549,9 @@ class Dashboard:
         for left, right in (("SMAI UI", "Streamlit"), ("Streamlit", "Runtime"), ("Streamlit", "Analytics")):
             x1, y1 = points[left]
             x2, y2 = points[right]
-            canvas.create_line(x1, y1, x2, y2, fill=COLORS["border_strong"], width=2)
-            canvas.create_oval((x1 + x2) / 2 - 3, (y1 + y2) / 2 - 3, (x1 + x2) / 2 + 3, (y1 + y2) / 2 + 3, fill=COLORS["cyan"], outline="")
+            canvas.create_line(x1, y1, x2, y2, fill=COLORS["border_strong"], width=self._px(2))
+            dot = self._px(3)
+            canvas.create_oval((x1 + x2) / 2 - dot, (y1 + y2) / 2 - dot, (x1 + x2) / 2 + dot, (y1 + y2) / 2 + dot, fill=COLORS["cyan"], outline="")
         statuses = {
             "SMAI UI": self._service_status("smai ui"),
             "Streamlit": self._service_status("streamlit"),
@@ -515,11 +561,13 @@ class Dashboard:
         for label, _, _ in nodes:
             x, y = points[label]
             color = self._status_color(statuses[label])
-            canvas.create_oval(x - 27, y - 27, x + 27, y + 27, fill=COLORS["elevated"], outline=color, width=2)
-            canvas.create_oval(x - 8, y - 8, x + 8, y + 8, fill=color, outline="")
-            canvas.create_text(x, min(y + 38, height - 10), text=label, fill=COLORS["heading"], font=("Segoe UI", 9, "bold"))
-        canvas.create_text(16, 16, text="LOCAL SERVICE FLOW", anchor="nw", fill=COLORS["muted"], font=("Segoe UI", 8, "bold"))
-        canvas.create_text(width - 12, height - 10, text="灰色 = health check 未計測", anchor="se", fill=COLORS["muted"], font=("Segoe UI", 8))
+            radius = self._px(27)
+            core = self._px(8)
+            canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=COLORS["elevated"], outline=color, width=self._px(2))
+            canvas.create_oval(x - core, y - core, x + core, y + core, fill=color, outline="")
+            canvas.create_text(x, min(y + self._px(40), height - self._px(10)), text=label, fill=COLORS["heading"], font=self._font(10, "bold"))
+        canvas.create_text(self._px(16), self._px(16), text="LOCAL SERVICE FLOW", anchor="nw", fill=COLORS["muted"], font=self._font(9, "bold"))
+        canvas.create_text(width - self._px(12), height - self._px(10), text="灰色 = health check 未計測", anchor="se", fill=COLORS["muted"], font=self._font(9))
 
     def _service_status(self, *keywords: str) -> str:
         """Resolve topology nodes only from readable health-check evidence."""
@@ -540,14 +588,14 @@ class Dashboard:
         height = max(canvas.winfo_height(), 180)
         score = self._health_score(self.status.get().lower())
         color = self._status_color(self.status.get().lower())
-        size = min(150, max(112, min(width - 40, height - 38)))
+        size = min(self._px(180), max(self._px(128), min(width - self._px(40), height - self._px(44))))
         cx, cy = width / 2, height / 2 + 8
         box = (cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
-        canvas.create_arc(*box, start=135, extent=-270, style="arc", outline=COLORS["elevated"], width=13)
-        canvas.create_arc(*box, start=135, extent=-270 * score / 100, style="arc", outline=color, width=13)
-        canvas.create_text(cx, cy - 4, text=str(score), fill=COLORS["heading"], font=("Segoe UI", 27, "bold"))
-        canvas.create_text(cx, cy + 26, text="/ 100", fill=COLORS["muted"], font=("Segoe UI", 9))
-        canvas.create_text(cx, 16, text=self.status.get(), fill=color, font=("Segoe UI", 10, "bold"))
+        canvas.create_arc(*box, start=135, extent=-270, style="arc", outline=COLORS["elevated"], width=self._px(13))
+        canvas.create_arc(*box, start=135, extent=-270 * score / 100, style="arc", outline=color, width=self._px(13))
+        canvas.create_text(cx, cy - self._px(4), text=str(score), fill=COLORS["heading"], font=self._font(30, "bold"))
+        canvas.create_text(cx, cy + self._px(30), text="/ 100", fill=COLORS["muted"], font=self._font(10))
+        canvas.create_text(cx, self._px(18), text=self.status.get(), fill=color, font=self._font(11, "bold"))
 
     def _draw_trend(self) -> None:
         canvas = self.trend_canvas
@@ -558,7 +606,7 @@ class Dashboard:
         for ratio in (0.0, 0.5, 1.0):
             y = bottom - (bottom - top) * ratio
             canvas.create_line(left, y, right, y, fill=COLORS["border"], dash=(2, 4))
-            canvas.create_text(4, y, text=str(int(ratio * 100)), anchor="w", fill=COLORS["muted"], font=("Segoe UI", 7))
+            canvas.create_text(self._px(4), y, text=str(int(ratio * 100)), anchor="w", fill=COLORS["muted"], font=self._font(8))
         values = [score for _, score in self.health_history[-30:]] or [self._health_score(self.status.get().lower())]
         points = []
         for index, value in enumerate(values):
@@ -566,39 +614,42 @@ class Dashboard:
             y = bottom - (bottom - top) * value / 100
             points.extend((x, y))
         if len(points) >= 4:
-            canvas.create_line(*points, fill=COLORS["cyan"], width=2, smooth=True)
+            canvas.create_line(*points, fill=COLORS["cyan"], width=self._px(2), smooth=True)
         for index in range(0, len(points), 2):
-            canvas.create_oval(points[index] - 3, points[index + 1] - 3, points[index] + 3, points[index + 1] + 3, fill=COLORS["cyan"], outline=COLORS["card"])
-        canvas.create_text(left, 3, text="HEALTH SCORE", anchor="nw", fill=COLORS["muted"], font=("Segoe UI", 8, "bold"))
+            radius = self._px(3)
+            canvas.create_oval(points[index] - radius, points[index + 1] - radius, points[index] + radius, points[index + 1] + radius, fill=COLORS["cyan"], outline=COLORS["card"])
+        canvas.create_text(left, self._px(3), text="HEALTH SCORE", anchor="nw", fill=COLORS["muted"], font=self._font(9, "bold"))
 
     def _draw_checks(self, checks: list[object], overall: str, checked_at: object) -> None:
         canvas = self.health
         canvas.delete("all")
         width = max(canvas.winfo_width(), 300)
-        canvas.create_text(0, 4, text=f"OVERALL  {overall.upper()}   ·   {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=("Segoe UI", 8, "bold"))
+        canvas.create_text(0, self._px(4), text=f"OVERALL  {overall.upper()}   ·   {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=self._font(9, "bold"))
         height = max(canvas.winfo_height(), 90)
         valid_checks = [item for item in checks if isinstance(item, dict)]
-        line_height = max(14, min(22, (height - 40) / max(len(valid_checks), 1)))
-        y = 28
+        line_height = max(self._px(18), min(self._px(28), (height - self._px(44)) / max(len(valid_checks), 1)))
+        y = self._px(30)
         for item in valid_checks:
             status = str(item.get("status", "unknown"))
-            canvas.create_oval(0, y + 3, 8, y + 11, fill=self._status_color(status), outline="")
-            canvas.create_text(16, y, text=f"{item.get('level', '??')}  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=("Segoe UI", 8))
-            canvas.create_text(width - 4, y, text=status.upper(), anchor="ne", fill=self._status_color(status), font=("Segoe UI", 8, "bold"))
+            dot = self._px(5)
+            canvas.create_oval(0, y + self._px(3), dot * 2, y + self._px(3) + dot * 2, fill=self._status_color(status), outline="")
+            canvas.create_text(self._px(18), y, text=f"{item.get('level', '??')}  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=self._font(9))
+            canvas.create_text(width - self._px(4), y, text=status.upper(), anchor="ne", fill=self._status_color(status), font=self._font(9, "bold"))
             y += line_height
         if not valid_checks:
-            canvas.create_text(0, y, text="No readable health checks are available.", anchor="nw", fill=COLORS["muted"], font=("Segoe UI", 9))
+            canvas.create_text(0, y, text="No readable health checks are available.", anchor="nw", fill=COLORS["muted"], font=self._font(10))
 
-    @staticmethod
-    def _canvas_metric(canvas: tk.Canvas, x: float, width: float, label: str, value: str, detail: str, color: str) -> None:
-        canvas.create_rectangle(x, 12, x + width, 100, fill=COLORS["surface"], outline=COLORS["border"], width=1)
-        canvas.create_rectangle(x, 12, x + 4, 100, fill=color, outline="")
-        canvas.create_text(x + 16, 28, text=label, anchor="w", fill=COLORS["muted"], font=("Segoe UI", 8, "bold"))
-        canvas.create_text(x + 16, 56, text=value, anchor="w", fill=COLORS["heading"], font=("Segoe UI", 17, "bold"))
-        canvas.create_text(x + 16, 82, text=detail, anchor="w", fill=COLORS["muted"], font=("Segoe UI", 8))
+    def _canvas_metric(self, canvas: tk.Canvas, x: float, width: float, label: str, value: str, detail: str, color: str) -> None:
+        top, bottom = self._px(12), self._px(112)
+        inset = self._px(16)
+        canvas.create_rectangle(x, top, x + width, bottom, fill=COLORS["surface"], outline=COLORS["border"], width=1)
+        canvas.create_rectangle(x, top, x + self._px(4), bottom, fill=color, outline="")
+        canvas.create_text(x + inset, self._px(30), text=label, anchor="w", fill=COLORS["muted"], font=self._font(9, "bold"))
+        canvas.create_text(x + inset, self._px(62), text=value, anchor="w", fill=COLORS["heading"], font=self._font(20, "bold"))
+        canvas.create_text(x + inset, self._px(92), text=detail, anchor="w", fill=COLORS["muted"], font=self._font(9))
 
-    def _session_state(self, heartbeat: object) -> str:
-        parsed = parse_timestamp(heartbeat)
+    def _session_state(self, session: dict[str, str]) -> str:
+        parsed = parse_timestamp(session.get("last_seen_at"))
         if parsed is None:
             return "unknown"
         age = (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
@@ -712,16 +763,24 @@ class Dashboard:
         for item in self.sessions.get_children():
             self.sessions.delete(item)
         if activity_readable:
-            for session_id, heartbeat in sessions.items():
-                state = self._session_state(heartbeat)
+            for session_id, raw_session in sessions.items():
+                session = session_details(session_id, raw_session)
+                heartbeat = session["last_seen_at"]
+                state = self._session_state(session)
                 self.session_rows.append((str(session_id), heartbeat, state))
                 state_label = {"active": "● 接続中", "stale": "● 要確認", "unknown": "● 不明"}.get(state, "● 不明")
-                self.sessions.insert("", "end", values=(compact_id(session_id), f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}", state_label), tags=(self._tree_status_tag(state),))
+                user_label = session["profile_name"] or session["user_id"] or compact_id(session_id)
+                if session["profile_name"] and session["user_id"]:
+                    user_label = f"{session['profile_name']} / {compact_id(session['user_id'])}"
+                device_label = compact_id(session["device_id"]) if session["device_id"] else "—"
+                if session["connection_state"] not in {"", "connected", "unknown"}:
+                    state_label = f"{state_label} / {session['connection_state']}"
+                self.sessions.insert("", "end", values=(user_label, f"{relative_time(heartbeat)}  /  {format_timestamp(heartbeat)}", device_label, state_label), tags=(self._tree_status_tag(state),))
         if not activity_readable:
             self.session_rows.append(("activity-state", None, "unknown"))
-            self.sessions.insert("", "end", values=("—", "activity state を読み取れません", "● 不明"), tags=("unknown",))
+            self.sessions.insert("", "end", values=("—", "activity state を読み取れません", "—", "● 不明"), tags=("unknown",))
         elif not self.session_rows:
-            self.sessions.insert("", "end", values=("—", "接続中のセッションはありません", "—"))
+            self.sessions.insert("", "end", values=("—", "接続中のセッションはありません", "—", "—"))
         self.activity_events = read_events()
         self.refresh_history()
         self.incident_source_events = [event for event in self.activity_events if str(event.get("result", "")).lower() in {"failed", "error", "critical"}]

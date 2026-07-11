@@ -11,10 +11,34 @@ class DashboardFormattingTests(unittest.TestCase):
     def test_compact_id_shortens_long_value(self) -> None:
         self.assertEqual(dashboard.compact_id("1234567890abcdefghijklmnop"), "12345678…klmnop")
 
+    def test_ui_scale_expands_4k_content_but_has_a_safe_cap(self) -> None:
+        self.assertEqual(dashboard.ui_scale_for_display(1920, 1080), 1.0)
+        self.assertGreater(dashboard.ui_scale_for_display(3840, 2160), 1.5)
+        self.assertLessEqual(dashboard.ui_scale_for_display(7680, 4320), 1.65)
+
     def test_parse_timestamp_accepts_utc_z_suffix(self) -> None:
         parsed = dashboard.parse_timestamp("2026-07-11T04:24:17Z")
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed.utcoffset().total_seconds(), 0)
+
+    def test_session_details_supports_legacy_and_descriptive_sessions(self) -> None:
+        legacy = dashboard.session_details("session-1", "2026-07-11T04:24:17Z")
+        detailed = dashboard.session_details(
+            "session-2",
+            {
+                "last_seen_at": "2026-07-11T04:24:17Z",
+                "user_id": "local_user",
+                "profile_name": "Local User",
+                "device_id": "smai_client_0123456789abcdef",
+                "connection_state": "connected",
+            },
+        )
+
+        self.assertEqual(legacy["last_seen_at"], "2026-07-11T04:24:17Z")
+        self.assertEqual(legacy["user_id"], "")
+        self.assertEqual(detailed["user_id"], "local_user")
+        self.assertEqual(detailed["profile_name"], "Local User")
+        self.assertEqual(detailed["connection_state"], "connected")
 
     def test_health_score_is_fail_closed_for_unknown(self) -> None:
         self.assertEqual(dashboard.Dashboard._health_score("unknown"), 0)
