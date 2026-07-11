@@ -72,3 +72,7 @@ The task starts `run_dashboard.bat` after a one-minute delay. This is intentiona
 ```powershell
 .\scripts\unregister_smai_analytics_autostart_task.ps1
 ```
+
+To restart only the local Analytics dashboard without stopping SMAI Streamlit,
+run `restart_dashboard.bat`. It identifies Python processes by the absolute
+`dashboard.py` path, then starts the standard dashboard launcher again.
