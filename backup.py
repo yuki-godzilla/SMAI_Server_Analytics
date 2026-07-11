@@ -14,13 +14,20 @@ RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspac
 SOURCES = (PROJECT_ROOT / "data/user", PROJECT_ROOT / "data/ops", PROJECT_ROOT / "data/marketdata/symbol_universe.csv")
 
 
+def _is_backup_file(path: Path) -> bool:
+    """Exclude transient probes, locks, and in-progress atomic-write files."""
+
+    return path.is_file() and path.suffix.lower() not in {".tmp", ".lock"}
+
+
 def _source_files() -> list[Path]:
     result: list[Path] = []
     for source in SOURCES:
         if source.is_file():
-            result.append(source)
+            if _is_backup_file(source):
+                result.append(source)
         elif source.is_dir():
-            result.extend(path for path in source.rglob("*") if path.is_file())
+            result.extend(path for path in source.rglob("*") if _is_backup_file(path))
     return sorted(result)
 
 
@@ -124,8 +131,9 @@ def main() -> int:
     parser.add_argument("--destination", type=Path, help="Restore destination (defaults to the SMAI project root).")
     args = parser.parse_args()
     if args.command == "create":
-        print(create())
-        return 0
+        destination = create()
+        print(destination)
+        return 0 if verify(destination) else 1
     if args.command == "restore":
         return 0 if args.path and restore(args.path, args.destination) else 1
     return 0 if args.path and verify(args.path) else 1

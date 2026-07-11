@@ -35,10 +35,12 @@ python .\backup.py restore <backup-path> --destination <restore-directory>
 ```
 
 - `create` creates a timestamped backup under the runtime backup directory.
+- `create` exits unsuccessfully if the resulting manifest cannot be verified; an incomplete backup is never reported as restorable.
 - `verify` checks the manifest, file hashes, and that every manifest path remains inside the backup.
 - `restore` performs the same verification before copying. If any file is missing, changed, skipped, or outside the backup, it aborts before writing a destination file.
 - Use `--destination` to restore into an isolated directory before considering a production restore. Without it, files are copied back to the project data directories.
 - If a source file cannot be copied because it is locked, it is recorded as skipped in the manifest and the backup still completes.
+- Transient `.tmp` files and `.lock` files are excluded because they are neither durable state nor safe restore input.
 
 ## Runtime retention
 

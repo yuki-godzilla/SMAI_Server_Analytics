@@ -51,6 +51,19 @@ class BackupCreateTests(unittest.TestCase):
         statuses = {entry["path"]: entry.get("status", "ok") for entry in manifest["files"]}
         self.assertEqual(statuses["data/user/sample.txt"], "skipped")
         self.assertEqual(statuses["data/ops/state.json"], "ok")
+        self.assertFalse(backup.verify(destination))
+
+    def test_create_excludes_transient_operation_files(self) -> None:
+        (self.project_root / "data" / "ops" / "streamlit.lock").write_text("locked", encoding="utf-8")
+        (self.project_root / "data" / "ops" / "activity.json.random.tmp").write_text("partial", encoding="utf-8")
+
+        destination = backup.create()
+
+        manifest = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
+        paths = {entry["path"] for entry in manifest["files"]}
+        self.assertNotIn("data/ops/streamlit.lock", paths)
+        self.assertNotIn("data/ops/activity.json.random.tmp", paths)
+        self.assertTrue(backup.verify(destination))
 
     def test_restore_restores_files_from_backup(self) -> None:
         destination = backup.create()
