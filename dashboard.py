@@ -25,7 +25,7 @@ ASSET_ROOT = Path(__file__).with_name("assets")
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-bright.png"
-ANALYTICS_LETTERING = ASSET_ROOT / "smai-analytics-lettering.png"
+ANALYTICS_LETTERING = ASSET_ROOT / "smai-analytics-lettering-gradient.png"
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TASKS = (
     "SMAI-Server-Analytics",
@@ -269,8 +269,8 @@ class Dashboard:
         self.flow_phase = 0
         self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=56, max_height=56)
         self.mascot_image = self._load_brand_image(ANALYTICS_MASCOT, max_width=150, max_height=150)
-        self.wordmark_shield_image, _ = self._load_wordmark_parts(ANALYTICS_WORDMARK, shield_height=145, lettering_height=1)
-        self.wordmark_lettering_image = self._load_brand_image(ANALYTICS_LETTERING, max_width=1000, max_height=131)
+        self.wordmark_shield_image, _ = self._load_wordmark_parts(ANALYTICS_WORDMARK, shield_height=128, lettering_height=1)
+        self.wordmark_lettering_image = self._load_brand_image(ANALYTICS_LETTERING, max_width=820, max_height=104)
         self.topology_images = {
             "SMAI UI": self._load_sprite_tile(TOPOLOGY_SPRITE, 0, max_width=60, max_height=60),
             "Streamlit": self._load_sprite_tile(TOPOLOGY_SPRITE, 1, max_width=60, max_height=60),
@@ -440,7 +440,7 @@ class Dashboard:
         style.configure("TEntry", fieldbackground=COLORS["surface"], foreground=COLORS["text"], insertcolor=COLORS["text"])
 
     def _build(self) -> None:
-        outer = ttk.Frame(self.root, style="App.TFrame", padding=(self._px(28), self._px(24), self._px(28), self._px(16)))
+        outer = ttk.Frame(self.root, style="App.TFrame", padding=(self._px(24), self._px(16), self._px(24), self._px(14)))
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer, style="App.TFrame")
         header.pack(fill="x", pady=(0, self._px(16)))
@@ -472,7 +472,7 @@ class Dashboard:
         facts = ttk.Frame(outer, style="App.TFrame")
         facts.pack(fill="x", pady=(0, self._px(16)))
         facts.pack_propagate(False)
-        facts.configure(height=self._px(124))
+        facts.configure(height=self._px(106))
         facts.columnconfigure(0, weight=1, uniform="kpi")
         facts.columnconfigure(1, weight=1, uniform="kpi")
         facts.columnconfigure(2, weight=1, uniform="kpi")
@@ -488,10 +488,10 @@ class Dashboard:
         overview, sessions, history, incidents, tasks, logs = [ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(6)]
         for frame, name in ((overview, "Overview"), (sessions, "Sessions"), (history, "Activity History"), (incidents, "Incidents"), (tasks, "Tasks"), (logs, "Logs")):
             notebook.add(frame, text=name)
-        overview.columnconfigure(0, weight=3)
-        overview.columnconfigure(1, weight=2)
-        overview.rowconfigure(0, weight=1)
-        overview.rowconfigure(1, weight=1)
+        overview.columnconfigure(0, weight=5)
+        overview.columnconfigure(1, weight=4)
+        overview.rowconfigure(0, weight=3)
+        overview.rowconfigure(1, weight=2)
         map_panel = self._panel(overview, "SERVICE TOPOLOGY", "Live local service path")
         map_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 8))
         gauge_panel = self._panel(overview, "SYSTEM HEALTH", "Current health score")
@@ -500,26 +500,26 @@ class Dashboard:
         trend_panel.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         checks_panel = self._panel(overview, "CHECK MATRIX", "接続 / 画面 / 保存の確認")
         checks_panel.grid(row=1, column=1, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        self.map_canvas = self._canvas(map_panel, height=220)
+        self.map_canvas = self._canvas(map_panel, height=260)
         self.map_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self.gauge_canvas = self._canvas(gauge_panel, height=220)
+        self.gauge_canvas = self._canvas(gauge_panel, height=170)
         self.gauge_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self.trend_canvas = self._canvas(trend_panel, height=190)
+        self.trend_canvas = self._canvas(trend_panel, height=210)
         self.trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self.health = self._canvas(checks_panel, height=190)
+        self.health = self._canvas(checks_panel, height=170)
         self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
         sessions_summary = self._panel(sessions, "SESSION PULSE", "接続中ユーザーとheartbeatの鮮度")
         sessions_summary.pack(fill="x", pady=(0, 10))
-        self.session_canvas = self._canvas(sessions_summary, height=112)
+        self.session_canvas = self._canvas(sessions_summary, height=96)
         self.session_canvas.pack(fill="x", padx=12, pady=(0, 12))
         sessions_table = self._panel(sessions, "SESSION DETAILS", "詳細は診断用。識別子は短縮表示")
         sessions_table.pack(fill="both", expand=True)
         self.sessions = self._tree(sessions_table, (("user", "ユーザー / プロフィール", 240), ("heartbeat", "最終通信", 230), ("device", "端末擬似ID", 150), ("state", "状態", 150)))
         activity_summary = self._panel(history, "ACTIVITY PULSE", "操作量と結果の分布")
         activity_summary.pack(fill="x", pady=(0, 10))
-        self.activity_canvas = self._canvas(activity_summary, height=112)
+        self.activity_canvas = self._canvas(activity_summary, height=96)
         self.activity_canvas.pack(fill="x", padx=12, pady=(0, 12))
         controls = ttk.Frame(history, style="Surface.TFrame")
         controls.pack(fill="x", pady=(0, 10))
@@ -540,7 +540,7 @@ class Dashboard:
         self.history = self._tree(history, (("time", "時刻", 180), ("user", "ユーザー", 140), ("action", "操作", 190), ("target", "対象", 220), ("result", "結果", 110), ("device", "端末", 130), ("duration", "所要時間", 100)))
         incident_summary = self._panel(incidents, "INCIDENT STATUS", "障害・失敗イベントと復旧確認")
         incident_summary.pack(fill="x", pady=(0, 10))
-        self.incident_canvas = self._canvas(incident_summary, height=112)
+        self.incident_canvas = self._canvas(incident_summary, height=96)
         self.incident_canvas.pack(fill="x", padx=12, pady=(0, 12))
         incident_controls = ttk.Frame(incidents, style="Surface.TFrame")
         incident_controls.pack(fill="x", pady=(0, 10))
@@ -556,14 +556,14 @@ class Dashboard:
         self.incidents = self._tree(incident_table, (("time", "時刻", 190), ("action", "操作", 210), ("target", "対象", 280), ("result", "結果", 130)))
         task_summary = self._panel(tasks, "TASK COVERAGE", "Windows Scheduled Task の確認結果")
         task_summary.pack(fill="x", pady=(0, 10))
-        self.task_canvas = self._canvas(task_summary, height=112)
+        self.task_canvas = self._canvas(task_summary, height=96)
         self.task_canvas.pack(fill="x", padx=12, pady=(0, 12))
         task_table = self._panel(tasks, "TASK DETAILS", "unknown は未登録または取得不能")
         task_table.pack(fill="both", expand=True)
         self.tasks = self._tree(task_table, (("task", "タスク", 390), ("status", "状態", 180), ("result", "最終結果", 230)))
         log_summary = self._panel(logs, "LOG SIGNAL", "直近100行の重要語を集計")
         log_summary.pack(fill="x", pady=(0, 10))
-        self.log_canvas = self._canvas(log_summary, height=112)
+        self.log_canvas = self._canvas(log_summary, height=96)
         self.log_canvas.pack(fill="x", padx=12, pady=(0, 12))
         log_detail = self._panel(logs, "RECENT LOGS", "生ログは調査用。異常はIncidentsで確認")
         log_detail.pack(fill="both", expand=True)
@@ -731,19 +731,19 @@ class Dashboard:
         score = self._health_score(self.status.get().lower())
         color = self._status_color(self.status.get().lower())
         title, summary, action = self._health_narrative()
-        size = min(self._px(180), max(self._px(128), min(width * 0.42, height - self._px(44))))
-        cx, cy = width * 0.29, height / 2 + self._px(8)
+        size = min(self._px(145), max(self._px(108), min(width * 0.32, height - self._px(38))))
+        cx, cy = width * 0.23, height / 2 + self._px(5)
         box = (cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
         canvas.create_arc(*box, start=135, extent=-270, style="arc", outline=COLORS["elevated"], width=self._px(13))
         canvas.create_arc(*box, start=135, extent=-270 * score / 100, style="arc", outline=color, width=self._px(13))
-        canvas.create_text(cx, cy - self._px(4), text=str(score), fill=COLORS["heading"], font=self._font(30, "bold"))
-        canvas.create_text(cx, cy + self._px(30), text="/ 100", fill=COLORS["muted"], font=self._font(10))
-        canvas.create_text(cx, self._px(18), text=self.status.get(), fill=color, font=self._font(11, "bold"))
-        text_x = width * 0.54
-        canvas.create_text(text_x, self._px(34), text=title, anchor="nw", fill=color, font=self._font(14, "bold"))
-        canvas.create_text(text_x, self._px(66), text=summary, anchor="nw", width=width - text_x - self._px(18), fill=COLORS["text"], font=self._font(10), justify="left")
-        canvas.create_text(text_x, height - self._px(52), text=action, anchor="nw", width=width - text_x - self._px(18), fill=COLORS["muted"], font=self._font(9), justify="left")
-        canvas.create_text(text_x, height - self._px(22), text="SCORE: 接続確認  /  画面応答  /  ローカル保存", anchor="nw", fill=COLORS["blue"], font=self._font(8, "bold"))
+        canvas.create_text(cx, cy - self._px(4), text=str(score), fill=COLORS["heading"], font=self._font(24, "bold"))
+        canvas.create_text(cx, cy + self._px(25), text="/ 100", fill=COLORS["muted"], font=self._font(9))
+        canvas.create_text(cx, self._px(15), text=self.status.get(), fill=color, font=self._font(10, "bold"))
+        text_x = width * 0.43
+        canvas.create_text(text_x, self._px(28), text=title, anchor="nw", fill=color, font=self._font(12, "bold"))
+        canvas.create_text(text_x, self._px(54), text=summary, anchor="nw", width=width - text_x - self._px(16), fill=COLORS["text"], font=self._font(9), justify="left")
+        canvas.create_text(text_x, height - self._px(42), text=action, anchor="nw", width=width - text_x - self._px(16), fill=COLORS["muted"], font=self._font(8), justify="left")
+        canvas.create_text(text_x, height - self._px(18), text="SCORE: 接続 / 画面 / 保存", anchor="nw", fill=COLORS["blue"], font=self._font(8, "bold"))
 
     def _draw_trend(self) -> None:
         canvas = self.trend_canvas
@@ -792,10 +792,10 @@ class Dashboard:
         width = max(canvas.winfo_width(), 300)
         title, _, action = self._health_narrative()
         canvas.create_text(0, self._px(4), text=f"{title}  ·  {overall.upper()}  ·  {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=self._font(9, "bold"))
-        canvas.create_text(0, self._px(20), text="接続確認: 利用者が到達できるか  /  画面確認: アプリが応答するか  /  保存確認: ローカルデータを安全に扱えるか", anchor="nw", fill=COLORS["muted"], font=self._font(8))
+        canvas.create_text(0, self._px(20), text="接続=到達性  /  画面=アプリ応答  /  保存=ローカルデータ", anchor="nw", fill=COLORS["muted"], font=self._font(8))
         height = max(canvas.winfo_height(), 90)
         valid_checks = [item for item in checks if isinstance(item, dict)]
-        line_height = max(self._px(18), min(self._px(25), (height - self._px(100)) / max(len(valid_checks), 1)))
+        line_height = max(self._px(15), min(self._px(21), (height - self._px(84)) / max(len(valid_checks), 1)))
         y = self._px(48)
         for item in valid_checks:
             status = str(item.get("status", "unknown"))
@@ -803,9 +803,9 @@ class Dashboard:
             canvas.create_oval(0, y + self._px(3), dot * 2, y + self._px(3) + dot * 2, fill=self._status_color(status), outline="")
             level = str(item.get("level", "??"))
             category, consequence = {"L1": ("接続確認", "利用者が接続できない可能性"), "L2": ("画面確認", "画面表示・操作に影響"), "L3": ("保存確認", "設定や履歴の保存に影響")}.get(level, ("監視確認", "要確認"))
-            canvas.create_text(self._px(18), y, text=f"{category}  ·  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=self._font(9))
+            canvas.create_text(self._px(18), y, text=f"{category}  ·  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=self._font(8))
             canvas.create_text(width * 0.58, y, text="正常" if status.lower() in {"ok", "healthy"} else consequence, anchor="nw", fill=self._status_color(status), font=self._font(8, "bold"))
-            canvas.create_text(width - self._px(4), y, text="OK" if status.lower() in {"ok", "healthy"} else "要確認", anchor="ne", fill=self._status_color(status), font=self._font(9, "bold"))
+            canvas.create_text(width - self._px(4), y, text="OK" if status.lower() in {"ok", "healthy"} else "要確認", anchor="ne", fill=self._status_color(status), font=self._font(8, "bold"))
             y += line_height
         if not valid_checks:
             canvas.create_text(0, y, text="No readable health checks are available.", anchor="nw", fill=COLORS["muted"], font=self._font(10))
@@ -814,13 +814,15 @@ class Dashboard:
             canvas.create_text(0, height - self._px(10), text=action, anchor="nw", fill=COLORS["muted"], font=self._font(8))
 
     def _canvas_metric(self, canvas: tk.Canvas, x: float, width: float, label: str, value: str, detail: str, color: str) -> None:
-        top, bottom = self._px(12), self._px(112)
+        top = self._px(8)
+        bottom = max(top + self._px(64), canvas.winfo_height() - self._px(6))
+        card_height = bottom - top
         inset = self._px(16)
         canvas.create_rectangle(x, top, x + width, bottom, fill=COLORS["surface"], outline=COLORS["border"], width=1)
         canvas.create_rectangle(x, top, x + self._px(4), bottom, fill=color, outline="")
-        canvas.create_text(x + inset, self._px(30), text=label, anchor="w", fill=COLORS["muted"], font=self._font(9, "bold"))
-        canvas.create_text(x + inset, self._px(62), text=value, anchor="w", fill=COLORS["heading"], font=self._font(20, "bold"))
-        canvas.create_text(x + inset, self._px(92), text=detail, anchor="w", fill=COLORS["muted"], font=self._font(9))
+        canvas.create_text(x + inset, top + card_height * 0.20, text=label, anchor="w", fill=COLORS["muted"], font=self._font(9, "bold"))
+        canvas.create_text(x + inset, top + card_height * 0.52, text=value, anchor="w", fill=COLORS["heading"], font=self._font(18, "bold"))
+        canvas.create_text(x + inset, top + card_height * 0.80, text=detail, anchor="w", fill=COLORS["muted"], font=self._font(8))
 
     def _session_state(self, session: dict[str, str]) -> str:
         parsed = parse_timestamp(session.get("last_seen_at"))
