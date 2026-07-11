@@ -64,6 +64,36 @@ class BackupCreateTests(unittest.TestCase):
         self.assertTrue(target_path.exists())
         self.assertEqual(target_path.read_text(encoding="utf-8"), "hello")
 
+    def test_restore_rejects_tampered_backup_before_writing(self) -> None:
+        destination = backup.create()
+        target_path = self.project_root / "data" / "user" / "sample.txt"
+        target_path.write_text("keep this value", encoding="utf-8")
+        (destination / "data" / "user" / "sample.txt").write_text("tampered", encoding="utf-8")
+
+        self.assertFalse(backup.verify(destination))
+        self.assertFalse(backup.restore(destination))
+        self.assertEqual(target_path.read_text(encoding="utf-8"), "keep this value")
+
+    def test_restore_can_target_an_isolated_directory(self) -> None:
+        destination = backup.create()
+        isolated = Path(self.temp_dir.name) / "restore-check"
+
+        self.assertTrue(backup.restore(destination, isolated))
+        self.assertEqual(
+            (isolated / "data" / "user" / "sample.txt").read_text(encoding="utf-8"),
+            "hello",
+        )
+
+    def test_verify_rejects_manifest_path_escape(self) -> None:
+        destination = backup.create()
+        manifest_path = destination / "manifest.json"
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        payload["files"][0]["path"] = "../outside.txt"
+        manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        self.assertFalse(backup.verify(destination))
+        self.assertFalse(backup.restore(destination))
+
 
 if __name__ == "__main__":
     unittest.main()
