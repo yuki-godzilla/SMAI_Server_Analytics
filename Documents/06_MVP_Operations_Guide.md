@@ -22,6 +22,12 @@ OverviewのService Topologyでは、PCブラウザ、スマートフォン、タ
 
 端末種別ごとの通信証跡がない場合、端末種別が未送信の場合、または`activity_state.json`を読み取れない場合は`unknown`です。利用者がいないことを障害と推測せず、証跡がないことを正常とも扱いません。保存対象は`desktop`、`smartphone`、`tablet`の種別と最終通信・接続状態だけであり、生のUser-Agent、IPアドレス、Cookieは記録しません。
 
+### 接続数・接続履歴
+
+Sessions画面の上段では、PC、スマートフォン、タブレットごとに、90秒以内のheartbeatを根拠にした現在接続数を表示します。累計はAnalyticsが監視を開始してから確認した`device_id`（Runtime固有saltによる擬似ID）だけを数えます。`device_id`が未連携のセッションは推測で台数へ加えず、`ID未連携`として表示します。
+
+接続観測の履歴はRuntimeの`connections/watch_state.json`に保存します。初回観測、状態変化、監視対象からの消失を記録しますが、セッションがファイルから消えたことを切断と断定しません。状態ファイルが破損・読み取り不能の場合は履歴と累計を`unknown`として扱い、空の正常値に置き換えません。
+
 ## 3. バックアップと復元
 
 `run_backup.bat` はRuntimeの `backups/` にmanifest付きバックアップを作成します。対象はユーザーデータ、運用状態、正式な銘柄マスターです。

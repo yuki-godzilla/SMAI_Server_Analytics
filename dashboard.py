@@ -10,6 +10,7 @@ from pathlib import Path
 from tkinter import ttk
 
 import incident_automation
+import connection_watch
 
 try:
     from PIL import Image, ImageTk
@@ -22,6 +23,7 @@ RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspac
 SNAPSHOT = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
 ACTIVITY = PROJECT_ROOT / "data/ops/server_ops/activity_state.json"
 EVENT_LOG = RUNTIME_ROOT / "audit/events.jsonl"
+CONNECTION_WATCH_STATE = RUNTIME_ROOT / "connections/watch_state.json"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
 ASSET_ROOT = Path(__file__).with_name("assets")
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
@@ -408,6 +410,9 @@ class Dashboard:
         self.health_history: list[tuple[str, int]] = []
         self.session_rows: list[tuple[str, object, str]] = []
         self.client_sessions: list[dict[str, str]] = []
+        self.current_connection_counts = {client_type: 0 for client_type in connection_watch.CLIENT_TYPES}
+        self.current_unlinked_counts = {client_type: 0 for client_type in connection_watch.CLIENT_TYPES}
+        self.connection_watch: dict[str, object] = {"ok": True, "available": False, "state": {}, "reason": "not started"}
         self.activity_readable = False
         self.activity_events: list[dict[str, object]] = []
         self.incident_events: list[dict[str, object]] = []
@@ -1020,12 +1025,21 @@ class Dashboard:
         self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
-        sessions_summary = self._panel(sessions, "接続状況", "接続中セッションと最終通信の状態")
+        sessions_summary = self._panel(sessions, "端末接続状況", "端末種別ごとの現在接続数と監視開始後の累計")
         sessions_summary.pack(fill="x", pady=(0, self._px(8)))
+        self.connection_total_summary = tk.StringVar(value="現在接続・累計端末を確認中")
+        ttk.Label(
+            sessions_summary,
+            textvariable=self.connection_total_summary,
+            style="CardMeta.TLabel",
+            wraplength=self._px(900),
+        ).pack(anchor="w", padx=self._px(14), pady=(0, self._px(6)))
         self.session_canvas = self._canvas(sessions_summary, height=84)
         self.session_canvas.pack(fill="x", padx=12, pady=(0, 12))
+        connection_panes = ttk.Panedwindow(sessions, orient="vertical")
+        connection_panes.pack(fill="both", expand=True)
         sessions_table = self._panel(sessions, "セッション一覧", "識別子は短縮表示")
-        sessions_table.pack(fill="both", expand=True)
+        connection_panes.add(sessions_table, weight=3)
         self.sessions = self._tree(
             sessions_table,
             (
@@ -1034,6 +1048,22 @@ class Dashboard:
                 ("heartbeat", "最終通信", 230),
                 ("device", "端末擬似ID", 150),
                 ("state", "状態", 150),
+            ),
+        )
+        connection_history_panel = self._panel(
+            sessions,
+            "接続観測履歴",
+            "Analyticsが観測した状態変化。消失は切断と推測しません",
+        )
+        connection_panes.add(connection_history_panel, weight=2)
+        self.connection_history = self._tree(
+            connection_history_panel,
+            (
+                ("time", "観測時刻", 190),
+                ("client", "端末種別", 140),
+                ("event", "観測結果", 210),
+                ("status", "状態", 130),
+                ("session", "セッション", 180),
             ),
         )
         activity_summary = self._panel(history, "操作サマリー", "直近の操作と結果")
@@ -1491,13 +1521,101 @@ class Dashboard:
         canvas = self.session_canvas
         canvas.delete("all")
         width = max(canvas.winfo_width(), 450)
-        active = sum(1 for _, _, state in self.session_rows if state == "active")
-        stale = sum(1 for _, _, state in self.session_rows if state == "stale")
-        unknown = len(self.session_rows) - active - stale
         card_width = (width - 24) / 3
-        self._canvas_metric(canvas, 0, card_width - 6, "接続中", str(active), "90秒以内に通信", COLORS["green"])
-        self._canvas_metric(canvas, card_width + 6, card_width - 6, "要確認", str(stale), "90秒以上通信なし", COLORS["amber"])
-        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "状態不明", str(unknown), "時刻を確認できません", COLORS["muted"])
+        state = self.connection_watch.get("state")
+        watch_ok = bool(self.connection_watch.get("ok")) and isinstance(state, dict)
+        counts = connection_watch.summary(state) if watch_ok else {}
+        cumulative = counts.get("cumulative", {}) if isinstance(counts, dict) else {}
+        for index, client_type in enumerate(connection_watch.CLIENT_TYPES):
+            x = card_width * index + (6 * index)
+            card_width_for_type = card_width - (12 if index == 2 else 6)
+            label = f"{CLIENT_TYPE_LABELS[client_type]} / 現在接続"
+            if not self.activity_readable:
+                value, detail, color = "—", "activity state を取得できません", COLORS["muted"]
+            elif not watch_ok:
+                value = f"{self.current_connection_counts[client_type]}台"
+                detail, color = "累計は接続履歴の状態を確認できません", COLORS["amber"]
+            else:
+                active_count = self.current_connection_counts[client_type]
+                cumulative_count = int(cumulative.get(client_type, 0))
+                unlinked_count = self.current_unlinked_counts[client_type]
+                detail = f"累計 {cumulative_count}台（ID済）"
+                if unlinked_count:
+                    detail += f" / 未連携 {unlinked_count}"
+                value, color = f"{active_count}台", COLORS["green"]
+            self._canvas_metric(canvas, x, card_width_for_type, label, value, detail, color)
+
+    def _refresh_connection_total_summary(self) -> None:
+        if not self.activity_readable:
+            self.connection_total_summary.set("現在接続・累計端末: activity state を取得できないため不明")
+            return
+        current_total = sum(self.current_connection_counts.values())
+        unlinked_total = sum(self.current_unlinked_counts.values())
+        state = self.connection_watch.get("state")
+        if not bool(self.connection_watch.get("ok")) or not isinstance(state, dict):
+            self.connection_total_summary.set(f"現在接続 合計 {current_total}台 / 累計端末は接続履歴の状態を確認できません")
+            return
+        counts = connection_watch.summary(state)
+        total_cumulative = int(counts["total_cumulative"])
+        detail = f"現在接続 合計 {current_total}台 / 監視開始後の累計端末 {total_cumulative}台（ID確認済）"
+        if unlinked_total:
+            detail += f" / 現在 ID未連携 {unlinked_total}件"
+        self.connection_total_summary.set(detail)
+
+    def _refresh_connection_history(self) -> None:
+        """Render the locally observed connection history without inferring disconnects."""
+
+        if not hasattr(self, "connection_history"):
+            return
+        for item in self.connection_history.get_children():
+            self.connection_history.delete(item)
+        if not bool(self.connection_watch.get("ok")):
+            self.connection_history.insert(
+                "",
+                "end",
+                values=("—", "—", "接続履歴の状態を読み取れません", str(self.connection_watch.get("reason") or "要確認"), "—"),
+                tags=("unknown",),
+            )
+            return
+        if not bool(self.connection_watch.get("available")):
+            self.connection_history.insert(
+                "",
+                "end",
+                values=("—", "—", "接続観測はまだ開始されていません", "UNKNOWN", "—"),
+                tags=("unknown",),
+            )
+            return
+        state = self.connection_watch.get("state")
+        events = state.get("events", []) if isinstance(state, dict) else []
+        labels = {
+            "observed": "接続を観測",
+            "state_changed": "状態変化を観測",
+            "observation_lost": "監視対象から消失（切断とは未確定）",
+        }
+        if not isinstance(events, list) or not events:
+            self.connection_history.insert(
+                "",
+                "end",
+                values=("—", "—", "状態変化はまだ記録されていません", "—", "—"),
+            )
+            return
+        for event in reversed(events):
+            if not isinstance(event, dict):
+                continue
+            client_type = str(event.get("client_type") or "unknown")
+            status = str(event.get("status") or "unknown")
+            self.connection_history.insert(
+                "",
+                "end",
+                values=(
+                    format_timestamp(event.get("observed_at")),
+                    CLIENT_TYPE_LABELS.get(client_type, CLIENT_TYPE_LABELS["unknown"]),
+                    labels.get(str(event.get("event") or ""), "監視結果を確認"),
+                    status.upper(),
+                    compact_id(event.get("session_id")),
+                ),
+                tags=(self._tree_status_tag(status),),
+            )
 
     def _draw_activity(self) -> None:
         canvas = self.activity_canvas
@@ -1593,6 +1711,8 @@ class Dashboard:
         self.operations.set(str(len(operations)) if activity_readable else "—")
         self.session_rows = []
         self.client_sessions = []
+        self.current_connection_counts = {client_type: 0 for client_type in connection_watch.CLIENT_TYPES}
+        self.current_unlinked_counts = {client_type: 0 for client_type in connection_watch.CLIENT_TYPES}
         for item in self.sessions.get_children():
             self.sessions.delete(item)
         if activity_readable:
@@ -1603,6 +1723,10 @@ class Dashboard:
                 summary_state = "active" if communication == "ok" else "stale" if communication in {"degraded", "critical"} else "unknown"
                 self.session_rows.append((str(session_id), heartbeat, summary_state))
                 self.client_sessions.append(session)
+                if communication == "ok" and session["client_type"] in self.current_connection_counts:
+                    self.current_connection_counts[session["client_type"]] += 1
+                    if not session["device_id"]:
+                        self.current_unlinked_counts[session["client_type"]] += 1
                 state_label = {
                     "ok": "● 接続中",
                     "degraded": "● 要確認",
@@ -1633,6 +1757,21 @@ class Dashboard:
             self.sessions.insert("", "end", values=("—", "種別不明", "activity state を読み取れません", "—", "● 不明"), tags=("unknown",))
         elif not self.session_rows:
             self.sessions.insert("", "end", values=("—", "—", "接続中のセッションはありません", "—", "—"))
+        if activity_readable:
+            observations = [
+                {
+                    "session_id": session["session_id"],
+                    "client_type": session["client_type"],
+                    "device_id": session["device_id"],
+                    "status": session_connection_status(session),
+                }
+                for session in self.client_sessions
+            ]
+            self.connection_watch = connection_watch.observe(observations, CONNECTION_WATCH_STATE)
+        else:
+            self.connection_watch = connection_watch.read(CONNECTION_WATCH_STATE)
+        self._refresh_connection_total_summary()
+        self._refresh_connection_history()
         self._redraw_visuals()
         self.activity_events = read_events()
         self.refresh_history()
