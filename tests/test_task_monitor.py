@@ -43,7 +43,9 @@ class TaskMonitorTests(unittest.TestCase):
         now = datetime(2026, 7, 12, 12, tzinfo=UTC)
         values = {"last_result": "1", "last_run_time": now.isoformat()}
         self.assertEqual(task_monitor.classify_task("SmartMarketAI-Server-Watch", values, path_ok=True, now=now)[0], "critical")
-        self.assertEqual(task_monitor.classify_task("SmartMarketAI-Server-Watch", values, path_ok=False, now=now)[0], "critical")
+        status, detail = task_monitor.classify_task("SmartMarketAI-Server-Watch", values, path_ok=False, now=now)
+        self.assertEqual(status, "critical")
+        self.assertIn("実行パス", detail)
         self.assertEqual(task_monitor.classify_task("SmartMarketAI-Server-Watch", {"last_result": "0"}, path_ok=False, now=now)[0], "degraded")
 
     def test_backup_smoke_age_and_missing_state_fail_closed(self) -> None:

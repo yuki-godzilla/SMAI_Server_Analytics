@@ -106,7 +106,10 @@ def classify_task(
     current = (now or datetime.now(UTC)).astimezone(UTC)
     code = result_code(values.get("last_result"))
     if code is not None and code != 0:
-        return "critical", f"最終結果が失敗です（exit {code}）"
+        detail = f"最終結果が失敗です（exit {code}）"
+        if not path_ok:
+            detail += " / 実行パスが現在のワークスペースと一致しません"
+        return "critical", detail
     if values.get("last_result") and code is None:
         return "unknown", "最終結果を解釈できません"
     if not path_ok:
