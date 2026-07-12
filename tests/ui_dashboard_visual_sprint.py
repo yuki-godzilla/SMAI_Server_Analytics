@@ -106,9 +106,20 @@ def capture_sprint(output: Path, *, width: int, height: int, sprint: str) -> lis
 
         app_root = tk.Tk()
         app = dashboard.Dashboard(app_root)
-        viewport_width = min(width, max(720, app_root.winfo_screenwidth() - 28))
-        viewport_height = min(height, max(520, app_root.winfo_screenheight() - 72))
+        # Match Dashboard's smallest supported working area.  The visual
+        # sprint must be able to exercise the micro layout rather than
+        # silently expanding a requested small viewport.
+        viewport_width = min(width, max(520, app_root.winfo_screenwidth() - 28))
+        viewport_height = min(height, max(440, app_root.winfo_screenheight() - 72))
         app_root.geometry(f"{viewport_width}x{viewport_height}+14+14")
+        # ImageGrab captures the desktop, not a widget surface.  Keep this
+        # isolated validation window above unrelated local applications.
+        app_root.lift()
+        try:
+            app_root.attributes("-topmost", True)
+            app_root.focus_force()
+        except tk.TclError:
+            pass
         app_root.update_idletasks()
         app_root.update()
         time.sleep(0.15)
@@ -127,6 +138,42 @@ def capture_sprint(output: Path, *, width: int, height: int, sprint: str) -> lis
             path = output / f"{sprint}_{index + 1:02d}_{name}.png"
             image.save(path)
             captures.append(path)
+            tab_scroll = app.scrollable_tab_canvases.get(tab_id)
+            if tab_scroll is not None:
+                tab_scroll.yview_moveto(0.3)
+                app_root.update_idletasks()
+                app_root.update()
+                time.sleep(0.06)
+                middle = ImageGrab.grab(bbox=(x, y, x + app_root.winfo_width(), y + app_root.winfo_height()))
+                middle_path = output / f"{sprint}_{index + 1:02d}_{name}_middle.png"
+                middle.save(middle_path)
+                extra_captures.append(middle_path)
+                tab_scroll.yview_moveto(1.0)
+                app_root.update_idletasks()
+                app_root.update()
+                time.sleep(0.06)
+                lower = ImageGrab.grab(bbox=(x, y, x + app_root.winfo_width(), y + app_root.winfo_height()))
+                lower_path = output / f"{sprint}_{index + 1:02d}_{name}_lower.png"
+                lower.save(lower_path)
+                extra_captures.append(lower_path)
+            if tab_id == str(app.overview_page):
+                app._refresh_overview_scrollregion()
+                app.overview_scroll_canvas.yview_moveto(0.35)
+                app_root.update_idletasks()
+                app_root.update()
+                time.sleep(0.06)
+                middle = ImageGrab.grab(bbox=(x, y, x + app_root.winfo_width(), y + app_root.winfo_height()))
+                middle_path = output / f"{sprint}_{index + 1:02d}_{name}_middle.png"
+                middle.save(middle_path)
+                extra_captures.append(middle_path)
+                app.overview_scroll_canvas.yview_moveto(1.0)
+                app_root.update_idletasks()
+                app_root.update()
+                time.sleep(0.06)
+                lower = ImageGrab.grab(bbox=(x, y, x + app_root.winfo_width(), y + app_root.winfo_height()))
+                lower_path = output / f"{sprint}_{index + 1:02d}_{name}_lower.png"
+                lower.save(lower_path)
+                extra_captures.append(lower_path)
             if tab_id == str(app.trends_page):
                 app._refresh_trends_scrollregion()
                 app.trends_scroll_canvas.yview_moveto(0.35)
@@ -145,6 +192,10 @@ def capture_sprint(output: Path, *, width: int, height: int, sprint: str) -> lis
                 lower_path = output / f"{sprint}_{index + 1:02d}_{name}_lower.png"
                 lower.save(lower_path)
                 extra_captures.append(lower_path)
+        try:
+            app_root.attributes("-topmost", False)
+        except tk.TclError:
+            pass
         app_root.destroy()
 
         thumb_width = 360

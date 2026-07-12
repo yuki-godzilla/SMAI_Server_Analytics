@@ -31,6 +31,13 @@ class DashboardFormattingTests(unittest.TestCase):
             (False, True),
         )
 
+    def test_micro_layout_stacks_controls_before_small_window_labels_collide(self) -> None:
+        self.assertTrue(dashboard.micro_layout_for_window(640, 480))
+        self.assertTrue(dashboard.micro_layout_for_window(900, 520))
+        self.assertTrue(dashboard.micro_layout_for_window(980, 680, layout_scale=1.5))
+        self.assertFalse(dashboard.micro_layout_for_window(980, 680))
+        self.assertFalse(dashboard.micro_layout_for_window(1180, 700, layout_scale=1.5))
+
     def test_event_window_rejects_bad_and_expired_timestamps(self) -> None:
         now = datetime(2026, 7, 11, 12, tzinfo=UTC)
         self.assertTrue(dashboard.event_within_window("2026-07-11T11:00:00Z", "24h", now=now))
