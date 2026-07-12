@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = "Stop"
 $taskName = "SMAI-Server-Analytics"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$startScript = Join-Path $projectRoot "run_dashboard.bat"
+$startScript = Join-Path $projectRoot "run_analytics_web.bat"
 
 if (-not (Test-Path -LiteralPath $startScript -PathType Leaf)) {
     throw "Required script was not found: $startScript"
@@ -30,8 +30,8 @@ $task = New-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Open the SMAI Analytics operations console after user logon."
+    -Description "Start the SMAI Analytics Web Operations Console after user logon."
 
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 Write-Host "[OK] Registered: $taskName"
-Write-Host "[SMAI] Analytics opens one minute after interactive user logon."
+Write-Host "[SMAI] Analytics Web Console starts one minute after interactive user logon."

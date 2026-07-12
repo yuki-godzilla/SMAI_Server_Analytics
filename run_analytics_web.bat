@@ -36,6 +36,8 @@ echo.
   --server.port %SMAI_ANALYTICS_PORT% ^
   --server.headless true ^
   --server.runOnSave false ^
+  --server.enableXsrfProtection true ^
+  --browser.gatherUsageStats false ^
   --browser.serverAddress %SMAI_ANALYTICS_LAN_IP%
 
 exit /b %ERRORLEVEL%

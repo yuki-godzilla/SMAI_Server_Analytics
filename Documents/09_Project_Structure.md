@@ -2,14 +2,14 @@
 
 ## 方針
 
-実装コードは`SMAI_Server_Analytics`の責務ごとに`smai_analytics/`へ置きます。一方で、既存のWindowsタスク、バッチ、運用手順が参照するルートの`dashboard.py`、`health.py`などは互換入口として残します。互換入口は実装を持たず、対応するpackage moduleを起動または公開します。
+実装コードは`SMAI_Server_Analytics`の責務ごとに`smai_analytics/`へ置きます。一方で、Windowsタスク、バッチ、運用手順が参照するルートの`analytics_web.py`、`health.py`などは互換入口として残します。互換入口は実装を持たず、対応するpackage moduleを起動または公開します。
 
 ```text
 SMAI_Server_Analytics/
 ├─ smai_analytics/             # 実装本体
 │  ├─ monitoring/              # health / telemetry / session / task observations
 │  ├─ operations/              # backup / retention / audit / incident workflows
-│  └─ ui/                      # Tkinter desktop and Streamlit web consoles
+│  └─ ui/                      # Streamlit Web Operations Console
 ├─ config/                     # versioned, non-secret operational configuration
 │  └─ retention_policy.json
 ├─ setup/                      # runtime/dev dependencies and venv bootstrap
@@ -18,7 +18,6 @@ SMAI_Server_Analytics/
 ├─ scripts/                    # Windows task registration and restart helpers
 ├─ Documents/                  # Japanese operational documentation
 ├─ tests/                      # deterministic, network-free tests
-├─ dashboard.py                # compatibility entry point
 ├─ analytics_web.py            # compatibility entry point
 ├─ health.py / backup.py ...   # compatibility entry points for existing operations
 └─ run_*.bat                   # operator-facing launchers
@@ -28,17 +27,17 @@ SMAI_Server_Analytics/
 
 - 新しい監視・状態観測は`smai_analytics/monitoring/`へ追加します。
 - バックアップ、保持、監査、障害調査の運用処理は`smai_analytics/operations/`へ追加します。
-- 表示だけを担当するTkinter／Streamlitコードは`smai_analytics/ui/`へ追加します。
+- 表示だけを担当するStreamlit Web Operations Consoleコードは`smai_analytics/ui/`へ追加します。
 - secretを含まない設定だけを`config/`へ置きます。Runtimeの状態、ログ、バックアップ、個人データはGit管理しません。
 - 依存関係はルートではなく`setup/requirements*.txt`へ置きます。
 - ルート互換入口を削除・改名する場合は、Scheduler、自動起動、README、運用ガイド、テストの契約を先に更新し、旧起動経路が不要であることを確認します。
 
 ## 起動契約
 
-通常の起動・確認コマンドは従来から変わりません。
+通常の起動・確認コマンドは次のとおりです。
 
 ```powershell
-python dashboard.py
+run_analytics_web.bat
 python health.py
 python backup.py create
 python retention.py --dry-run

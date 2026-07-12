@@ -6,7 +6,6 @@ from pathlib import Path
 
 import task_monitor
 
-
 LIST_OUTPUT = """\
 Status:                               Ready
 Last Run Time:                        2026/07/12 09:02:39

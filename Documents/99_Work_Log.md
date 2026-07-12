@@ -1,5 +1,14 @@
 # Work Log
 
+## 2026-07-13
+
+- Tkinter版を廃止し、`analytics_web.py`を正規のWeb Operations Console入口へ統一
+- Overview、推移、セッション、操作履歴、障害、改善レポート、タスク、ログの8画面をWeb版へ実装
+- 共有されたChrome全画面を確認し、4K／通常モニター向けにコンテンツ幅、カード内の画像配置、文字・余白、timelineのラベル密度を改善
+- healthy、degraded、critical、高負荷、復旧後の5状態をStreamlitの実レンダラーで検証
+- `run_analytics_web.bat`、`restart_analytics_web.bat`、Interactive AtLogOn自動起動タスクをWeb版へ統一し、TCP 8502の起動・health・HTML配信・タスク設定を確認
+- Tkinter実装、旧ランチャー、旧再起動スクリプト、旧UIテストを削除
+
 ## 2026-07-12
 
 - `telemetry.py` を追加し、health snapshotを日別の生記録と5分集計へ分離して永続化

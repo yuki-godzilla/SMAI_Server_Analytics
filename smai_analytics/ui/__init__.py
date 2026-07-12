@@ -1,1 +1,1 @@
-"""Local Tkinter and browser-based Operations Console surfaces."""
+"""Browser-based read-only Operations Console surface."""

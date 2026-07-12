@@ -76,8 +76,7 @@ python -m ruff --version || (echo [ERROR] ruff verification failed & exit /b 1)
 
 echo [5/5] Setup finished successfully.
 echo.
-echo Dashboard:      %VENV_DIR%\Scripts\python.exe dashboard.py
-echo Web dashboard:  run_analytics_web.bat
+echo Web console:    run_analytics_web.bat
 echo Activate later: %VENV_DIR%\Scripts\Activate.ps1
 exit /b 0
 

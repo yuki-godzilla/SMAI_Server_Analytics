@@ -40,10 +40,8 @@ class SetupLayoutTests(unittest.TestCase):
         self.assertEqual(configuration["tool"]["ruff"]["line-length"], 100)
 
     def test_launchers_prefer_the_analytics_virtual_environment(self) -> None:
-        desktop = (REPOSITORY_ROOT / "run_dashboard.bat").read_text(encoding="utf-8")
         web = (REPOSITORY_ROOT / "run_analytics_web.bat").read_text(encoding="utf-8")
 
-        self.assertIn("venv_SMAI_Analytics\\Scripts\\python.exe", desktop)
         self.assertIn("venv_SMAI_Analytics\\Scripts\\python.exe", web)
         self.assertIn("SMAI_COMPATIBILITY_PYTHON", web)
 
@@ -53,13 +51,12 @@ class SetupLayoutTests(unittest.TestCase):
             REPOSITORY_ROOT / "smai_analytics" / "monitoring" / "telemetry.py",
             REPOSITORY_ROOT / "smai_analytics" / "operations" / "backup.py",
             REPOSITORY_ROOT / "smai_analytics" / "operations" / "retention.py",
-            REPOSITORY_ROOT / "smai_analytics" / "ui" / "dashboard.py",
             REPOSITORY_ROOT / "smai_analytics" / "ui" / "web_dashboard.py",
             REPOSITORY_ROOT / "config" / "retention_policy.json",
         )
 
         self.assertTrue(all(path.is_file() for path in expected_modules))
-        self.assertIn("compatibility entry point", (REPOSITORY_ROOT / "dashboard.py").read_text(encoding="utf-8").casefold())
+        self.assertIn("compatibility entry point", (REPOSITORY_ROOT / "analytics_web.py").read_text(encoding="utf-8").casefold())
         self.assertIn("compatibility entry point", (REPOSITORY_ROOT / "health.py").read_text(encoding="utf-8").casefold())
 
     def test_setup_help_is_available_without_creating_a_virtual_environment(self) -> None:

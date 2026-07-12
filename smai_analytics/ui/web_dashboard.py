@@ -1,10 +1,9 @@
 """Read-only SMAI Analytics dashboard for trusted private networks.
 
 This Streamlit surface deliberately owns no SMAI calculation, ranking, or
-user-facing application state.  It reads the same stable files as the local
-Tkinter console and runs the server-local health probe at a bounded interval.
-The launcher binds it to a separate port so it never competes with SMAI's
-primary Streamlit application.
+user-facing application state. It reads stable Operations contracts and runs
+the server-local health probe at a bounded interval. The launcher binds it to
+a separate port so it never competes with SMAI's primary Streamlit application.
 """
 
 from __future__ import annotations
@@ -14,14 +13,16 @@ import json
 import os
 import subprocess
 import sys
+from base64 import b64encode
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from typing import Mapping
 
-from ..monitoring import task_monitor, telemetry
+from ..monitoring import connection_watch, task_monitor, telemetry
 from ..operations import incident_automation
 
-try:  # Keep pure helper tests usable with the lightweight Tkinter environment.
+try:  # Keep pure helper tests usable without the optional Web runtime.
     import streamlit as st
 except ImportError:  # pragma: no cover - the web launcher requires Streamlit
     st = None
@@ -94,6 +95,23 @@ STATUS_COLORS = {
     "failed": "#F87171",
     "error": "#F87171",
     "unknown": "#AAB8C8",
+}
+TIME_WINDOW_OPTIONS = {
+    "過去24時間": timedelta(hours=24),
+    "過去7日間": timedelta(days=7),
+    "過去30日間": timedelta(days=30),
+    "すべて": None,
+}
+HISTORY_RESULT_OPTIONS = ("すべて", "成功", "失敗", "取り消し")
+INCIDENT_SEVERITY_OPTIONS = ("すべて", "失敗", "エラー", "重大")
+WEB_TAB_LABELS = ("概要", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ")
+RESULT_FILTER_KEYS = {
+    "すべて": "all",
+    "成功": "ok",
+    "失敗": "failed",
+    "取り消し": "cancelled",
+    "エラー": "error",
+    "重大": "critical",
 }
 
 
@@ -245,6 +263,21 @@ def status_color(status: object) -> str:
     return STATUS_COLORS.get(normalized, STATUS_COLORS["unknown"])
 
 
+def filter_key(value: object) -> str:
+    return RESULT_FILTER_KEYS.get(str(value), str(value))
+
+
+def event_within_window(value: object, window: str, *, now: datetime | None = None) -> bool:
+    duration = TIME_WINDOW_OPTIONS.get(window)
+    if duration is None:
+        return window == "すべて"
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        return False
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    return parsed.astimezone(UTC) >= current - duration
+
+
 def service_status(checks: Mapping[str, str], *keywords: str) -> str:
     matches = [status for name, status in checks.items() if any(keyword.casefold() in name.casefold() for keyword in keywords)]
     return worst_status(*matches) if matches else "unknown"
@@ -290,6 +323,8 @@ def task_rows() -> list[dict[str, str]]:
 def run_health_check() -> str:
     """Run the existing local probe without exposing subprocess output to browsers."""
 
+    if os.environ.get("SMAI_ANALYTICS_TEST_SKIP_HEALTH_PROBE") == "1":
+        return ""
     try:
         result = subprocess.run(
             [sys.executable, str(REPOSITORY_ROOT / "health.py")],
@@ -327,9 +362,14 @@ def collect_operations_snapshot() -> dict[str, object]:
     except (OSError, ValueError, TypeError):
         reports = []
     try:
-        rollups = telemetry.read_health_rollups(RUNTIME_ROOT, window=timedelta(hours=24))
+        rollups = telemetry.read_health_rollups(RUNTIME_ROOT, window=timedelta(days=30))
     except (OSError, ValueError, TypeError):
         rollups = []
+    connection_history = connection_watch.read(CONNECTION_WATCH_STATE)
+    try:
+        task_history = task_monitor.read_observations(RUNTIME_ROOT, window=timedelta(days=30))
+    except (OSError, ValueError, TypeError):
+        task_history = []
     return {
         "health_note": health_note,
         "overall": overall,
@@ -346,6 +386,8 @@ def collect_operations_snapshot() -> dict[str, object]:
         "reports": reports,
         "logs": recent_logs(),
         "rollups": rollups,
+        "connection_history": connection_history,
+        "task_history": task_history,
     }
 
 
@@ -384,52 +426,80 @@ def _render_styles() -> None:
         """
         <style>
           .stApp { background: #070D19; color: #E5EDF7; }
-          [data-testid="stHeader"] { background: rgba(7, 13, 25, 0.92); }
+          [data-testid="stHeader"] { background: rgba(7, 13, 25, 0.94); }
+          [data-testid="stMainBlockContainer"], .block-container {
+            max-width: none;
+            padding: 1.15rem 2.2rem 2.5rem;
+          }
           [data-testid="stMetric"] {
-            background: #111F35;
+            background: linear-gradient(145deg, #14243d, #0e1a2e);
             border: 1px solid #354763;
-            border-radius: 12px;
-            padding: 16px 18px;
-            min-height: 116px;
+            border-radius: 14px;
+            min-height: 108px;
+            padding: 15px 18px;
           }
           [data-testid="stMetricLabel"] { color: #AAB8C8; font-weight: 700; }
           [data-testid="stMetricValue"] { color: #F8FBFF; }
-          .status-card {
-            background: #111F35;
+          button[kind="secondary"] { border-color: #3b587d; color: #DCEBFF; }
+          .status-card, .ops-panel, .topology-node, .brand-block {
+            background: linear-gradient(145deg, #14243d, #0e1a2e);
             border: 1px solid #354763;
-            border-radius: 12px;
-            padding: 16px 18px;
-            min-height: 110px;
+            border-radius: 14px;
           }
-          .status-card h2 { color: #F8FBFF; font-size: 1.15rem; margin: 10px 0 6px; }
+          .brand-block { min-height: 110px; padding: 10px 16px; }
+          .brand-wordmark { display: block; height: 78px; max-width: min(100%, 500px); object-fit: contain; object-position: left center; }
+          .brand-copy { color: #AAB8C8; font-size: 0.86rem; margin: 2px 0 0; }
+          .status-card { align-items: center; display: flex; gap: 12px; min-height: 112px; padding: 14px 16px; }
+          .status-card-copy { min-width: 0; }
+          .status-mascot { height: 64px; object-fit: contain; width: 64px; }
+          .status-card h2 { color: #F8FBFF; font-size: 1.14rem; margin: 10px 0 6px; }
           .status-card p { color: #AAB8C8; margin: 0; }
           .status-pill {
             border: 1px solid;
             border-radius: 999px;
             display: inline-block;
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             font-weight: 800;
-            letter-spacing: 0.06em;
+            letter-spacing: 0.07em;
             padding: 4px 10px;
           }
-          .topology-node {
-            background: #111F35;
-            border: 1px solid #354763;
-            border-radius: 12px;
-            min-height: 156px;
-            padding: 12px;
-            text-align: center;
-          }
-          .topology-node strong { color: #F8FBFF; display: block; margin-top: 4px; }
+          .panel-kicker { color: #60A5FA; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 2px; }
+          .panel-title { color: #F8FBFF; font-size: 1.06rem; font-weight: 800; margin: 0 0 4px; }
+          .panel-caption, .section-note { color: #AAB8C8; font-size: 0.88rem; margin: 0 0 12px; }
+          .topology-node { min-height: 164px; padding: 12px; text-align: center; }
+          .topology-image { display: block; height: 60px; margin: 0 auto 4px; object-fit: contain; width: 76px; }
+          .topology-node strong { color: #F8FBFF; display: block; margin-top: 3px; }
           .topology-node small { color: #AAB8C8; }
-          .section-note { color: #AAB8C8; font-size: 0.9rem; }
+          .gauge-wrap { align-items: center; display: flex; gap: 20px; min-height: 205px; }
+          .gauge {
+            align-items: center;
+            background: conic-gradient(var(--health-color) calc(var(--score) * 1%), #253a58 0);
+            border-radius: 50%;
+            display: flex;
+            height: 142px;
+            justify-content: center;
+            min-width: 142px;
+            position: relative;
+          }
+          .gauge::before { background: #0e1a2e; border-radius: 50%; content: ""; height: 112px; position: absolute; width: 112px; }
+          .gauge-value { color: #F8FBFF; font-size: 1.9rem; font-weight: 800; position: relative; z-index: 1; }
+          .gauge-copy h3 { color: #F8FBFF; margin: 0 0 8px; }
+          .gauge-copy p { color: #AAB8C8; margin: 0; }
+          [data-baseweb="tab-list"] { gap: 5px; }
+          [data-baseweb="tab"] { color: #AAB8C8; font-weight: 750; padding-left: 16px; padding-right: 16px; }
+          [aria-selected="true"][data-baseweb="tab"] { color: #22D3EE; }
+          [data-testid="stDataFrame"] { font-size: 0.94rem; }
           @media (min-width: 2200px) {
-            .block-container { max-width: 2200px; padding-left: 3.2rem; padding-right: 3.2rem; }
-            [data-testid="stMetric"] { min-height: 142px; padding: 22px 24px; }
+            [data-testid="stMainBlockContainer"], .block-container { padding-left: 3rem; padding-right: 3rem; }
+            [data-testid="stMetric"] { min-height: 136px; padding: 21px 24px; }
+            .topology-node { min-height: 168px; }
           }
           @media (max-width: 760px) {
             .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
-            [data-testid="stMetric"] { min-height: 94px; padding: 12px; }
+            [data-testid="stMetric"] { min-height: 92px; padding: 12px; }
+            .gauge-wrap { align-items: flex-start; flex-direction: column; }
+            .topology-node { min-height: 128px; padding: 9px; }
+            [data-baseweb="tab"] { font-size: 0.83rem; padding-left: 9px; padding-right: 9px; }
           }
         </style>
         """,
@@ -437,101 +507,124 @@ def _render_styles() -> None:
     )
 
 
+def _panel_heading(title: str, subtitle: str, *, kicker: str = "OPERATIONS") -> None:
+    assert st is not None
+    st.markdown(
+        f'<p class="panel-kicker">{html.escape(kicker)}</p><p class="panel-title">{html.escape(title)}</p><p class="panel-caption">{html.escape(subtitle)}</p>',
+        unsafe_allow_html=True,
+    )
+
+
+def _topology_tile(index: int) -> bytes | str | None:
+    if not TOPOLOGY_SPRITE.is_file():
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(TOPOLOGY_SPRITE) as source:
+            source = source.convert("RGBA")
+            tile_width, tile_height = source.width // 2, source.height // 2
+            column, row = index % 2, index // 2
+            tile = source.crop((column * tile_width, row * tile_height, (column + 1) * tile_width, (row + 1) * tile_height))
+            bounds = tile.getchannel("A").point(lambda value: 255 if value >= 48 else 0).getbbox()
+            if bounds is not None:
+                tile = tile.crop(bounds)
+            tile.thumbnail((160, 160), Image.Resampling.LANCZOS)
+            output = BytesIO()
+            tile.save(output, format="PNG")
+            return output.getvalue()
+    except (OSError, ValueError, ImportError):
+        return str(TOPOLOGY_SPRITE)
+
+
+def _image_data_uri(image: bytes | str | Path | None) -> str:
+    if image is None:
+        return ""
+    if isinstance(image, bytes):
+        return "data:image/png;base64," + b64encode(image).decode("ascii")
+    path = Path(image)
+    if not path.is_file():
+        return ""
+    mime_type = "image/png" if path.suffix.casefold() == ".png" else "image/jpeg"
+    try:
+        return f"data:{mime_type};base64," + b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        return ""
+
+
+def _downsample_rows(rows: list[dict[str, object]], *, maximum: int) -> list[dict[str, object]]:
+    if len(rows) <= maximum:
+        return rows
+    stride = max(1, (len(rows) + maximum - 1) // maximum)
+    sampled = rows[::stride]
+    if sampled[-1] != rows[-1]:
+        sampled.append(rows[-1])
+    return sampled
+
+
+def _rollups_for_window(data: Mapping[str, object], window: str) -> list[dict[str, object]]:
+    duration = TIME_WINDOW_OPTIONS.get(window, timedelta(hours=24))
+    raw_rows = data.get("rollups")
+    rows = [row for row in raw_rows if isinstance(row, dict)] if isinstance(raw_rows, list) else []
+    if duration is None:
+        return rows
+    now = datetime.now(UTC)
+    return [row for row in rows if (timestamp := parse_timestamp(row.get("bucket_start"))) is not None and timestamp.astimezone(UTC) >= now - duration]
+
+
+def _session_statuses(sessions: list[dict[str, str]]) -> dict[str, str]:
+    return {
+        client: worst_status(*(session_connection_status(item) for item in sessions if item.get("client_type") == client))
+        if any(item.get("client_type") == client for item in sessions)
+        else "unknown"
+        for client in connection_watch.CLIENT_TYPES
+    }
+
+
 def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
-    brand, status = st.columns((7, 3))
+    brand, status, controls = st.columns((6, 3, 1))
     with brand:
-        if ANALYTICS_WORDMARK.is_file():
-            st.image(str(ANALYTICS_WORDMARK), width=440)
-        else:
-            st.title("SMAI Analytics")
-        st.caption("Operations Console  /  常時ローカル監視  /  信頼済みプライベートLAN閲覧")
+        wordmark = _image_data_uri(ANALYTICS_WORDMARK)
+        brand_image = f'<img class="brand-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else "<h1>SMAI Analytics</h1>"
+        st.markdown(f'<div class="brand-block">{brand_image}<p class="brand-copy">Operations Console / 常時ローカル監視 / 信頼済みプライベートLAN閲覧</p></div>', unsafe_allow_html=True)
     with status:
-        if ANALYTICS_MASCOT.is_file():
-            mascot, details = st.columns((1, 2))
-            with mascot:
-                st.image(str(ANALYTICS_MASCOT), width=78)
-            with details:
-                title, detail = _narrative(str(data["overall"]))
-                st.markdown(f'<div class="status-card">{_status_pill(data["overall"])}<h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div>', unsafe_allow_html=True)
-        else:
-            title, detail = _narrative(str(data["overall"]))
-            st.markdown(f'<div class="status-card">{_status_pill(data["overall"])}<h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div>', unsafe_allow_html=True)
+        title, detail = _narrative(str(data["overall"]))
+        mascot = _image_data_uri(ANALYTICS_MASCOT)
+        mascot_image = f'<img class="status-mascot" src="{mascot}" alt="SMAI Analytics mascot">' if mascot else ""
+        st.markdown(f'<div class="status-card">{mascot_image}<div class="status-card-copy">{_status_pill(data["overall"])}<h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div></div>', unsafe_allow_html=True)
+    with controls:
+        st.caption("表示更新")
+        if st.button("今すぐ", key="refresh_now", use_container_width=True):
+            cached_operations_snapshot.clear()
+            st.rerun()
 
 
 def _render_metrics(data: Mapping[str, object]) -> None:
     assert st is not None
-    score = health_score(data["overall"])
     sessions = "—" if data["session_count"] is None else str(data["session_count"])
     operations = "—" if data["operation_count"] is None else str(data["operation_count"])
     columns = st.columns(4)
-    columns[0].metric("Health score", f"{score} / 100", status_label(data["overall"]))
-    columns[1].metric("接続セッション", sessions, "activity state")
-    columns[2].metric("実行中の処理", operations, "現在の処理数")
+    columns[0].metric("Health score", f"{health_score(data['overall'])} / 100", status_label(data["overall"]))
+    columns[1].metric("接続セッション", sessions, "現在の接続状態")
+    columns[2].metric("実行中の処理", operations, "activity state")
     columns[3].metric("最終確認", compact_timestamp(data["checked_at"]), format_timestamp(data["checked_at"]))
 
 
-def _render_topology_node(column: object, *, label: str, detail: str, status: str, image_path: Path | None = None) -> None:
+def _render_topology_node(column: object, *, label: str, detail: str, status: str, image: bytes | str | None = None) -> None:
     assert st is not None
     with column:
-        if image_path is not None and image_path.is_file():
-            st.image(str(image_path), width=64)
+        image_uri = _image_data_uri(image)
+        image_tag = f'<img class="topology-image" src="{image_uri}" alt="{html.escape(label)}">' if image_uri else ""
         st.markdown(
-            f'<div class="topology-node"><strong>{html.escape(label)}</strong><small>{html.escape(detail)}</small><br><br>{_status_pill(status)}</div>',
+            f'<div class="topology-node">{image_tag}<strong>{html.escape(label)}</strong><small>{html.escape(detail)}</small><br><br>{_status_pill(status)}</div>',
             unsafe_allow_html=True,
         )
 
 
-def _render_overview(data: Mapping[str, object]) -> None:
-    assert st is not None
-    topology, history = st.columns((6, 7))
-    checks = data["check_statuses"]
-    if not isinstance(checks, dict):
-        checks = {}
-    sessions = data["sessions"]
-    session_rows = sessions if isinstance(sessions, list) else []
-    client_statuses = {
-        client: worst_status(*(session_connection_status(item) for item in session_rows if item.get("client_type") == client))
-        if any(item.get("client_type") == client for item in session_rows)
-        else "unknown"
-        for client in ("desktop", "smartphone", "tablet")
-    }
-    storage_status = worst_status(*(str(item.get("status") or "unknown") for item in data["storage"] if isinstance(item, dict)))
-    with topology:
-        st.subheader("SERVICE TOPOLOGY")
-        st.caption("端末の状態は、SMAIが受信したheartbeatの鮮度だけを根拠に表示します。")
-        clients = st.columns(3)
-        _render_topology_node(clients[0], label="SMAI UI", detail="PC browser", status=client_statuses["desktop"], image_path=ANALYTICS_LOGO)
-        _render_topology_node(clients[1], label="スマートフォン", detail="mobile browser", status=client_statuses["smartphone"], image_path=TOPOLOGY_SMARTPHONE)
-        _render_topology_node(clients[2], label="タブレット", detail="tablet browser", status=client_statuses["tablet"], image_path=TOPOLOGY_TABLET)
-        st.markdown("<p class='section-note' style='text-align:center'>↓ 同じ信頼済みネットワーク内のWeb App ↓</p>", unsafe_allow_html=True)
-        services = st.columns(3)
-        _render_topology_node(services[0], label="Streamlit", detail="SMAI Web App", status=service_status(checks, "streamlit"), image_path=TOPOLOGY_SPRITE)
-        _render_topology_node(services[1], label="Runtime", detail="local state / backup", status=storage_status)
-        _render_topology_node(services[2], label="Analytics", detail="ops observations", status=str(data["overall"]), image_path=ANALYTICS_LOGO)
-    with history:
-        st.subheader("HEALTH TIMELINE")
-        st.caption("5分単位の永続履歴。欠損は正常として扱いません。")
-        rollups = data["rollups"]
-        chart_rows: list[dict[str, object]] = []
-        if isinstance(rollups, list):
-            for row in rollups:
-                if not isinstance(row, dict):
-                    continue
-                timestamp = parse_timestamp(row.get("bucket_start"))
-                chart_rows.append(
-                    {
-                        "時刻": timestamp.astimezone().strftime("%H:%M") if timestamp is not None else "時刻不明",
-                        "Health score": health_score(telemetry.status_from_counts(row.get("overall"))),
-                    }
-                )
-        if chart_rows:
-            st.line_chart(chart_rows, x="時刻", y="Health score", height=280, use_container_width=True)
-        else:
-            st.info("永続ヘルス履歴はまだありません。最初の5分集計後に表示されます。")
-
-    st.subheader("CHECK MATRIX")
-    check_rows = [
+def _check_rows(data: Mapping[str, object]) -> list[dict[str, str]]:
+    checks = data.get("checks")
+    return [
         {
             "レベル": str(item.get("level") or "—"),
             "チェック": str(item.get("name") or "—"),
@@ -539,65 +632,349 @@ def _render_overview(data: Mapping[str, object]) -> None:
             "詳細": str(item.get("detail") or item.get("message") or "—"),
             "応答": f"{item.get('latency_ms')} ms" if isinstance(item.get("latency_ms"), int) else "—",
         }
-        for item in data["checks"]
+        for item in checks
         if isinstance(item, dict)
-    ]
-    if check_rows:
-        st.dataframe(check_rows, use_container_width=True, hide_index=True)
-    else:
-        st.warning("ヘルスチェックの証跡を読み取れません。正常とは判定していません。")
+    ] if isinstance(checks, list) else []
 
-    st.subheader("RECOVERY READINESS")
-    storage = data["storage"]
-    storage_rows = [
-        {
-            "対象": str(item.get("name") or "—"),
-            "状態": status_label(item.get("status")),
-            "空き容量": format_bytes(item.get("free_bytes")),
-            "空き率": f"{item.get('free_percent')}%" if item.get("free_percent") is not None else "—",
-        }
-        for item in storage
-        if isinstance(item, dict)
-    ]
-    if storage_rows:
-        st.dataframe(storage_rows, use_container_width=True, hide_index=True)
+
+def _render_gauge(data: Mapping[str, object]) -> None:
+    assert st is not None
+    score = health_score(data["overall"])
+    color = status_color(data["overall"])
+    title, detail = _narrative(str(data["overall"]))
+    st.markdown(
+        f'<div class="ops-panel gauge-wrap"><div class="gauge" style="--score:{score};--health-color:{color}"><span class="gauge-value">{score}</span></div><div class="gauge-copy"><p class="panel-kicker">SYSTEM HEALTH</p><h3>{html.escape(title)}</h3><p>{html.escape(detail)}</p><p style="margin-top:12px">{_status_pill(data["overall"])}</p></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_overview(data: Mapping[str, object]) -> None:
+    assert st is not None
+    topology, health = st.columns((7, 5))
+    checks = data.get("check_statuses")
+    check_statuses = checks if isinstance(checks, dict) else {}
+    raw_sessions = data.get("sessions")
+    sessions = [item for item in raw_sessions if isinstance(item, dict)] if isinstance(raw_sessions, list) else []
+    statuses = _session_statuses(sessions)
+    storage = data.get("storage")
+    storage_rows = [item for item in storage if isinstance(item, dict)] if isinstance(storage, list) else []
+    storage_status = worst_status(*(str(item.get("status") or "unknown") for item in storage_rows))
+    with topology:
+        _panel_heading("SERVICE TOPOLOGY", "端末の状態はSMAIが受信したheartbeatの鮮度だけを根拠に表示します。")
+        clients = st.columns(3)
+        _render_topology_node(clients[0], label="SMAI UI", detail="PC browser", status=statuses["desktop"], image=_topology_tile(0))
+        _render_topology_node(clients[1], label="スマートフォン", detail="mobile browser", status=statuses["smartphone"], image=str(TOPOLOGY_SMARTPHONE))
+        _render_topology_node(clients[2], label="タブレット", detail="tablet browser", status=statuses["tablet"], image=str(TOPOLOGY_TABLET))
+        st.markdown("<p class='section-note' style='text-align:center'>↓ 同じ信頼済みネットワーク内のWeb App ↓</p>", unsafe_allow_html=True)
+        services = st.columns(3)
+        _render_topology_node(services[0], label="Streamlit", detail="SMAI Web App", status=service_status(check_statuses, "streamlit"), image=_topology_tile(1))
+        _render_topology_node(services[1], label="Runtime", detail="local state / backup", status=storage_status, image=_topology_tile(2))
+        _render_topology_node(services[2], label="Analytics", detail="operations console", status=str(data["overall"]), image=_topology_tile(3))
+    with health:
+        _render_gauge(data)
+        _panel_heading("HEALTH TIMELINE", "5分単位の永続履歴。欠損は正常として扱いません。", kicker="LIVE HISTORY")
+        history = [
+            {
+                "時刻": parse_timestamp(row.get("bucket_start")).astimezone().strftime("%m/%d %H:%M") if parse_timestamp(row.get("bucket_start")) else "時刻不明",
+                "Health score": health_score(telemetry.status_from_counts(row.get("overall"))),
+            }
+            for row in _rollups_for_window(data, "過去24時間")
+        ]
+        if history:
+            st.line_chart(_downsample_rows(history, maximum=24), x="時刻", y="Health score", height=250, use_container_width=True)
+        else:
+            st.info("永続ヘルス履歴はまだありません。最初の5分集計後に表示されます。")
+
+    left, right = st.columns((7, 5))
+    with left:
+        _panel_heading("CHECK MATRIX", "L1〜L3の接続・画面・保存の検証結果です。")
+        rows = _check_rows(data)
+        if rows:
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.warning("ヘルスチェックの証跡を読み取れません。正常とは判定していません。")
+    with right:
+        _panel_heading("RECOVERY READINESS", "復元検証、保存容量、履歴カバレッジを確認します。")
+        smoke = next((row for row in data.get("tasks", []) if isinstance(row, dict) and row.get("name") == "Backup Restore Smoke"), {})
+        summary = telemetry.window_summary(_rollups_for_window(data, "過去24時間"), window=timedelta(hours=24))
+        headroom = min((float(item.get("free_percent")) for item in storage_rows if isinstance(item.get("free_percent"), (int, float))), default=None)
+        metrics = st.columns(3)
+        metrics[0].metric("復元検証", status_label(smoke.get("status")), str(smoke.get("detail") or "記録なし"))
+        metrics[1].metric("最小空き率", "—" if headroom is None else f"{headroom:.1f}%", "SMAI data / Runtime")
+        metrics[2].metric("履歴カバレッジ", f"{summary['coverage_percent']}%", f"{summary['available_buckets']} / {summary['expected_buckets']} 枠")
+
+
+def _render_trends(data: Mapping[str, object]) -> None:
+    assert st is not None
+    controls, coverage = st.columns((2, 5))
+    with controls:
+        selected = st.selectbox("表示期間", tuple(TIME_WINDOW_OPTIONS)[:3], key="trends_window")
+    rollups = _rollups_for_window(data, selected)
+    duration = TIME_WINDOW_OPTIONS[selected] or timedelta(hours=24)
+    summary = telemetry.window_summary(rollups, window=duration)
+    with coverage:
+        st.caption(f"履歴カバレッジ: {summary['coverage_percent']}%  /  {summary['available_buckets']} / {summary['expected_buckets']} 枠。欠損は正常として数えません。")
+    _panel_heading("HEALTH HISTORY", "overallとL1〜L3の状態スコアを5分集計で表示します。", kicker="TRENDS")
+    health_rows: list[dict[str, object]] = []
+    for row in rollups:
+        timestamp = parse_timestamp(row.get("bucket_start"))
+        health_rows.append(
+            {
+                "時刻": timestamp.astimezone().strftime("%m/%d %H:%M") if timestamp is not None else "時刻不明",
+                "overall": health_score(telemetry.status_from_counts(row.get("overall"))),
+                "L1": health_score(telemetry.level_status(row, "L1")),
+                "L2": health_score(telemetry.level_status(row, "L2")),
+                "L3": health_score(telemetry.level_status(row, "L3")),
+            }
+        )
+    if health_rows:
+        st.line_chart(_downsample_rows(health_rows, maximum=96), x="時刻", y=("overall", "L1", "L2", "L3"), height=280, use_container_width=True)
     else:
-        st.info("保存容量の観測値はまだありません。")
+        st.info("選択期間のhealth履歴はまだありません。")
+
+    latency, storage = st.columns(2)
+    with latency:
+        _panel_heading("RESPONSE LATENCY", "Streamlit health/pageの5分p95応答時間です。", kicker="LATENCY")
+        rows: list[dict[str, object]] = []
+        for row in rollups:
+            timestamp = parse_timestamp(row.get("bucket_start"))
+            values = row.get("latency_ms")
+            if not isinstance(values, dict):
+                continue
+            rows.append(
+                {
+                    "時刻": timestamp.astimezone().strftime("%m/%d %H:%M") if timestamp is not None else "時刻不明",
+                    "Streamlit health p95": int(values.get("Streamlit health", {}).get("p95_ms", 0)) if isinstance(values.get("Streamlit health"), dict) else 0,
+                    "Streamlit page p95": int(values.get("Streamlit page", {}).get("p95_ms", 0)) if isinstance(values.get("Streamlit page"), dict) else 0,
+                }
+            )
+        if rows:
+            st.line_chart(_downsample_rows(rows, maximum=96), x="時刻", y=("Streamlit health p95", "Streamlit page p95"), height=230, use_container_width=True)
+        else:
+            st.info("応答時間の履歴はまだありません。")
+    with storage:
+        _panel_heading("STORAGE HEADROOM", "SMAIデータとRuntimeの空き容量率です。", kicker="CAPACITY")
+        rows = []
+        for row in rollups:
+            timestamp = parse_timestamp(row.get("bucket_start"))
+            measures = row.get("storage")
+            values = {str(item.get("name")): item.get("free_percent") for item in measures if isinstance(item, dict)} if isinstance(measures, list) else {}
+            rows.append(
+                {
+                    "時刻": timestamp.astimezone().strftime("%m/%d %H:%M") if timestamp is not None else "時刻不明",
+                    "SMAI data": values.get("SMAI data"),
+                    "Runtime": values.get("Runtime"),
+                }
+            )
+        if rows:
+            st.line_chart(_downsample_rows(rows, maximum=96), x="時刻", y=("SMAI data", "Runtime"), height=230, use_container_width=True)
+        else:
+            st.info("保存容量の履歴はまだありません。")
+
+    _panel_heading("JOB FRESHNESS", "Schedulerと復元検証の観測履歴です。", kicker="TASK HISTORY")
+    history = data.get("task_history")
+    task_rows: list[dict[str, object]] = []
+    if isinstance(history, list):
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            observed = parse_timestamp(row.get("observed_at"))
+            tasks = row.get("tasks")
+            statuses = [str(item.get("status") or "unknown") for item in tasks if isinstance(item, dict)] if isinstance(tasks, list) else []
+            task_rows.append(
+                {
+                    "観測時刻": observed.astimezone().strftime("%m/%d %H:%M") if observed is not None else "時刻不明",
+                    "鮮度スコア": health_score(worst_status(*statuses)),
+                    "対象数": len(statuses),
+                }
+            )
+    if task_rows:
+        st.line_chart(task_rows, x="観測時刻", y="鮮度スコア", height=180, use_container_width=True)
+    else:
+        st.info("タスク鮮度の履歴はまだありません。")
 
 
 def _render_connections(data: Mapping[str, object]) -> None:
     assert st is not None
-    st.subheader("端末接続状況")
-    if not bool(data["activity_available"]):
+    _panel_heading("端末接続状況", "端末種別ごとの現在接続数とAnalytics観測開始後の累計です。", kicker="SESSIONS")
+    sessions = [item for item in data.get("sessions", []) if isinstance(item, dict)] if isinstance(data.get("sessions"), list) else []
+    history = data.get("connection_history")
+    state = history.get("state") if isinstance(history, dict) else {}
+    summary = connection_watch.summary(state) if isinstance(state, dict) else connection_watch.summary({})
+    active = {client: sum(1 for session in sessions if session.get("client_type") == client and session_connection_status(session) == "ok") for client in connection_watch.CLIENT_TYPES}
+    metrics = st.columns(3)
+    for column, client in zip(metrics, connection_watch.CLIENT_TYPES):
+        cumulative = summary.get("cumulative", {}).get(client, 0) if isinstance(summary.get("cumulative"), dict) else 0
+        unlinked = sum(1 for session in sessions if session.get("client_type") == client and session_connection_status(session) == "ok" and not session.get("device_id"))
+        detail = f"累計 {cumulative}台" + (f" / ID未連携 {unlinked}" if unlinked else "")
+        column.metric(f"{CLIENT_TYPE_LABELS[client]} / 現在接続", f"{active[client]}台", detail)
+    if not bool(data.get("activity_available")):
         st.warning("activity state を読み取れません。接続がない、とは判断していません。")
-        return
-    sessions = data["sessions"]
-    rows = []
-    for session in sessions if isinstance(sessions, list) else []:
-        if not isinstance(session, dict):
-            continue
-        communication = session_connection_status(session)
-        user = session["profile_name"] or session["user_id"] or compact_id(session["session_id"])
-        if session["profile_name"] and session["user_id"]:
-            user = f"{session['profile_name']} / {compact_id(session['user_id'])}"
-        rows.append(
-            {
-                "ユーザー / プロフィール": user,
-                "端末種別": CLIENT_TYPE_LABELS.get(session["client_type"], "種別不明"),
-                "最終通信": f"{relative_time(session['last_seen_at'])} / {format_timestamp(session['last_seen_at'])}",
-                "端末擬似ID": compact_id(session["device_id"]) if session["device_id"] else "—",
-                "状態": status_label(communication),
-            }
-        )
+    else:
+        rows = []
+        for session in sessions:
+            communication = session_connection_status(session)
+            user = session["profile_name"] or session["user_id"] or compact_id(session["session_id"])
+            if session["profile_name"] and session["user_id"]:
+                user = f"{session['profile_name']} / {compact_id(session['user_id'])}"
+            rows.append(
+                {
+                    "ユーザー / プロフィール": user,
+                    "端末種別": CLIENT_TYPE_LABELS.get(session["client_type"], "種別不明"),
+                    "最終通信": f"{relative_time(session['last_seen_at'])} / {format_timestamp(session['last_seen_at'])}",
+                    "端末擬似ID": compact_id(session["device_id"]) if session["device_id"] else "—",
+                    "状態": status_label(communication),
+                }
+            )
+        st.markdown("#### セッション一覧")
+        if rows:
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.info("接続中のセッションはありません。")
+
+    st.markdown("#### 接続観測履歴")
+    raw_events = state.get("events") if isinstance(state, dict) else []
+    event_rows = [
+        {
+            "観測時刻": format_timestamp(item.get("observed_at")),
+            "端末種別": CLIENT_TYPE_LABELS.get(str(item.get("client_type") or "unknown"), "種別不明"),
+            "観測結果": str(item.get("event") or "—"),
+            "状態": status_label(item.get("status")),
+            "セッション": compact_id(item.get("session_id")),
+        }
+        for item in reversed(raw_events)
+        if isinstance(item, dict)
+    ] if isinstance(raw_events, list) else []
+    if event_rows:
+        st.dataframe(event_rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("接続観測履歴はまだありません。消失は切断と推測しません。")
+
+
+def _render_activity_history(data: Mapping[str, object]) -> None:
+    assert st is not None
+    _panel_heading("操作履歴", "監査イベントを期間・結果・ユーザーID・操作名で絞り込みます。", kicker="ACTIVITY HISTORY")
+    period, result, user, action = st.columns((2, 2, 3, 3))
+    with period:
+        selected_window = st.selectbox("期間", tuple(TIME_WINDOW_OPTIONS), key="activity_window")
+    with result:
+        selected_result = st.selectbox("結果", HISTORY_RESULT_OPTIONS, key="activity_result")
+    with user:
+        user_query = st.text_input("ユーザーID", key="activity_user").strip().casefold()
+    with action:
+        action_query = st.text_input("操作名", key="activity_action").strip().casefold()
+    result_key = filter_key(selected_result)
+    events = [item for item in data.get("events", []) if isinstance(item, dict)] if isinstance(data.get("events"), list) else []
+    matched = [
+        event
+        for event in events
+        if event_within_window(event.get("timestamp"), selected_window)
+        and (result_key == "all" or str(event.get("result") or "").casefold() == result_key)
+        and (not user_query or user_query in str(event.get("user_id") or "").casefold())
+        and (not action_query or action_query in str(event.get("action") or "").casefold())
+    ]
+    successes = sum(1 for event in matched if str(event.get("result") or "").casefold() == "ok")
+    failures = sum(1 for event in matched if str(event.get("result") or "").casefold() in {"failed", "error", "critical"})
+    cancelled = sum(1 for event in matched if str(event.get("result") or "").casefold() == "cancelled")
+    metrics = st.columns(3)
+    metrics[0].metric("直近イベント", str(len(matched)), "最大200件の監査記録")
+    metrics[1].metric("成功", str(successes), "成功した操作")
+    metrics[2].metric("失敗 / 取消", str(failures + cancelled), f"失敗 {failures} / 取消 {cancelled}")
+    rows = [
+        {
+            "時刻": format_timestamp(event.get("timestamp")),
+            "ユーザー": compact_id(event.get("user_id")),
+            "操作": str(event.get("action") or "—"),
+            "対象": str(event.get("target") or "—"),
+            "結果": status_label(event.get("result")),
+            "端末": compact_id(event.get("device_id")),
+            "所要時間": f"{event.get('duration_ms')} ms" if event.get("duration_ms") not in {None, ""} else "—",
+        }
+        for event in matched
+    ]
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    elif events:
+        st.info("条件に一致する操作履歴はありません。")
+    else:
+        st.info("操作履歴はまだありません。SMAI本体からの監査イベント連携後に表示されます。")
+
+
+def _render_incidents(data: Mapping[str, object]) -> None:
+    assert st is not None
+    _panel_heading("障害状況", "failed / error / critical の監査イベントを失敗種別と期間で確認します。", kicker="INCIDENTS")
+    period, severity = st.columns(2)
+    with period:
+        selected_window = st.selectbox("期間", tuple(TIME_WINDOW_OPTIONS), index=1, key="incident_window")
+    with severity:
+        selected_severity = st.selectbox("重要度", INCIDENT_SEVERITY_OPTIONS, key="incident_severity")
+    selected_result = filter_key(selected_severity)
+    source = [
+        event
+        for event in data.get("events", [])
+        if isinstance(event, dict) and str(event.get("result") or "").casefold() in {"failed", "error", "critical"}
+    ] if isinstance(data.get("events"), list) else []
+    matched = [
+        event
+        for event in source
+        if event_within_window(event.get("timestamp"), selected_window)
+        and (selected_result == "all" or str(event.get("result") or "").casefold() == selected_result)
+    ]
+    critical = sum(1 for event in matched if str(event.get("result") or "").casefold() == "critical")
+    latest = relative_time(matched[0].get("timestamp")) if matched else "記録なし"
+    metrics = st.columns(3)
+    metrics[0].metric("該当件数", str(len(matched)), "現在の絞り込み結果")
+    metrics[1].metric("直近の記録", latest, "復旧状況はレポートで確認")
+    metrics[2].metric("重大", str(critical), "critical の件数")
+    rows = [
+        {
+            "時刻": format_timestamp(event.get("timestamp")),
+            "操作": str(event.get("action") or "—"),
+            "対象": str(event.get("target") or "—"),
+            "結果": status_label(event.get("result")),
+        }
+        for event in matched
+    ]
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    elif source:
+        st.info("条件に一致する障害はありません。")
+    else:
+        st.success("現在の監査イベントに failed / error / critical はありません。")
+
+
+def _render_reports(data: Mapping[str, object]) -> None:
+    assert st is not None
+    _panel_heading("改善レポート", "重大な障害の調査結果を確認します。メール送信は別途SMTP設定がある場合だけです。", kicker="REPORTS")
+    reports = data.get("reports")
+    rows = [
+        {
+            "記録時刻": format_timestamp(report.get("reported_at")),
+            "調査依頼": compact_id(report.get("request_id"), limit=28),
+            "重要度": str(report.get("severity") or "—").upper(),
+            "状態": status_label(report.get("status")),
+            "改善結果": str(report.get("summary") or "調査結果はまだ記録されていません。"),
+        }
+        for report in reports
+        if isinstance(report, dict)
+    ] if isinstance(reports, list) else []
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)
     else:
-        st.info("接続中のセッションはありません。")
+        st.info("改善レポートはまだありません。重大な障害が検知されると、調査結果がここに追加されます。")
 
 
 def _render_tasks(data: Mapping[str, object]) -> None:
     assert st is not None
-    st.subheader("タスク鮮度")
+    _panel_heading("タスク鮮度", "Schedulerと隔離復元検証の最終成功・実行パス・期限を確認します。", kicker="TASKS")
+    tasks = [item for item in data.get("tasks", []) if isinstance(item, dict)] if isinstance(data.get("tasks"), list) else []
+    healthy = sum(1 for row in tasks if str(row.get("status") or "").casefold() == "healthy")
+    unknown = sum(1 for row in tasks if str(row.get("status") or "").casefold() == "unknown")
+    attention = len(tasks) - healthy - unknown
+    metrics = st.columns(3)
+    metrics[0].metric("予定内", str(healthy), "最終成功・実行パスを確認")
+    metrics[1].metric("取得不能", str(unknown), "未登録・権限・記録なし")
+    metrics[2].metric("期限超過 / 失敗", str(attention), "復旧または設定を確認")
     rows = [
         {
             "タスク": str(row.get("name") or "—"),
@@ -607,54 +984,24 @@ def _render_tasks(data: Mapping[str, object]) -> None:
             "最終結果": str(row.get("last_result") or "—"),
             "判定理由": str(row.get("detail") or "—"),
         }
-        for row in data["tasks"]
-        if isinstance(row, dict)
+        for row in tasks
     ]
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
-def _render_incidents(data: Mapping[str, object]) -> None:
-    assert st is not None
-    st.subheader("障害と改善レポート")
-    events = [
-        event
-        for event in data["events"]
-        if isinstance(event, dict) and str(event.get("result") or "").casefold() in {"failed", "error", "critical"}
-    ]
-    incident_rows = [
-        {
-            "時刻": format_timestamp(event.get("timestamp")),
-            "操作": str(event.get("action") or "—"),
-            "対象": str(event.get("target") or "—"),
-            "結果": status_label(event.get("result")),
-        }
-        for event in events
-    ]
-    if incident_rows:
-        st.dataframe(incident_rows, use_container_width=True, hide_index=True)
-    else:
-        st.success("現在の監査イベントに failed / error / critical はありません。")
-    reports = [
-        {
-            "記録時刻": format_timestamp(report.get("reported_at")),
-            "調査依頼": compact_id(report.get("request_id"), limit=28),
-            "重要度": str(report.get("severity") or "—").upper(),
-            "状態": status_label(report.get("status")),
-            "改善結果": str(report.get("summary") or "調査結果はまだ記録されていません。"),
-        }
-        for report in data["reports"]
-        if isinstance(report, dict)
-    ]
-    if reports:
-        st.markdown("#### 改善レポート")
-        st.dataframe(reports, use_container_width=True, hide_index=True)
-
-
 def _render_logs(data: Mapping[str, object]) -> None:
     assert st is not None
-    st.subheader("直近ログ")
-    lines = data["logs"]
-    st.code("\n".join(str(line) for line in lines) if isinstance(lines, list) else "ログを読み取れません", language="text")
+    _panel_heading("ログ一覧", "直近の監視・運用ログを最大100行まで表示します。", kicker="LOGS")
+    lines = [str(item) for item in data.get("logs", [])] if isinstance(data.get("logs"), list) else []
+    errors = sum(any(token in line.casefold() for token in ("error", "failed", "critical")) for line in lines)
+    warnings = sum("warn" in line.casefold() for line in lines)
+    sources = sum(1 for line in lines if line.startswith("["))
+    metrics = st.columns(3)
+    metrics[0].metric("表示行", str(len(lines)), "直近ログの抜粋")
+    metrics[1].metric("警告", str(warnings), "warn を含む行")
+    metrics[2].metric("異常語", str(errors), f"ログソース {sources}件")
+    limit = st.selectbox("表示行数", (25, 50, 100), index=2, key="log_limit")
+    st.code("\n".join(lines[-limit:]) if lines else "ログを読み取れません", language="text")
 
 
 def render_dashboard() -> None:
@@ -664,15 +1011,21 @@ def render_dashboard() -> None:
     _render_metrics(data)
     if data["health_note"]:
         st.warning(str(data["health_note"]))
-    overview, connections, tasks, incidents, logs = st.tabs(("概要", "接続", "タスク", "障害", "ログ"))
+    overview, trends, sessions, activity, incidents, reports, tasks, logs = st.tabs(WEB_TAB_LABELS)
     with overview:
         _render_overview(data)
-    with connections:
+    with trends:
+        _render_trends(data)
+    with sessions:
         _render_connections(data)
-    with tasks:
-        _render_tasks(data)
+    with activity:
+        _render_activity_history(data)
     with incidents:
         _render_incidents(data)
+    with reports:
+        _render_reports(data)
+    with tasks:
+        _render_tasks(data)
     with logs:
         _render_logs(data)
     st.caption(f"5秒ごとに更新 / 最終表示 {datetime.now().astimezone().strftime('%H:%M:%S')} / この画面は閲覧専用です")
@@ -680,7 +1033,7 @@ def render_dashboard() -> None:
 
 def main() -> None:
     if st is None:
-        raise RuntimeError("Streamlit is required. Run this app with the SMAI virtual environment.")
+        raise RuntimeError("Streamlit is required. Run this app with the SMAI Analytics virtual environment.")
     st.set_page_config(page_title="SMAI Analytics | Operations Console", page_icon="📡", layout="wide", initial_sidebar_state="collapsed")
     _render_styles()
 

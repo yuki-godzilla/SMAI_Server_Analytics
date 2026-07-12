@@ -4,11 +4,11 @@
 
 SMAI本体、Analytics画面、Runtimeデータを分離します。SMAI本体は `Smart_Market_AI`、監視画面と診断コードは `SMAI_Server_Analytics`、ログとバックアップは `SMAI_Server_Runtime` に置きます。
 
-画面はPC上で `run_dashboard.bat` を起動します。SMAIが停止しても、最後に取得した状態と直近ログを確認できます。
+画面はPC上で `run_analytics_web.bat` を起動します。SMAIが停止しても、最後に取得した状態と直近ログを確認できます。Web ConsoleはTCP 8502で待ち受けるため、同じ信頼済みプライベートLAN上のPC、タブレット、スマートフォンから同じ画面を確認できます。
 
 ### 信頼済みLANからの閲覧
 
-PC、タブレット、スマートフォンから同じ運用状態を確認する場合は、Analyticsプロジェクトで`run_analytics_web.bat`を実行します。SMAI本体のStreamlitとは別のTCP 8502で、読み取り専用のOperations Consoleを起動します。起動時に表示される`http://<LAN IPv4>:8502`を、同じ信頼済みWi-Fiまたはプライベートネットワーク上の端末で開いてください。
+PC、タブレット、スマートフォンから同じ運用状態を確認する場合は、Analyticsプロジェクトで`run_analytics_web.bat`を実行します。SMAI本体のStreamlitとは別のTCP 8502で、読み取り専用のOperations Consoleを起動します。起動時に表示される`http://<LAN IPv4>:8502`を、同じ信頼済みWi-Fiまたはプライベートネットワーク上の端末で開いてください。Web Consoleだけを再起動する場合は`restart_analytics_web.bat`を使用します。
 
 - ブラウザー画面は5秒ごとに状態を更新し、L1〜L3のhealth snapshot、セッション、タスク、障害、直近ログを表示します。
 - この画面はSMAI本体の計算、ランキング、スコア、Forecast、ユーザーデータ、タスク設定を変更しません。

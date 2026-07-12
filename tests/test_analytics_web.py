@@ -46,6 +46,12 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn("--server.address 0.0.0.0", content)
         self.assertIn("SMAI_ANALYTICS_PORT=8502", content)
 
+    def test_web_tab_contract_covers_every_operations_surface(self) -> None:
+        self.assertEqual(
+            analytics_web.WEB_TAB_LABELS,
+            ("概要", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

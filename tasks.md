@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | SMAI Streamlit | `scripts/start_smai_server.bat` | 必須 | UI停止 |
 | Server Watch | `scripts/server_ops/watch_smai_server.ps1` | 高 | 自動復旧停止 |
-| Server Analytics | `run_dashboard.bat` | 高 | 監視画面停止、SMAI本体は継続 |
+| Server Analytics | `run_analytics_web.bat` | 高 | Web監視画面停止、SMAI本体は継続 |
 | Health Check | `run_health.bat` | 高 | 状態表示が古くなる |
 | Symbol Maintenance | `scripts/run_symbol_maintenance_if_due.bat` | 中 | 銘柄マスター更新停止 |
 | Notification Scheduler | `scripts/run_notification_scheduler.bat` | 任意 | 定時通知停止 |

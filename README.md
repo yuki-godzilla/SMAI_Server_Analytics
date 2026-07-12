@@ -1,68 +1,45 @@
-﻿# SMAI Server Operations
+# SMAI Server Analytics
 
-SMAI譛ｬ菴薙→縺ｯ蛻・屬縺励◆縲仝indows蟶ｸ譎る°逕ｨ逕ｨ縺ｮ逶｣隕悶・繝舌ャ繧ｯ繧｢繝・・繝ｻ髫懷ｮｳ隗｣譫舌Μ繝昴ず繝医Μ縺ｧ縺吶・
-## 蠖ｹ蜑ｲ
+SMAI本体を安全に常時運用するための、ローカルファーストな監視・バックアップ・障害解析プロジェクトです。正規の画面は、PC・タブレット・スマートフォンから同じ状態を確認できる読み取り専用のWeb Operations Consoleです。本リポジトリはSMAI本体の投資計算、ランキング、Forecast、ユーザー画面を所有しません。
 
-- SMAI Streamlit縺ｮL1縲廰3繝倥Ν繧ｹ繝√ぉ繝・け
-- Windows繝・せ繧ｯ繝医ャ繝嶺ｸ翫・驕狗畑逶｣隕也判髱｢
-- 繝ｦ繝ｼ繧ｶ繝ｼ繝ｭ繧ｰ繧､繝ｳ縲∝ｮ溯｡御ｸｭ蜃ｦ逅・√Γ繝ｳ繝・リ繝ｳ繧ｹ迥ｶ諷九∫峩霑代Ο繧ｰ縺ｮ陦ｨ遉ｺ
-- 譛ｬ菴薙・繝ｦ繝ｼ繧ｶ繝ｼ繝・・繧ｿ繝ｻ驕狗畑迥ｶ諷九・豁｣蠑上↑驫俶氛繝槭せ繧ｿ繝ｼ縺ｮ繝舌ャ繧ｯ繧｢繝・・
-- 繝ｭ繧ｰ縺ｮ菫晄戟譛滄俣繝ｻ螳ｹ驥冗ｮ｡逅・
-譛ｬ繝ｪ繝昴ず繝医Μ縺ｯSMAI譛ｬ菴薙ｒ螟画峩縺励∪縺帙ｓ縲ＡSMAI_PROJECT_ROOT`縺ｧ譛ｬ菴薙ヱ繧ｹ繧呈欠螳壹＠縲√Ο繧ｰ繝ｻ繝舌ャ繧ｯ繧｢繝・・縺ｯ`SMAI_RUNTIME_ROOT`縺ｸ菫晏ｭ倥＠縺ｾ縺吶・
-## 襍ｷ蜍・
-```powershell
-$env:SMAI_PROJECT_ROOT = "C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"
-$env:SMAI_RUNTIME_ROOT = "C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"
-python .\dashboard.py
-```
+## Web Operations Console
 
-螟夜Κ萓晏ｭ倥↑縺励・Tkinter逕ｻ髱｢縺ｧ縺吶４MAI譛ｬ菴薙′蛛懈ｭ｢縺励※縺・※繧ら判髱｢縺ｯ谿九ｊ縲∵怙蠕後・迥ｶ諷九→繝ｭ繧ｰ繧定｡ｨ遉ｺ縺ｧ縺阪∪縺吶・
-
-## Backup operations
+セットアップ後、次のランチャーで起動します。
 
 ```powershell
-# Create a backup
-python .\backup.py create
-
-# Verify a backup
-python .\backup.py verify <backup-path>
-
-# Restore from a backup
-python .\backup.py restore <backup-path>
-
-# Restore into an isolated directory for a smoke check
-python .\backup.py restore <backup-path> --destination <restore-directory>
-
-# Create, verify, restore to a temporary isolated directory, and hash-check it
-python .\backup.py smoke
+.\run_analytics_web.bat
 ```
 
-- `create` creates a timestamped backup under the runtime backup directory.
-- `create` exits unsuccessfully if the resulting manifest cannot be verified; an incomplete backup is never reported as restorable.
-- `verify` checks the manifest, file hashes, and that every manifest path remains inside the backup.
-- `restore` performs the same verification before copying. If any file is missing, changed, skipped, or outside the backup, it aborts before writing a destination file.
-- Use `--destination` to restore into an isolated directory before considering a production restore. Without it, files are copied back to the project data directories.
-- `smoke` never writes into the SMAI project. It records the latest result in Runtime after the backup, manifest, isolated restore, and restored-file hashes all verify.
-- If a source file cannot be copied because it is locked, it is recorded as skipped in the manifest and the backup still completes.
-- Transient `.tmp` files and `.lock` files are excluded because they are neither durable state nor safe restore input.
+SMAI本体のTCP 8501とは別のTCP 8502で待ち受け、ローカルURLと検出したLAN URLを表示します。同じ信頼済みプライベートネットワーク上の端末で、たとえば`http://192.168.x.x:8502`を開いてください。
 
-## Runtime retention
+- Overview、推移、セッション、操作履歴、障害、改善レポート、タスク、ログを5秒ごとに更新します。
+- Overviewにはhealth score、サービス構成、health timeline、L1〜L3 check matrix、Recovery Readinessを表示します。
+- 異常、欠損、読み取り不能は正常扱いにせず、`degraded`、`critical`、`unknown`として表示します。
+- SMAIの計算、ランキング、Forecast、ユーザーデータ、タスク設定を変更しません。
+- TCP 8502をインターネットへ公開しません。接続できない場合だけ、Windows Firewallの**プライベート**プロファイルでTCP 8502の受信許可を確認してください。
+
+Web Consoleだけを再起動するには、次を実行します。SMAI本体のStreamlitは停止しません。
 
 ```powershell
-# Inspect only; no runtime files are removed.
-python .\retention.py --dry-run
-
-# Apply the local retention policy.
-python .\retention.py
+.\restart_analytics_web.bat
 ```
 
-Retention removes only expired files directly under `Runtime/logs/` and complete,
-tool-created backup directories named `smai_*` with a `manifest.json`.  Incomplete
-or manually named backup directories are left untouched for operator review.
+常時運用では、対話ユーザーのログオン後にWeb Consoleを起動するタスクを登録します。
 
-## セットアップ
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\register_smai_analytics_autostart_task.ps1
+```
 
-依存関係は本体SMAIと同じく`setup/`へ分離しています。Analytics専用の仮想環境を作成する場合は、リポジトリ直下で次を実行してください。
+解除は次のとおりです。
+
+```powershell
+.\scripts\unregister_smai_analytics_autostart_task.ps1
+```
+
+## セットアップと確認
+
+依存関係は`setup/`に分離しています。Analytics専用環境は次で作成・更新します。
 
 ```powershell
 .\setup\setup.bat
@@ -70,49 +47,25 @@ or manually named backup directories are left untouched for operator review.
 
 運用依存は`setup/requirements.txt`、確認用依存は`setup/requirements-dev.txt`です。詳細は[`setup/SETUP.md`](setup/SETUP.md)を参照してください。
 
-## プロジェクト構成
-
-監視・運用・画面実装は`smai_analytics/`配下の責務別packageへ分離し、ルートのPythonファイルはSchedulerと既存の運用コマンドのための互換入口として維持しています。配置ルールと起動契約は[`Documents/09_Project_Structure.md`](Documents/09_Project_Structure.md)を参照してください。
-
-## Always-on dashboard
-
-The Analytics console follows the SMAI dark navy / cyan visual language and refreshes health, sessions, operations, tasks, incidents, and recent logs every five seconds. Its Overview includes a service topology map, a 0-100 health gauge, a health timeline, and an L1/L2/L3 check matrix. These visuals describe operations only; they do not calculate or interpret investment results.
-
-Register it to open automatically after the interactive Windows user logs on:
-
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\register_smai_analytics_autostart_task.ps1
+$env:PYTHONDONTWRITEBYTECODE = "1"
+.\venv_SMAI_Analytics\Scripts\python.exe -m py_compile analytics_web.py health.py backup.py retention.py
+.\venv_SMAI_Analytics\Scripts\python.exe -m compileall -q smai_analytics
+.\venv_SMAI_Analytics\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+.\venv_SMAI_Analytics\Scripts\python.exe health.py
+.\venv_SMAI_Analytics\Scripts\python.exe backup.py create
 ```
 
-The task starts `run_dashboard.bat` after a one-minute delay. This is intentionally an interactive logon task so that the Tkinter window is visible to the operator. To remove it:
+## バックアップと保持
 
 ```powershell
-.\scripts\unregister_smai_analytics_autostart_task.ps1
+python .\backup.py create
+python .\backup.py verify <backup-path>
+python .\backup.py restore <backup-path> --destination <isolated-restore-directory>
+python .\backup.py smoke
+python .\retention.py --dry-run
 ```
 
-To restart only the local Analytics dashboard without stopping SMAI Streamlit,
-run `restart_dashboard.bat`. It identifies Python processes by the absolute
-`dashboard.py` path, then starts the standard dashboard launcher again.
+`backup.py`はmanifestとSHA-256を検証し、破損、欠落、未コピー、パス逸脱を復元成功として扱いません。`smoke`は隔離先へ復元するため、SMAI本体を上書きしません。Runtimeの状態・ログ・バックアップ・個人データはGit管理しません。
 
-## 信頼済みLAN向けブラウザー画面
-
-`run_analytics_web.bat` は、同じ信頼済みプライベートネットワーク上のPC、タブレット、スマートフォンから閲覧できる、読み取り専用のOperations Consoleを起動します。SMAI本体の既存`venv_SMAI`にあるStreamlitを使用し、SMAI本体のTCP 8501を変えずにTCP 8502で待ち受けます。
-
-```powershell
-.\run_analytics_web.bat
-```
-
-起動時にはローカルURLと検出したLAN URLを表示します。同じWi-Fi上の別端末で、たとえば`http://192.168.x.x:8502`を開いてください。この画面はSMAIの計算、ランキング、Forecast、ユーザーデータ、タスク設定を変更しません。Operations snapshotを読み取り、デスクトップ画面と同じ範囲のサーバー内health probeを5秒ごとに実行します。
-
-信頼済みプライベートネットワークだけで使用し、TCP 8502をインターネットへ公開しないでください。別端末から接続できない場合は、同じプライベートネットワークにいることを確認したうえで、Windows Firewallのプライベートプロファイルに限りTCP 8502の受信許可を確認します。
-
-## Critical incident operations
-
-`incident_automation.py` converts only fail-closed `critical` health conditions
-into local Codex investigation requests. It stores the request, improvement
-report, and administrator-mail outbox under `SMAI_Server_Runtime` and never
-changes SMAI source code automatically. See
-[`Documents/08_Incident_Automation_Operations.md`](Documents/08_Incident_Automation_Operations.md)
-for the 5-minute task registration, report completion, and opt-in SMTP delivery
-procedure.
+構成と運用の詳細は[`Documents/06_MVP_Operations_Guide.md`](Documents/06_MVP_Operations_Guide.md)、[`Documents/09_Project_Structure.md`](Documents/09_Project_Structure.md)、障害自動化は[`Documents/08_Incident_Automation_Operations.md`](Documents/08_Incident_Automation_Operations.md)を参照してください。
