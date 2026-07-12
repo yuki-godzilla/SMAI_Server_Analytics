@@ -359,6 +359,27 @@ def ui_scale_for_display(width: int, height: int) -> float:
     return max(1.0, min(1.65, desktop_scale))
 
 
+def layout_mode_for_window(
+    width: int,
+    height: int,
+    screen_width: int,
+    screen_height: int,
+    *,
+    layout_scale: float = 1.0,
+) -> tuple[bool, bool]:
+    """Return ``(compact, narrow)`` without mixing DPI and screen pixels.
+
+    ``compact`` reduces decorative space on short windows.  ``narrow``
+    changes multi-column controls into readable rows before their labels can
+    collide.  The latter uses the same DPI-aware layout scale as card padding
+    and fixed widget heights.
+    """
+
+    compact = width / max(1, screen_width) < 0.72 or height / max(1, screen_height) < 0.72
+    narrow = width < 1060 * max(1.0, layout_scale)
+    return compact, narrow
+
+
 class Dashboard:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -369,8 +390,14 @@ class Dashboard:
             self.ui_scale = max(1.0, min(2.5, float(self.root.tk.call("tk", "scaling"))))
         except (tk.TclError, TypeError, ValueError):
             self.ui_scale = 1.0
+        # Point fonts already follow Tk's per-monitor DPI setting.  Pixel
+        # dimensions do not, so scale card heights and padding separately to
+        # keep text inside its card at 125%/150%/200% Windows scaling.
         self.content_scale = ui_scale_for_display(self.root.winfo_screenwidth(), self.root.winfo_screenheight())
+        self.layout_scale = max(self.content_scale, self.ui_scale / (96 / 72))
         self.compact_layout = False
+        self.narrow_layout = False
+        self._layout_ready = False
         self.root.configure(bg=COLORS["page"])
         self.status = tk.StringVar(value="CHECKING")
         self.status_detail = tk.StringVar(value="Collecting server health")
@@ -433,35 +460,228 @@ class Dashboard:
         self._apply_layout_density(self.root.winfo_width(), self.root.winfo_height())
 
     def _apply_layout_density(self, width: int, height: int) -> None:
-        """Apply the appropriate visual hierarchy for the current window size."""
+        """Reflow the dashboard before a small window can clip its labels."""
 
-        # Compare like-for-like Tk units so this remains correct at Windows
-        # 125%/150% DPI scaling.  A window that occupies less than 72% of a
-        # monitor switches to the compact hierarchy.
         screen_width = max(1, self.root.winfo_screenwidth())
         screen_height = max(1, self.root.winfo_screenheight())
-        compact = width / screen_width < 0.72 or height / screen_height < 0.72
-        summary_visible = bool(self.overview_summary.winfo_ismapped())
-        if compact == self.compact_layout and summary_visible == (not compact):
+        compact, narrow = layout_mode_for_window(
+            width,
+            height,
+            screen_width,
+            screen_height,
+            layout_scale=self.layout_scale,
+        )
+        if self._layout_ready and compact == self.compact_layout and narrow == self.narrow_layout:
             return
         self.compact_layout = compact
-        if compact:
-            self.overview_summary.grid_remove()
-            self.overview.rowconfigure(0, weight=1)
-            self.overview.rowconfigure(1, weight=0, minsize=0)
-        else:
-            self.overview_summary.grid()
-            self.overview.rowconfigure(0, weight=4)
-            self.overview.rowconfigure(1, weight=1)
-        self.facts.configure(height=self._px(60 if compact else 76))
-        for canvas, regular, compact_height in self._overview_canvas_sizes:
-            canvas.configure(height=self._px(compact_height if compact else regular))
+        self.narrow_layout = narrow
+        self._layout_header(narrow, width)
+        self._layout_facts(narrow, compact)
+        self._layout_overview(narrow, compact)
+        self._layout_filter_controls(narrow)
+        self._layout_panel_headers(narrow)
+        self._layout_footer(narrow)
         for canvas in self._summary_canvases:
             canvas.configure(height=self._px(64 if compact else 84))
         self._resize_brand_images(compact)
         self._resize_topology_images(compact)
+        self._layout_ready = True
         self.root.after_idle(self._redraw_visuals)
         self.root.after_idle(self._draw_tab_visuals)
+        self.root.after_idle(self._refresh_overview_scrollregion)
+
+    def _layout_header(self, narrow: bool, width: int) -> None:
+        """Stack brand and status blocks when the header no longer fits."""
+
+        self.brand_block.pack_forget()
+        self.status_block.pack_forget()
+        self.status_label.pack_forget()
+        self.status_detail_label.pack_forget()
+        if narrow:
+            self.brand_block.pack(fill="x", anchor="w")
+            self.status_block.pack(fill="x", anchor="w", pady=(self._px(8), 0))
+            self.status_label.pack(anchor="w")
+            self.status_detail_label.configure(
+                anchor="w",
+                justify="left",
+                wraplength=max(self._px(220), width - self._px(48)),
+            )
+            self.status_detail_label.pack(anchor="w", pady=(self._px(5), 0))
+        else:
+            self.brand_block.pack(side="left", anchor="w")
+            self.status_block.pack(side="right", anchor="ne")
+            self.status_label.pack(anchor="e")
+            self.status_detail_label.configure(anchor="e", justify="right", wraplength=0)
+            self.status_detail_label.pack(anchor="e", pady=(self._px(5), 0))
+
+    def _layout_facts(self, narrow: bool, compact: bool) -> None:
+        """Keep KPI text readable by using a second row before it can crowd."""
+
+        for index in range(3):
+            self.facts.columnconfigure(index, weight=0, uniform="")
+            self.facts.rowconfigure(index, weight=0)
+        for card in self.fact_cards:
+            card.grid_forget()
+        if narrow:
+            self.facts.columnconfigure(0, weight=1, uniform="kpi")
+            self.facts.columnconfigure(1, weight=1, uniform="kpi")
+            self.facts.rowconfigure(0, weight=1)
+            self.facts.rowconfigure(1, weight=1)
+            for index, card in enumerate(self.fact_cards):
+                if index == 2:
+                    card.grid(row=1, column=0, columnspan=2, sticky="nsew")
+                else:
+                    card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(10)) if index == 0 else 0)
+            rows = 2
+        else:
+            for index in range(3):
+                self.facts.columnconfigure(index, weight=1, uniform="kpi")
+            for index, card in enumerate(self.fact_cards):
+                card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(12)) if index < 2 else 0)
+            rows = 1
+        card_height = 60 if compact else 76
+        self.facts.configure(height=self._px(card_height * rows + (self._px(8) if rows > 1 else 0)))
+
+    def _layout_overview(self, narrow: bool, compact: bool) -> None:
+        """Preserve every Overview diagnostic, using its vertical scrollbar."""
+
+        self.map_panel.grid_forget()
+        self.trend_panel.grid_forget()
+        self.overview_summary.grid_forget()
+        self.gauge_panel.grid_forget()
+        self.checks_panel.grid_forget()
+        if narrow:
+            self.overview.columnconfigure(0, weight=1, minsize=0)
+            self.overview.columnconfigure(1, weight=0, minsize=0)
+            for row in range(3):
+                self.overview.rowconfigure(row, weight=0, minsize=0)
+            self.map_panel.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(10)))
+            self.trend_panel.grid(row=1, column=0, sticky="nsew", pady=(0, self._px(10)))
+            self.overview_summary.grid(row=2, column=0, sticky="nsew")
+            self.overview_summary.columnconfigure(0, weight=1, uniform="")
+            self.overview_summary.columnconfigure(1, weight=0, uniform="")
+            self.overview_summary.rowconfigure(0, weight=0)
+            self.overview_summary.rowconfigure(1, weight=0)
+            self.gauge_panel.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(8)))
+            self.checks_panel.grid(row=1, column=0, sticky="nsew")
+            heights = (
+                (self.map_canvas, 220 if compact else 270),
+                (self.trend_canvas, 170 if compact else 210),
+                (self.gauge_canvas, 145),
+                (self.health, 180),
+            )
+        else:
+            self.overview.columnconfigure(0, weight=4, minsize=self._px(320))
+            self.overview.columnconfigure(1, weight=7, minsize=self._px(520))
+            self.overview.rowconfigure(0, weight=4)
+            self.overview.rowconfigure(1, weight=1)
+            self.map_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, self._px(10)))
+            self.trend_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(0, self._px(8)))
+            self.overview_summary.grid(row=1, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(self._px(8), 0))
+            self.overview_summary.columnconfigure(0, weight=1, uniform="overview_summary")
+            self.overview_summary.columnconfigure(1, weight=1, uniform="overview_summary")
+            self.overview_summary.rowconfigure(0, weight=1)
+            self.gauge_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(8)))
+            self.checks_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(8), 0))
+            heights = (
+                (self.map_canvas, 230 if compact else 300),
+                (self.trend_canvas, 180 if compact else 230),
+                (self.gauge_canvas, 128),
+                (self.health, 128),
+            )
+        for canvas, canvas_height in heights:
+            canvas.configure(height=self._px(canvas_height))
+
+    @staticmethod
+    def _grid_groups(groups: tuple[ttk.Frame, ...], placements: tuple[tuple[int, int, int], ...]) -> None:
+        for group in groups:
+            group.grid_forget()
+        for group, (row, column, columnspan) in zip(groups, placements):
+            group.grid(row=row, column=column, columnspan=columnspan, sticky="ew", padx=(0, 8), pady=(0, 6))
+
+    def _layout_filter_controls(self, narrow: bool) -> None:
+        """Wrap filter fields as groups so labels and inputs remain paired."""
+
+        for frame in (self.history_controls, self.incident_controls):
+            for column in range(6):
+                frame.columnconfigure(column, weight=0)
+            for row in range(3):
+                frame.rowconfigure(row, weight=0)
+        if narrow:
+            self.history_controls.columnconfigure(0, weight=1)
+            self.history_controls.columnconfigure(1, weight=1)
+            self.history_controls.columnconfigure(2, weight=0)
+            self._grid_groups(
+                self.history_control_groups,
+                ((0, 0, 1), (0, 1, 1), (1, 0, 1), (1, 1, 2), (0, 2, 1), (2, 0, 3)),
+            )
+            self.incident_controls.columnconfigure(0, weight=1)
+            self.incident_controls.columnconfigure(1, weight=1)
+            self._grid_groups(
+                self.incident_control_groups,
+                ((0, 0, 1), (0, 1, 1), (0, 2, 1), (1, 0, 3)),
+            )
+        else:
+            self._grid_groups(
+                self.history_control_groups,
+                tuple((0, index, 1) for index in range(len(self.history_control_groups))),
+            )
+            self._grid_groups(
+                self.incident_control_groups,
+                tuple((0, index, 1) for index in range(len(self.incident_control_groups))),
+            )
+
+    def _layout_panel_headers(self, narrow: bool) -> None:
+        for subtitle in self.panel_subtitles:
+            subtitle.pack_forget()
+            if not narrow:
+                subtitle.pack(side="right")
+
+    def _layout_footer(self, narrow: bool) -> None:
+        self.footer_context_label.pack_forget()
+        self.footer_refresh_label.pack_forget()
+        if narrow:
+            self.footer_refresh_label.pack(anchor="w")
+        else:
+            self.footer_context_label.pack(side="left")
+            self.footer_refresh_label.pack(side="right")
+
+    def _scrollable_overview(self, parent: ttk.Frame) -> ttk.Frame:
+        """Create a vertically scrollable Overview without scrolling tables."""
+
+        canvas = tk.Canvas(parent, bg=COLORS["surface"], highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        content = ttk.Frame(canvas, style="Surface.TFrame", padding=self._px(16))
+        window_id = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_region(_event: tk.Event[tk.Misc]) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def fit_content(event: tk.Event[tk.Misc]) -> None:
+            canvas.itemconfigure(window_id, width=event.width)
+
+        content.bind("<Configure>", update_region)
+        canvas.bind("<Configure>", fit_content)
+        canvas.bind("<MouseWheel>", self._scroll_overview)
+        self.overview_scroll_canvas = canvas
+        return content
+
+    def _scroll_overview(self, event: tk.Event[tk.Misc]) -> str:
+        """Offer wheel scrolling when the pointer is over the Overview canvas."""
+
+        if hasattr(self, "notebook") and self.notebook.select() == str(self.overview_page):
+            delta = getattr(event, "delta", 0)
+            if delta:
+                self.overview_scroll_canvas.yview_scroll(-max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120), "units")
+                return "break"
+        return ""
+
+    def _refresh_overview_scrollregion(self) -> None:
+        if hasattr(self, "overview_scroll_canvas"):
+            self.overview_scroll_canvas.configure(scrollregion=self.overview_scroll_canvas.bbox("all"))
 
     def _resize_brand_images(self, compact: bool) -> None:
         """Keep the header recognisable without letting it consume a short window."""
@@ -686,10 +906,13 @@ class Dashboard:
     def _build(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=(self._px(18), self._px(8), self._px(18), self._px(8)))
         outer.pack(fill="both", expand=True)
+        self.panel_subtitles: list[ttk.Label] = []
         header = ttk.Frame(outer, style="App.TFrame")
         header.pack(fill="x", pady=(0, self._px(8)))
+        self.header = header
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
+        self.brand_block = brand_block
         if self.wordmark_shield_image is not None and self.wordmark_lettering_image is not None:
             mark = ttk.Frame(brand_block, style="App.TFrame")
             mark.pack(anchor="w")
@@ -697,7 +920,8 @@ class Dashboard:
             self.wordmark_shield_label.pack(side="left")
             self.wordmark_lettering_label = tk.Label(mark, image=self.wordmark_lettering_image, bg=COLORS["page"], bd=0, highlightthickness=0)
             self.wordmark_lettering_label.pack(side="left", padx=(self._px(14), 0))
-            ttk.Label(brand_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel").pack(anchor="w", pady=(self._px(2), 0))
+            self.brand_tagline = ttk.Label(brand_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel")
+            self.brand_tagline.pack(anchor="w", pady=(self._px(2), 0))
         else:
             self.wordmark_shield_label = None
             self.wordmark_lettering_label = None
@@ -706,9 +930,11 @@ class Dashboard:
             title_block = ttk.Frame(brand_block, style="App.TFrame")
             title_block.pack(side="left")
             ttk.Label(title_block, text="SMAI Analytics", style="Title.TLabel").pack(anchor="w")
-            ttk.Label(title_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 0))
+            self.brand_tagline = ttk.Label(title_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel")
+            self.brand_tagline.pack(anchor="w", pady=(3, 0))
         status_block = ttk.Frame(header, style="App.TFrame")
         status_block.pack(side="right", anchor="n")
+        self.status_block = status_block
         if self.mascot_image is not None:
             self.mascot_label = tk.Label(status_block, image=self.mascot_image, bg=COLORS["page"], bd=0, highlightthickness=0)
             self.mascot_label.pack(side="left", padx=(0, 12))
@@ -719,7 +945,8 @@ class Dashboard:
         self.status_text = status_text
         self.status_label = tk.Label(status_text, textvariable=self.status, bg=COLORS["elevated"], fg=COLORS["cyan"], font=self._font(11, "bold"), padx=self._px(16), pady=self._px(8))
         self.status_label.pack(anchor="e")
-        ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel").pack(anchor="e", pady=(5, 0))
+        self.status_detail_label = ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel")
+        self.status_detail_label.pack(anchor="e", pady=(self._px(5), 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
         self.facts = facts
@@ -729,21 +956,27 @@ class Dashboard:
         facts.columnconfigure(0, weight=1, uniform="kpi")
         facts.columnconfigure(1, weight=1, uniform="kpi")
         facts.columnconfigure(2, weight=1, uniform="kpi")
+        self.fact_cards: list[ttk.Frame] = []
         for index, (label, variable, meta) in enumerate((("接続セッション", self.session, "現在の接続状態"), ("実行中の処理", self.operations, "進行中の処理数"), ("最終確認", self.checked, "ローカル時刻"))):
             card = ttk.Frame(facts, style="Card.TFrame", padding=(self._px(14), self._px(8)))
             card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(12) if index < 2 else 0))
+            self.fact_cards.append(card)
             ttk.Label(card, text=label, style="CardLabel.TLabel").pack(anchor="w")
             ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w", pady=(5, 2))
             ttk.Label(card, text=meta, style="CardMeta.TLabel").pack(anchor="w")
 
         notebook = ttk.Notebook(outer)
         notebook.pack(fill="both", expand=True)
-        overview, sessions, history, incidents, reports, tasks, logs = [
-            ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(7)
+        self.notebook = notebook
+        overview_page = ttk.Frame(notebook, style="Surface.TFrame")
+        self.overview_page = overview_page
+        overview = self._scrollable_overview(overview_page)
+        sessions, history, incidents, reports, tasks, logs = [
+            ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(6)
         ]
         self.overview = overview
         for frame, name in (
-            (overview, "概要"),
+            (overview_page, "概要"),
             (sessions, "セッション"),
             (history, "操作履歴"),
             (incidents, "障害"),
@@ -760,8 +993,10 @@ class Dashboard:
         overview.rowconfigure(0, weight=4)
         overview.rowconfigure(1, weight=1)
         map_panel = self._panel(overview, "SERVICE TOPOLOGY", "接続経路と状態")
+        self.map_panel = map_panel
         map_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, self._px(10)))
         trend_panel = self._panel(overview, "HEALTH TIMELINE", "直近の状態推移")
+        self.trend_panel = trend_panel
         trend_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(0, self._px(8)))
         overview_summary = ttk.Frame(overview, style="Surface.TFrame")
         self.overview_summary = overview_summary
@@ -770,8 +1005,10 @@ class Dashboard:
         overview_summary.columnconfigure(1, weight=1, uniform="overview_summary")
         overview_summary.rowconfigure(0, weight=1)
         gauge_panel = self._panel(overview_summary, "SYSTEM HEALTH", "現在の状態スコア")
+        self.gauge_panel = gauge_panel
         gauge_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(8)))
         checks_panel = self._panel(overview_summary, "CHECK MATRIX", "接続・画面・保存")
+        self.checks_panel = checks_panel
         checks_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(8), 0))
         self.map_canvas = self._canvas(map_panel, height=300)
         self.map_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
@@ -781,12 +1018,6 @@ class Dashboard:
         self.trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         self.health = self._canvas(checks_panel, height=128)
         self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        self._overview_canvas_sizes = (
-            (self.map_canvas, 300, 180),
-            (self.trend_canvas, 230, 160),
-            (self.gauge_canvas, 128, 60),
-            (self.health, 128, 60),
-        )
         for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
         sessions_summary = self._panel(sessions, "接続状況", "接続中セッションと最終通信の状態")
@@ -811,22 +1042,30 @@ class Dashboard:
         self.activity_canvas.pack(fill="x", padx=12, pady=(0, 12))
         controls = ttk.Frame(history, style="Surface.TFrame")
         controls.pack(fill="x", pady=(0, self._px(8)))
-        ttk.Label(controls, text="期間", style="Section.TLabel").pack(side="left")
+        self.history_controls = controls
+        history_period = ttk.Frame(controls, style="Surface.TFrame")
+        ttk.Label(history_period, text="期間", style="Section.TLabel").pack(side="left")
         self.history_window_filter = tk.StringVar(value="過去24時間")
-        ttk.Combobox(controls, textvariable=self.history_window_filter, values=TIME_WINDOW_OPTIONS, state="readonly", width=11).pack(side="left", padx=(8, 12))
-        ttk.Label(controls, text="結果", style="Section.TLabel").pack(side="left")
+        ttk.Combobox(history_period, textvariable=self.history_window_filter, values=TIME_WINDOW_OPTIONS, state="readonly", width=11).pack(side="left", padx=(self._px(8), 0))
+        history_result = ttk.Frame(controls, style="Surface.TFrame")
+        ttk.Label(history_result, text="結果", style="Section.TLabel").pack(side="left")
         self.history_filter = tk.StringVar(value="すべて")
-        ttk.Combobox(controls, textvariable=self.history_filter, values=HISTORY_RESULT_OPTIONS, state="readonly", width=10).pack(side="left", padx=10)
-        ttk.Label(controls, text="ユーザーID", style="Section.TLabel").pack(side="left", padx=(12, 4))
+        ttk.Combobox(history_result, textvariable=self.history_filter, values=HISTORY_RESULT_OPTIONS, state="readonly", width=10).pack(side="left", padx=(self._px(8), 0))
+        history_user = ttk.Frame(controls, style="Surface.TFrame")
+        ttk.Label(history_user, text="ユーザーID", style="Section.TLabel").pack(side="left")
         self.history_user_filter = tk.StringVar()
-        ttk.Entry(controls, textvariable=self.history_user_filter, width=16).pack(side="left")
-        ttk.Label(controls, text="操作名", style="Section.TLabel").pack(side="left", padx=(12, 4))
+        ttk.Entry(history_user, textvariable=self.history_user_filter, width=16).pack(side="left", fill="x", expand=True, padx=(self._px(6), 0))
+        history_action = ttk.Frame(controls, style="Surface.TFrame")
+        ttk.Label(history_action, text="操作名", style="Section.TLabel").pack(side="left")
         self.history_action_filter = tk.StringVar()
-        ttk.Entry(controls, textvariable=self.history_action_filter, width=18).pack(side="left")
-        ttk.Button(controls, text="絞り込む", command=self.refresh_history).pack(side="left", padx=(10, 4))
-        ttk.Button(controls, text="リセット", command=self._clear_history_filters).pack(side="left")
+        ttk.Entry(history_action, textvariable=self.history_action_filter, width=18).pack(side="left", fill="x", expand=True, padx=(self._px(6), 0))
+        history_actions = ttk.Frame(controls, style="Surface.TFrame")
+        ttk.Button(history_actions, text="絞り込む", command=self.refresh_history).pack(side="left", padx=(0, self._px(4)))
+        ttk.Button(history_actions, text="リセット", command=self._clear_history_filters).pack(side="left")
         self.history_result_summary = tk.StringVar(value="表示件数: —")
-        ttk.Label(controls, textvariable=self.history_result_summary, style="FilterMeta.TLabel").pack(side="left", padx=(12, 0))
+        history_summary = ttk.Frame(controls, style="Surface.TFrame")
+        ttk.Label(history_summary, textvariable=self.history_result_summary, style="FilterMeta.TLabel").pack(anchor="w")
+        self.history_control_groups = (history_period, history_result, history_user, history_action, history_actions, history_summary)
         self.history = self._tree(history, (("time", "時刻", 180), ("user", "ユーザー", 140), ("action", "操作", 190), ("target", "対象", 220), ("result", "結果", 110), ("device", "端末", 130), ("duration", "所要時間", 100)))
         incident_summary = self._panel(incidents, "障害状況", "失敗した操作と確認状況")
         incident_summary.pack(fill="x", pady=(0, self._px(8)))
@@ -834,16 +1073,22 @@ class Dashboard:
         self.incident_canvas.pack(fill="x", padx=12, pady=(0, 12))
         incident_controls = ttk.Frame(incidents, style="Surface.TFrame")
         incident_controls.pack(fill="x", pady=(0, self._px(8)))
-        ttk.Label(incident_controls, text="期間", style="Section.TLabel").pack(side="left")
+        self.incident_controls = incident_controls
+        incident_period = ttk.Frame(incident_controls, style="Surface.TFrame")
+        ttk.Label(incident_period, text="期間", style="Section.TLabel").pack(side="left")
         self.incident_window_filter = tk.StringVar(value="過去7日間")
-        ttk.Combobox(incident_controls, textvariable=self.incident_window_filter, values=TIME_WINDOW_OPTIONS, state="readonly", width=11).pack(side="left", padx=(8, 12))
-        ttk.Label(incident_controls, text="重要度", style="Section.TLabel").pack(side="left")
+        ttk.Combobox(incident_period, textvariable=self.incident_window_filter, values=TIME_WINDOW_OPTIONS, state="readonly", width=11).pack(side="left", padx=(self._px(8), 0))
+        incident_result = ttk.Frame(incident_controls, style="Surface.TFrame")
+        ttk.Label(incident_result, text="重要度", style="Section.TLabel").pack(side="left")
         self.incident_filter = tk.StringVar(value="すべて")
-        ttk.Combobox(incident_controls, textvariable=self.incident_filter, values=INCIDENT_SEVERITY_OPTIONS, state="readonly", width=10).pack(side="left", padx=10)
-        ttk.Button(incident_controls, text="絞り込む", command=self.refresh_incidents).pack(side="left")
-        ttk.Button(incident_controls, text="リセット", command=self._clear_incident_filters).pack(side="left", padx=(4, 0))
+        ttk.Combobox(incident_result, textvariable=self.incident_filter, values=INCIDENT_SEVERITY_OPTIONS, state="readonly", width=10).pack(side="left", padx=(self._px(8), 0))
+        incident_actions = ttk.Frame(incident_controls, style="Surface.TFrame")
+        ttk.Button(incident_actions, text="絞り込む", command=self.refresh_incidents).pack(side="left", padx=(0, self._px(4)))
+        ttk.Button(incident_actions, text="リセット", command=self._clear_incident_filters).pack(side="left")
         self.incident_result_summary = tk.StringVar(value="表示件数: —")
-        ttk.Label(incident_controls, textvariable=self.incident_result_summary, style="FilterMeta.TLabel").pack(side="left", padx=(12, 0))
+        incident_summary_label = ttk.Frame(incident_controls, style="Surface.TFrame")
+        ttk.Label(incident_summary_label, textvariable=self.incident_result_summary, style="FilterMeta.TLabel").pack(anchor="w")
+        self.incident_control_groups = (incident_period, incident_result, incident_actions, incident_summary_label)
         incident_table = self._panel(incidents, "障害一覧", "失敗・エラー・重大な操作")
         incident_table.pack(fill="both", expand=True)
         self.incidents = self._tree(incident_table, (("time", "時刻", 190), ("action", "操作", 210), ("target", "対象", 280), ("result", "結果", 130)))
@@ -900,15 +1145,19 @@ class Dashboard:
             canvas.bind("<Configure>", lambda _event: self._draw_tab_visuals())
         footer = ttk.Frame(outer, style="App.TFrame")
         footer.pack(fill="x", pady=(self._px(8), 0))
-        ttk.Label(footer, text=f"Project  {PROJECT_ROOT.name}    Runtime  {RUNTIME_ROOT.name}", style="Subtitle.TLabel").pack(side="left")
-        ttk.Label(footer, textvariable=self.refresh_state, style="Subtitle.TLabel").pack(side="right")
+        self.footer_context_label = ttk.Label(footer, text=f"Project  {PROJECT_ROOT.name}    Runtime  {RUNTIME_ROOT.name}", style="Subtitle.TLabel")
+        self.footer_context_label.pack(side="left")
+        self.footer_refresh_label = ttk.Label(footer, textvariable=self.refresh_state, style="Subtitle.TLabel")
+        self.footer_refresh_label.pack(side="right")
 
     def _panel(self, parent: ttk.Frame, title: str, subtitle: str) -> ttk.Frame:
         panel = ttk.Frame(parent, style="Card.TFrame", padding=(self._px(14), self._px(12)))
         header = ttk.Frame(panel, style="Card.TFrame")
         header.pack(fill="x", pady=(0, self._px(10)))
         ttk.Label(header, text=title, style="CardLabel.TLabel").pack(side="left")
-        ttk.Label(header, text=subtitle, style="CardMeta.TLabel").pack(side="right")
+        subtitle_label = ttk.Label(header, text=subtitle, style="CardMeta.TLabel")
+        subtitle_label.pack(side="right")
+        self.panel_subtitles.append(subtitle_label)
         return panel
 
     def _canvas(self, parent: ttk.Frame, *, height: int) -> tk.Canvas:
@@ -1161,7 +1410,10 @@ class Dashboard:
             x = left if len(values) == 1 else left + (right - left) * index / (len(values) - 1)
             y = bottom - (bottom - top) * value / 100
             points.extend((x, y))
-        times = [timestamp for timestamp, _ in self.health_history[-30:]]
+        # Canvas Configure can run before the first refresh has appended a
+        # snapshot.  Keep the initial chart drawable instead of indexing an
+        # empty timestamp list during a resize.
+        times = [timestamp for timestamp, _ in self.health_history[-30:]] or [self.checked.get()]
         time_indexes = [0] if len(times) <= 1 else sorted({0, (len(times) - 1) // 2, len(times) - 1})
         for index in time_indexes:
             x = left if len(times) == 1 else left + (right - left) * index / (len(times) - 1)
@@ -1184,8 +1436,10 @@ class Dashboard:
         canvas = self.health
         canvas.delete("all")
         width = max(canvas.winfo_width(), 300)
+        narrow = self.narrow_layout or width < self._px(560)
         title, _, action = self._health_narrative()
-        canvas.create_text(0, self._px(4), text=f"{title}  ·  {overall.upper()}  ·  {format_timestamp(checked_at)}", anchor="nw", fill=self._status_color(overall), font=self._font(9, "bold"))
+        heading = f"{title}  ·  {overall.upper()}" if narrow else f"{title}  ·  {overall.upper()}  ·  {format_timestamp(checked_at)}"
+        canvas.create_text(0, self._px(4), text=heading, anchor="nw", width=width - self._px(4), fill=self._status_color(overall), font=self._font(9, "bold"))
         canvas.create_text(0, self._px(20), text="接続=到達性  /  画面=アプリ応答  /  保存=ローカルデータ", anchor="nw", fill=COLORS["muted"], font=self._font(8))
         height = max(canvas.winfo_height(), 90)
         valid_checks = [item for item in checks if isinstance(item, dict)]
@@ -1197,8 +1451,10 @@ class Dashboard:
             canvas.create_oval(0, y + self._px(3), dot * 2, y + self._px(3) + dot * 2, fill=self._status_color(status), outline="")
             level = str(item.get("level", "??"))
             category, consequence = {"L1": ("接続確認", "利用者が接続できない可能性"), "L2": ("画面確認", "画面表示・操作に影響"), "L3": ("保存確認", "設定や履歴の保存に影響")}.get(level, ("監視確認", "要確認"))
-            canvas.create_text(self._px(18), y, text=f"{category}  ·  {item.get('name', 'unknown')}", anchor="nw", fill=COLORS["text"], font=self._font(8))
-            canvas.create_text(width * 0.58, y, text="正常" if status.lower() in {"ok", "healthy"} else consequence, anchor="nw", fill=self._status_color(status), font=self._font(8, "bold"))
+            status_x = width * (0.72 if narrow else 0.58)
+            canvas.create_text(self._px(18), y, text=f"{category}  ·  {item.get('name', 'unknown')}", anchor="nw", width=status_x - self._px(24), fill=COLORS["text"], font=self._font(8))
+            if not narrow:
+                canvas.create_text(status_x, y, text="正常" if status.lower() in {"ok", "healthy"} else consequence, anchor="nw", width=width * 0.27, fill=self._status_color(status), font=self._font(8, "bold"))
             canvas.create_text(width - self._px(4), y, text="OK" if status.lower() in {"ok", "healthy"} else "要確認", anchor="ne", fill=self._status_color(status), font=self._font(8, "bold"))
             y += line_height
         if not valid_checks:
@@ -1212,11 +1468,12 @@ class Dashboard:
         bottom = max(top + self._px(64), canvas.winfo_height() - self._px(6))
         card_height = bottom - top
         inset = self._px(16)
+        text_width = max(self._px(48), width - inset * 2)
         canvas.create_rectangle(x, top, x + width, bottom, fill=COLORS["surface"], outline=COLORS["border"], width=1)
         canvas.create_rectangle(x, top, x + self._px(4), bottom, fill=color, outline="")
-        canvas.create_text(x + inset, top + card_height * 0.20, text=label, anchor="w", fill=COLORS["muted"], font=self._font(9, "bold"))
-        canvas.create_text(x + inset, top + card_height * 0.52, text=value, anchor="w", fill=COLORS["heading"], font=self._font(18, "bold"))
-        canvas.create_text(x + inset, top + card_height * 0.80, text=detail, anchor="w", fill=COLORS["muted"], font=self._font(8))
+        canvas.create_text(x + inset, top + card_height * 0.20, text=label, anchor="w", width=text_width, fill=COLORS["muted"], font=self._font(9, "bold"))
+        canvas.create_text(x + inset, top + card_height * 0.52, text=value, anchor="w", width=text_width, fill=COLORS["heading"], font=self._font(18, "bold"))
+        canvas.create_text(x + inset, top + card_height * 0.80, text=detail, anchor="w", width=text_width, fill=COLORS["muted"], font=self._font(8))
 
     def _session_state(self, session: dict[str, str]) -> str:
         return heartbeat_state(session.get("last_seen_at"))

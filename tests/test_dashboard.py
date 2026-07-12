@@ -17,6 +17,20 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertGreater(dashboard.ui_scale_for_display(3840, 2160), 1.5)
         self.assertLessEqual(dashboard.ui_scale_for_display(7680, 4320), 1.65)
 
+    def test_layout_mode_reflows_small_or_high_dpi_windows_before_labels_collide(self) -> None:
+        self.assertEqual(
+            dashboard.layout_mode_for_window(1920, 1080, 1920, 1080),
+            (False, False),
+        )
+        self.assertEqual(
+            dashboard.layout_mode_for_window(900, 680, 1920, 1080),
+            (True, True),
+        )
+        self.assertEqual(
+            dashboard.layout_mode_for_window(1366, 768, 1366, 768, layout_scale=1.5),
+            (False, True),
+        )
+
     def test_event_window_rejects_bad_and_expired_timestamps(self) -> None:
         now = datetime(2026, 7, 11, 12, tzinfo=UTC)
         self.assertTrue(dashboard.event_within_window("2026-07-11T11:00:00Z", "24h", now=now))

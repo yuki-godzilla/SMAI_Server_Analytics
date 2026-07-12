@@ -95,6 +95,8 @@ token、secret、password、通知topic、入力本文、完全なIPアドレス
 - Logsは生ログだけを主表示にしない。表示行数、warning、error/failed/criticalの検出数を先に表示し、障害の一次判断を助ける。
 - 地理的な地図は単一PCのlocal-first運用では優先しない。代わりにSMAI UI、Streamlit、Runtime、Analyticsの依存関係を表すservice topologyを使用する。
 - Notebook表示では、DPI倍率を考慮して起動時に画面内へ自動フィットする。KPIカードは均等幅のgridで配置し、長い時刻・状態説明・パス文字列によって右端が押し出されないことを確認する。
+- 大画面では情報密度を保ち、幅が狭いウィンドウまたは高DPI表示では、ヘッダーを縦配置、KPIを2段、フィルターを複数行へ自動再配置する。文字を縮小して読めなくしたり、重ねて表示したりしない。
+- Overviewは小さいウィンドウでもTopology、Timeline、Health Score、Check Matrixを省略しない。各パネルを1列に並べ、Overview内の縦スクロールバーで下段の診断情報まで確認できるようにする。
 - Sessions、Activity History、Incidents、Tasksの詳細表は縦・横スクロール可能とする。Logsも長い行を切り捨てず、縦・横スクロールで調査できるようにする。
 - Activity Historyは結果・ユーザー・操作で絞り込み、Incidentsは重要度で絞り込む。条件に一致しない場合は空白ではなく、再検索方法を表示する。
 - activity stateが未取得・破損の場合、セッション数と処理数を0と表示せず、`—`と「不明」を表示する。
