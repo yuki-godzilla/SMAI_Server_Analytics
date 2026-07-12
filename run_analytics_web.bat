@@ -4,14 +4,20 @@ cd /d "%~dp0"
 
 set "SMAI_PROJECT_ROOT=C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"
 set "SMAI_RUNTIME_ROOT=C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"
-set "SMAI_ANALYTICS_PYTHON=%SMAI_PROJECT_ROOT%\venv_SMAI\Scripts\python.exe"
+set "SMAI_ANALYTICS_PYTHON=%~dp0venv_SMAI_Analytics\Scripts\python.exe"
+set "SMAI_COMPATIBILITY_PYTHON=%SMAI_PROJECT_ROOT%\venv_SMAI\Scripts\python.exe"
 set "SMAI_ANALYTICS_PORT=8502"
 
 if not exist "%SMAI_ANALYTICS_PYTHON%" (
-    echo [SMAI Analytics] Streamlit-enabled Python was not found:
-    echo                  %SMAI_ANALYTICS_PYTHON%
-    echo [SMAI Analytics] Set up SMAI's venv_SMAI before starting the web console.
-    exit /b 1
+    if exist "%SMAI_COMPATIBILITY_PYTHON%" (
+        echo [SMAI Analytics] Analytics venv was not found; using SMAI venv_SMAI for compatibility.
+        set "SMAI_ANALYTICS_PYTHON=%SMAI_COMPATIBILITY_PYTHON%"
+    ) else (
+        echo [SMAI Analytics] Streamlit-enabled Python was not found:
+        echo                  %SMAI_ANALYTICS_PYTHON%
+        echo [SMAI Analytics] Run setup\setup.bat before starting the web console.
+        exit /b 1
+    )
 )
 
 set "SMAI_ANALYTICS_LAN_IP="

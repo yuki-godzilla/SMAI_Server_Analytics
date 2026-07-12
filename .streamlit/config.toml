@@ -1,0 +1,13 @@
+[server]
+# Direct `streamlit run analytics_web.py` stays local by default. The explicit
+# trusted-LAN launcher overrides this to 0.0.0.0 on TCP 8502.
+address = "127.0.0.1"
+port = 8502
+enableStaticServing = true
+enableWebsocketCompression = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "viewer"

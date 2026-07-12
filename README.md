@@ -60,6 +60,20 @@ Retention removes only expired files directly under `Runtime/logs/` and complete
 tool-created backup directories named `smai_*` with a `manifest.json`.  Incomplete
 or manually named backup directories are left untouched for operator review.
 
+## セットアップ
+
+依存関係は本体SMAIと同じく`setup/`へ分離しています。Analytics専用の仮想環境を作成する場合は、リポジトリ直下で次を実行してください。
+
+```powershell
+.\setup\setup.bat
+```
+
+運用依存は`setup/requirements.txt`、確認用依存は`setup/requirements-dev.txt`です。詳細は[`setup/SETUP.md`](setup/SETUP.md)を参照してください。
+
+## プロジェクト構成
+
+監視・運用・画面実装は`smai_analytics/`配下の責務別packageへ分離し、ルートのPythonファイルはSchedulerと既存の運用コマンドのための互換入口として維持しています。配置ルールと起動契約は[`Documents/09_Project_Structure.md`](Documents/09_Project_Structure.md)を参照してください。
+
 ## Always-on dashboard
 
 The Analytics console follows the SMAI dark navy / cyan visual language and refreshes health, sessions, operations, tasks, incidents, and recent logs every five seconds. Its Overview includes a service topology map, a 0-100 health gauge, a health timeline, and an L1/L2/L3 check matrix. These visuals describe operations only; they do not calculate or interpret investment results.

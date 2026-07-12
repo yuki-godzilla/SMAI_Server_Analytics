@@ -5,6 +5,12 @@
 SMAI譛ｬ菴薙ｒWindows PC荳翫〒蟶ｸ譎る°逕ｨ縺吶ｋ縺溘ａ縺ｮ縲∫峡遶九＠縺溽屮隕悶・繝舌ャ繧ｯ繧｢繝・・繝ｻ髫懷ｮｳ隗｣譫舌・繝ｭ繧ｸ繧ｧ繧ｯ繝医〒縺吶・
 ## Current status
 
+## Source layout
+
+- 実装本体は`smai_analytics/monitoring`、`smai_analytics/operations`、`smai_analytics/ui`へ責務別に配置する。
+- リポジトリ直下の`dashboard.py`、`health.py`、`backup.py`などは、既存のScheduler、バッチ、運用コマンドを維持する互換入口とする。
+- 保持ポリシーなどGit管理する非secret設定は`config/`、依存関係と仮想環境のセットアップは`setup/`に置く。
+
 - `dashboard.py`: Tkinter縺ｮ繝・せ繧ｯ繝医ャ繝礼屮隕也判髱｢縲・遘帝俣髫斐〒health snapshot縲《ession縲｛peration縲∫峩霑代Ο繧ｰ繧呈峩譁ｰ
 - `health.py`: L1 TCP/Streamlit health縲´2繝壹・繧ｸ蠢懃ｭ斐´3 state/data read-write縺ｮ3谿ｵ髫守｢ｺ隱・- `backup.py`: user data縲《erver ops state縲∵ｭ｣蠑上↑symbol universe繧坦untime縺ｸmanifest莉倥″繝舌ャ繧ｯ繧｢繝・・
 - `retention.py`: Runtime繝ｭ繧ｰ縺ｮ菫晄戟譛滄剞蜃ｦ逅・- `retention_policy.json`: 繝ｭ繧ｰ縲√ヰ繝・け繧｢繝・・縲∫函謌舌Ξ繝昴・繝医；it霑ｽ霍｡蟇ｾ雎｡縺ｮ譁ｹ驥・- `tasks.md`: SMAI譛ｬ菴薙→驕狗畑繧ｳ繝ｳ繝昴・繝阪Φ繝医・雋ｬ蜍吩ｸ隕ｧ
