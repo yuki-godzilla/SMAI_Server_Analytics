@@ -33,9 +33,14 @@ OverviewのService Topologyでは、PCブラウザ、スマートフォン、タ
 ```powershell
 python .\backup.py verify <backup-path>
 python .\backup.py restore <backup-path> --destination <isolated-restore-directory>
+
+# 作成・検証・隔離先復元・復元物のhash照合を一度に行う
+python .\backup.py smoke
 ```
 
 本体データへの復元は、隔離先で内容とhashを確認した後に、対象と上書き範囲を明示して実施します。
+
+`smoke` は本体データを上書きしません。Runtime配下の一時ディレクトリへ復元して削除し、結果を `backup_restore_smoke.json` と `logs/backup_restore_smoke.log` に記録します。バックアップ作成、manifest検証、復元、復元物のhash照合、結果記録のいずれかが失敗した場合は `critical` として終了します。
 
 ## 4. ログ保持
 

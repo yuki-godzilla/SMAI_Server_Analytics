@@ -2,6 +2,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -92,9 +93,51 @@ class BackupCreateTests(unittest.TestCase):
         isolated = Path(self.temp_dir.name) / "restore-check"
 
         self.assertTrue(backup.restore(destination, isolated))
+        self.assertTrue(backup.verify_restored(destination, isolated))
         self.assertEqual(
             (isolated / "data" / "user" / "sample.txt").read_text(encoding="utf-8"),
             "hello",
+        )
+
+    def test_verify_restored_rejects_changed_isolated_file(self) -> None:
+        destination = backup.create()
+        isolated = Path(self.temp_dir.name) / "restore-check"
+        self.assertTrue(backup.restore(destination, isolated))
+        (isolated / "data" / "user" / "sample.txt").write_text("changed", encoding="utf-8")
+
+        self.assertFalse(backup.verify_restored(destination, isolated))
+
+    def test_create_uses_distinct_directories_for_same_second_runs(self) -> None:
+        fixed_now = datetime(2026, 7, 12, 10, 30, 0)
+        with patch("backup.datetime") as clock:
+            clock.now.return_value = fixed_now
+            first = backup.create()
+            second = backup.create()
+
+        self.assertNotEqual(first, second)
+        self.assertTrue(backup.verify(first))
+        self.assertTrue(backup.verify(second))
+
+    def test_restore_smoke_records_a_verified_isolated_restore(self) -> None:
+        result = backup.restore_smoke()
+
+        self.assertEqual(result["overall"], "healthy")
+        self.assertTrue(backup.verify(Path(str(result["backup_path"]))))
+        self.assertEqual(
+            json.loads(backup.smoke_state_path().read_text(encoding="utf-8")),
+            result,
+        )
+        self.assertEqual(list(self.runtime_root.glob("smai-restore-smoke-*")), [])
+
+    def test_restore_smoke_fails_closed_when_isolated_restore_fails(self) -> None:
+        with patch("backup.restore", return_value=False):
+            result = backup.restore_smoke()
+
+        self.assertEqual(result["overall"], "critical")
+        self.assertEqual(result["detail"], "isolated restore failed")
+        self.assertEqual(
+            json.loads(backup.smoke_state_path().read_text(encoding="utf-8")),
+            result,
         )
 
     def test_verify_rejects_manifest_path_escape(self) -> None:

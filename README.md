@@ -32,6 +32,9 @@ python .\backup.py restore <backup-path>
 
 # Restore into an isolated directory for a smoke check
 python .\backup.py restore <backup-path> --destination <restore-directory>
+
+# Create, verify, restore to a temporary isolated directory, and hash-check it
+python .\backup.py smoke
 ```
 
 - `create` creates a timestamped backup under the runtime backup directory.
@@ -39,6 +42,7 @@ python .\backup.py restore <backup-path> --destination <restore-directory>
 - `verify` checks the manifest, file hashes, and that every manifest path remains inside the backup.
 - `restore` performs the same verification before copying. If any file is missing, changed, skipped, or outside the backup, it aborts before writing a destination file.
 - Use `--destination` to restore into an isolated directory before considering a production restore. Without it, files are copied back to the project data directories.
+- `smoke` never writes into the SMAI project. It records the latest result in Runtime after the backup, manifest, isolated restore, and restored-file hashes all verify.
 - If a source file cannot be copied because it is locked, it is recorded as skipped in the manifest and the backup still completes.
 - Transient `.tmp` files and `.lock` files are excluded because they are neither durable state nor safe restore input.
 
