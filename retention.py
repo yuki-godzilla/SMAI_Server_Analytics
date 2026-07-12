@@ -44,6 +44,7 @@ def retention_candidates(runtime_root: Path, policy: dict[str, object], *, now: 
     # compact telemetry rollups provide the longer visual history.
     logs.extend(_expired_files(raw_health_root, raw_health_cutoff))
     logs.extend(_expired_files(runtime_root / "metrics" / "health", log_cutoff))
+    logs.extend(_expired_files(runtime_root / "metrics" / "tasks", log_cutoff))
     unique_logs = sorted(set(logs))
     return {
         "logs": unique_logs,

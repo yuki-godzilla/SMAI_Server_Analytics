@@ -49,19 +49,23 @@ class RetentionTests(unittest.TestCase):
     def test_health_raw_and_compact_metrics_have_separate_retention_windows(self) -> None:
         raw_health = self.runtime / "logs" / "health" / "2026-07-01.jsonl"
         compact_metric = self.runtime / "metrics" / "health" / "2026-06-01.jsonl"
+        task_metric = self.runtime / "metrics" / "tasks" / "2026-06-01.jsonl"
         raw_health.parent.mkdir(parents=True)
         compact_metric.parent.mkdir(parents=True)
+        task_metric.parent.mkdir(parents=True)
         raw_health.write_text("{}\n", encoding="utf-8")
         compact_metric.write_text("{}\n", encoding="utf-8")
+        task_metric.write_text("{}\n", encoding="utf-8")
         self._age(raw_health, 3)
         self._age(compact_metric, 31)
+        self._age(task_metric, 31)
 
         candidates = retention.retention_candidates(
             self.runtime,
             {**self.policy, "health_raw_days": 2},
         )
 
-        self.assertEqual(candidates["logs"], [raw_health, compact_metric])
+        self.assertEqual(candidates["logs"], [raw_health, compact_metric, task_metric])
 
     def test_dry_run_does_not_delete_and_apply_removes_only_candidates(self) -> None:
         old_log = self.runtime / "logs" / "old.log"

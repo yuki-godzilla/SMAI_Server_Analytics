@@ -11,6 +11,7 @@ from tkinter import ttk
 
 import incident_automation
 import connection_watch
+import task_monitor
 import telemetry
 
 try:
@@ -258,44 +259,15 @@ def recent_logs() -> list[str]:
     return lines[-100:] or ["No recent logs available"]
 
 
-def read_task_status() -> list[tuple[str, str, str]]:
-    rows: list[tuple[str, str, str]] = []
-    for task in TASKS:
-        try:
-            result = subprocess.run(
-                ["schtasks.exe", "/Query", "/TN", f"\\{task}", "/FO", "LIST"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-                check=False,
-            )
-            values: dict[str, str] = {}
-            for line in result.stdout.splitlines():
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    values[key.strip()] = value.strip()
-            status = values.get("Status", "unknown") if result.returncode == 0 else "unknown"
-            result_text = values.get("Last Result", "unknown") if result.returncode == 0 else "task query unavailable"
-            if result.returncode == 0:
-                contract = subprocess.run(
-                ["schtasks.exe", "/Query", "/TN", f"\\{task}", "/XML"],
-                capture_output=True,
-                timeout=2,
-                check=False,
-            )
-                if contract.returncode != 0:
-                    status = "unknown"
-                    result_text = "task execution path unavailable"
-                elif task_path_status(task, contract.stdout.decode(errors="replace")) != "ready":
-                    status = "path mismatch"
-                    result_text = f"expected path: {expected_task_root(task)}"
-                elif status == "unknown":
-                    status = "path verified"
-                    result_text = "execution path verified; scheduler state unavailable"
-            rows.append((task, status, result_text))
-        except (OSError, subprocess.TimeoutExpired):
-            rows.append((task, "unknown", "task query unavailable"))
-    return rows
+def read_task_status() -> list[dict[str, str]]:
+    """Collect task freshness from Scheduler plus the local restore smoke record."""
+
+    return task_monitor.collect(
+        TASKS,
+        runtime_root=RUNTIME_ROOT,
+        expected_root=expected_task_root,
+        backup_state=read_json(BACKUP_SMOKE_STATE),
+    )
 
 
 def format_timestamp(value: object) -> str:
@@ -444,7 +416,8 @@ class Dashboard:
         self.activity_events: list[dict[str, object]] = []
         self.incident_events: list[dict[str, object]] = []
         self.incident_source_events: list[dict[str, object]] = []
-        self.task_rows: list[tuple[str, str, str]] = []
+        self.task_rows: list[dict[str, str]] = []
+        self.task_observations: list[dict[str, object]] = []
         self.log_lines: list[str] = []
         self.flow_phase = 0
         self.logo_image = self._load_brand_image(ANALYTICS_LOGO, max_width=48, max_height=48)
@@ -656,15 +629,18 @@ class Dashboard:
             self.latency_panel.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(8)))
             self.capacity_panel.grid(row=1, column=0, sticky="nsew")
             latency_height = capacity_height = 108 if compact else 124
+            task_height = 138 if compact else 156
         else:
             self.trends_lower.columnconfigure(0, weight=1, uniform="trend_lower")
             self.trends_lower.columnconfigure(1, weight=1, uniform="trend_lower")
             self.latency_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(4)))
             self.capacity_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(4), 0))
             latency_height = capacity_height = 135 if compact else 170
+            task_height = 138 if compact else 156
         self.status_history_canvas.configure(height=self._px(180 if compact else 220))
         self.latency_canvas.configure(height=self._px(latency_height))
         self.capacity_canvas.configure(height=self._px(capacity_height))
+        self.task_trend_canvas.configure(height=self._px(task_height))
 
     def _layout_notebook_tabs(self, narrow: bool) -> None:
         """Keep every operational screen reachable on a narrow notebook."""
@@ -1180,6 +1156,11 @@ class Dashboard:
         status_history_panel.pack(fill="x", pady=(0, self._px(8)))
         self.status_history_canvas = self._canvas(status_history_panel, height=220)
         self.status_history_canvas.pack(fill="x", padx=self._px(14), pady=(0, self._px(14)))
+        task_trend_panel = self._panel(trends, "JOB FRESHNESS", "タスクと復元検証の最終成功")
+        self.task_trend_panel = task_trend_panel
+        task_trend_panel.pack(fill="x", pady=(0, self._px(8)))
+        self.task_trend_canvas = self._canvas(task_trend_panel, height=156)
+        self.task_trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         trends_lower = ttk.Frame(trends, style="Surface.TFrame")
         self.trends_lower = trends_lower
         trends_lower.pack(fill="both", expand=True)
@@ -1195,7 +1176,7 @@ class Dashboard:
         self.latency_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         self.capacity_canvas = self._canvas(capacity_panel, height=170)
         self.capacity_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        for canvas in (self.status_history_canvas, self.latency_canvas, self.capacity_canvas):
+        for canvas in (self.status_history_canvas, self.latency_canvas, self.capacity_canvas, self.task_trend_canvas):
             canvas.bind("<Configure>", lambda _event: self._draw_trends())
         sessions_summary = self._panel(sessions, "端末接続状況", "端末種別ごとの現在接続数と監視開始後の累計")
         sessions_summary.pack(fill="x", pady=(0, self._px(8)))
@@ -1318,13 +1299,23 @@ class Dashboard:
                 ("summary", "改善結果", 460),
             ),
         )
-        task_summary = self._panel(tasks, "タスク状況", "Windowsタスクの確認結果")
+        task_summary = self._panel(tasks, "タスク鮮度", "Schedulerと復元検証の最終成功を確認")
         task_summary.pack(fill="x", pady=(0, self._px(8)))
         self.task_canvas = self._canvas(task_summary, height=84)
         self.task_canvas.pack(fill="x", padx=12, pady=(0, 12))
-        task_table = self._panel(tasks, "タスク一覧", "状態が不明な項目は確認が必要")
+        task_table = self._panel(tasks, "タスク一覧", "最終実行・次回予定・結果を確認")
         task_table.pack(fill="both", expand=True)
-        self.tasks = self._tree(task_table, (("task", "タスク", 390), ("status", "状態", 180), ("result", "最終結果", 230)))
+        self.tasks = self._tree(
+            task_table,
+            (
+                ("task", "タスク", 260),
+                ("status", "鮮度", 130),
+                ("last", "最終実行", 190),
+                ("next", "次回予定", 170),
+                ("result", "最終結果", 120),
+                ("detail", "判定理由", 330),
+            ),
+        )
         log_summary = self._panel(logs, "ログ概要", "直近100行の集計")
         log_summary.pack(fill="x", pady=(0, self._px(8)))
         self.log_canvas = self._canvas(log_summary, height=84)
@@ -1685,6 +1676,7 @@ class Dashboard:
             snapshot_storage = snapshot.get("storage")
             self.latest_storage = [item for item in snapshot_storage if isinstance(item, dict)] if isinstance(snapshot_storage, list) else []
         self.backup_smoke = read_json(BACKUP_SMOKE_STATE)
+        self.task_observations = task_monitor.read_observations(RUNTIME_ROOT, window=window)
         self._draw_recovery()
         self._draw_trends()
 
@@ -1699,6 +1691,7 @@ class Dashboard:
         self._draw_status_history()
         self._draw_latency_history()
         self._draw_capacity_history()
+        self._draw_task_history()
 
     def _draw_status_history(self) -> None:
         canvas = self.status_history_canvas
@@ -1824,6 +1817,58 @@ class Dashboard:
             latest = series[-1][1]
             canvas.create_text(right, self._px(5 + index * 14), text=f"{name} {latest:.1f}%", anchor="ne", fill=color, font=self._font(7, "bold"))
         canvas.create_text(left, height - self._px(5), text="空き容量 · 赤線=15%注意", anchor="sw", fill=COLORS["muted"], font=self._font(7))
+
+    def _draw_task_history(self) -> None:
+        canvas = self.task_trend_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 420)
+        height = max(canvas.winfo_height(), self._px(130))
+        start, end, window = self._trend_range()
+        current_names = [str(row.get("name") or "") for row in self.task_rows if row.get("name")]
+        historical_names = [
+            str(task.get("name") or "")
+            for row in self.task_observations
+            for task in row.get("tasks", [])
+            if isinstance(task, dict) and task.get("name")
+        ]
+        names = list(dict.fromkeys([*current_names, *historical_names]))[:6]
+        if not names:
+            canvas.create_text(self._px(8), self._px(12), text="タスク鮮度の履歴はまだありません。", anchor="nw", fill=COLORS["muted"], font=self._font(9))
+            return
+        left, right = self._px(132), width - self._px(10)
+        top, bottom = self._px(28), height - self._px(18)
+        row_height = max(self._px(16), (bottom - top) / len(names))
+        for index, name in enumerate(names):
+            y1 = top + row_height * index + self._px(1)
+            y2 = top + row_height * (index + 1) - self._px(1)
+            canvas.create_rectangle(left, y1, right, y2, fill=COLORS["elevated"], outline="")
+            canvas.create_text(self._px(4), (y1 + y2) / 2, text=name[:20], anchor="w", fill=COLORS["muted"], font=self._font(7, "bold"))
+        seconds = max(1.0, window.total_seconds())
+        indexed_statuses: dict[tuple[int, int], str] = {}
+        for observation in self.task_observations:
+            observed = parse_timestamp(observation.get("observed_at"))
+            tasks = observation.get("tasks")
+            if observed is None or not start <= observed <= end or not isinstance(tasks, list):
+                continue
+            x_index = max(0, min(int(right - left), int((observed - start).total_seconds() / seconds * (right - left))))
+            status_by_name = {
+                str(task.get("name") or ""): str(task.get("status") or "unknown")
+                for task in tasks
+                if isinstance(task, dict)
+            }
+            for index, name in enumerate(names):
+                status = status_by_name.get(name)
+                if status:
+                    key = (index, x_index)
+                    indexed_statuses[key] = worst_status(indexed_statuses.get(key, "healthy"), status)
+        for (index, x_index), status in indexed_statuses.items():
+            y1 = top + row_height * index + self._px(1)
+            y2 = top + row_height * (index + 1) - self._px(1)
+            x = left + x_index
+            canvas.create_rectangle(x, y1, min(right, x + 1.5), y2, fill=self._status_color(status), outline="")
+        canvas.create_text(left, self._px(5), text="5分観測 · 赤=失敗/期限超過  黄=要確認  灰=未観測", anchor="nw", fill=COLORS["heading"], font=self._font(8, "bold"))
+        if not self.task_observations:
+            canvas.create_text(left, (top + bottom) / 2, text="初回のタスク観測後に、状態変化と実行鮮度を表示します。", anchor="w", fill=COLORS["muted"], font=self._font(8))
 
     def _draw_checks(self, checks: list[object], overall: str, checked_at: object) -> None:
         canvas = self.health
@@ -2009,13 +2054,13 @@ class Dashboard:
         canvas = self.task_canvas
         canvas.delete("all")
         width = max(canvas.winfo_width(), 450)
-        ready = sum(1 for _, status, _ in self.task_rows if status.lower() in {"ready", "running", "path verified"})
-        unknown = sum(1 for _, status, _ in self.task_rows if status.lower() == "unknown")
-        attention = len(self.task_rows) - ready - unknown
+        healthy = sum(1 for row in self.task_rows if row.get("status", "").lower() == "healthy")
+        unknown = sum(1 for row in self.task_rows if row.get("status", "").lower() == "unknown")
+        attention = len(self.task_rows) - healthy - unknown
         card_width = (width - 24) / 3
-        self._canvas_metric(canvas, 0, card_width - 6, "稼働可能", str(ready), "Ready / Running", COLORS["green"])
-        self._canvas_metric(canvas, card_width + 6, card_width - 6, "取得不能", str(unknown), "未登録または権限・取得の問題", COLORS["amber"] if unknown else COLORS["green"])
-        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "要確認", str(attention), "Disabled / Queued / その他", COLORS["red"] if attention else COLORS["green"])
+        self._canvas_metric(canvas, 0, card_width - 6, "予定内", str(healthy), "最終成功・パスを確認", COLORS["green"])
+        self._canvas_metric(canvas, card_width + 6, card_width - 6, "取得不能", str(unknown), "未登録・権限・記録なし", COLORS["amber"] if unknown else COLORS["green"])
+        self._canvas_metric(canvas, card_width * 2 + 12, card_width - 12, "期限超過 / 失敗", str(attention), "復旧または設定を確認", COLORS["red"] if attention else COLORS["green"])
 
     def _draw_logs(self) -> None:
         canvas = self.log_canvas
@@ -2176,9 +2221,22 @@ class Dashboard:
         self.task_rows = read_task_status()
         for item in self.tasks.get_children():
             self.tasks.delete(item)
-        for task, status, result in self.task_rows:
-            status_label = {"unknown": "● 取得不能", "disabled": "● 無効", "path mismatch": "● パス要確認", "path verified": "● パス確認済み"}.get(status.lower(), f"● {status}")
-            self.tasks.insert("", "end", values=(task, status_label, result), tags=(self._tree_status_tag(status),))
+        for row in self.task_rows:
+            status = str(row.get("status", "unknown"))
+            status_label = {
+                "healthy": "● 予定内",
+                "degraded": "● 要確認",
+                "critical": "● 失敗 / 期限超過",
+                "unknown": "● 取得不能",
+            }.get(status.lower(), f"● {status.upper()}")
+            last_run = row.get("last_run_at") or "—"
+            next_run = row.get("next_run_at") or "—"
+            self.tasks.insert(
+                "",
+                "end",
+                values=(row.get("name", ""), status_label, format_timestamp(last_run), next_run, row.get("last_result") or "—", row.get("detail") or "—"),
+                tags=(self._tree_status_tag(status),),
+            )
         self.log_lines = recent_logs()
         self.set_text(self.logs, self.log_lines)
         self._draw_tab_visuals()

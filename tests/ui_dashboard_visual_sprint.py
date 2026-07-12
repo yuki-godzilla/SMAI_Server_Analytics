@@ -128,6 +128,15 @@ def capture_sprint(output: Path, *, width: int, height: int, sprint: str) -> lis
             image.save(path)
             captures.append(path)
             if tab_id == str(app.trends_page):
+                app._refresh_trends_scrollregion()
+                app.trends_scroll_canvas.yview_moveto(0.35)
+                app_root.update_idletasks()
+                app_root.update()
+                time.sleep(0.06)
+                middle = ImageGrab.grab(bbox=(x, y, x + app_root.winfo_width(), y + app_root.winfo_height()))
+                middle_path = output / f"{sprint}_{index + 1:02d}_{name}_middle.png"
+                middle.save(middle_path)
+                extra_captures.append(middle_path)
                 app.trends_scroll_canvas.yview_moveto(1.0)
                 app_root.update_idletasks()
                 app_root.update()
