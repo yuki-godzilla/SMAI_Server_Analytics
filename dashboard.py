@@ -11,6 +11,7 @@ from tkinter import ttk
 
 import incident_automation
 import connection_watch
+import telemetry
 
 try:
     from PIL import Image, ImageTk
@@ -24,6 +25,7 @@ SNAPSHOT = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
 ACTIVITY = PROJECT_ROOT / "data/ops/server_ops/activity_state.json"
 EVENT_LOG = RUNTIME_ROOT / "audit/events.jsonl"
 CONNECTION_WATCH_STATE = RUNTIME_ROOT / "connections/watch_state.json"
+BACKUP_SMOKE_STATE = RUNTIME_ROOT / "backup_restore_smoke.json"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
 ASSET_ROOT = Path(__file__).with_name("assets")
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
@@ -124,6 +126,14 @@ def result_filter_key(value: object) -> str:
     """Translate a UI result label without coupling storage values to the UI."""
 
     return RESULT_FILTER_KEYS.get(str(value), str(value))
+
+
+def telemetry_window(value: object) -> timedelta:
+    return {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }.get(time_window_key(value), timedelta(hours=24))
 
 
 def client_type(value: object) -> str:
@@ -349,6 +359,18 @@ def compact_id(value: object, limit: int = 18) -> str:
     return text if len(text) <= limit else f"{text[:8]}…{text[-6:]}"
 
 
+def format_bytes(value: object) -> str:
+    try:
+        size = max(0, int(value))
+    except (TypeError, ValueError):
+        return "—"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1024
+    return "—"
+
+
 def ui_scale_for_display(width: int, height: int) -> float:
     """Return a conservative content scale for large desktop displays.
 
@@ -406,8 +428,13 @@ class Dashboard:
         self.session = tk.StringVar(value="-")
         self.operations = tk.StringVar(value="-")
         self.checked = tk.StringVar(value="-")
+        self.checked_summary = tk.StringVar(value="最終確認 —")
         self.refresh_state = tk.StringVar(value="Auto-refresh 5s")
         self.health_history: list[tuple[str, int]] = []
+        self.health_rollups: list[dict[str, object]] = []
+        self.trends_window_filter = tk.StringVar(value="過去24時間")
+        self.backup_smoke: dict[str, object] = {}
+        self.latest_storage: list[dict[str, object]] = []
         self.session_rows: list[tuple[str, object, str]] = []
         self.client_sessions: list[dict[str, str]] = []
         self.current_connection_counts = {client_type: 0 for client_type in connection_watch.CLIENT_TYPES}
@@ -483,17 +510,24 @@ class Dashboard:
         self._layout_header(narrow, width)
         self._layout_facts(narrow, compact)
         self._layout_overview(narrow, compact)
+        self._layout_trends(narrow, compact)
+        self._layout_notebook_tabs(narrow)
         self._layout_filter_controls(narrow)
         self._layout_panel_headers(narrow)
         self._layout_footer(narrow)
         for canvas in self._summary_canvases:
             canvas.configure(height=self._px(64 if compact else 84))
-        self._resize_brand_images(compact)
+        # A high-DPI notebook can be wide in pixels but still lack room for
+        # the full wordmark and the operational status block.  Treat either
+        # compact or narrow layouts as header-compact so diagnostics stay in
+        # view before decorative branding.
+        self._resize_brand_images(compact or narrow)
         self._resize_topology_images(compact)
         self._layout_ready = True
         self.root.after_idle(self._redraw_visuals)
         self.root.after_idle(self._draw_tab_visuals)
         self.root.after_idle(self._refresh_overview_scrollregion)
+        self.root.after_idle(self._refresh_trends_scrollregion)
 
     def _layout_header(self, narrow: bool, width: int) -> None:
         """Stack brand and status blocks when the header no longer fits."""
@@ -502,7 +536,13 @@ class Dashboard:
         self.status_block.pack_forget()
         self.status_label.pack_forget()
         self.status_detail_label.pack_forget()
+        self.status_checked_label.pack_forget()
+        if self.wordmark_block is not None:
+            self.wordmark_block.pack_forget()
+        self.compact_brand_label.pack_forget()
         if narrow:
+            if self.wordmark_block is not None:
+                self.compact_brand_label.pack(anchor="w", before=self.brand_tagline)
             self.brand_block.pack(fill="x", anchor="w")
             self.status_block.pack(fill="x", anchor="w", pady=(self._px(8), 0))
             self.status_label.pack(anchor="w")
@@ -512,12 +552,16 @@ class Dashboard:
                 wraplength=max(self._px(220), width - self._px(48)),
             )
             self.status_detail_label.pack(anchor="w", pady=(self._px(5), 0))
+            self.status_checked_label.pack(anchor="w", pady=(self._px(2), 0))
         else:
+            if self.wordmark_block is not None:
+                self.wordmark_block.pack(anchor="w", before=self.brand_tagline)
             self.brand_block.pack(side="left", anchor="w")
             self.status_block.pack(side="right", anchor="ne")
             self.status_label.pack(anchor="e")
             self.status_detail_label.configure(anchor="e", justify="right", wraplength=0)
             self.status_detail_label.pack(anchor="e", pady=(self._px(5), 0))
+            self.status_checked_label.pack(anchor="e", pady=(self._px(2), 0))
 
     def _layout_facts(self, narrow: bool, compact: bool) -> None:
         """Keep KPI text readable by using a second row before it can crowd."""
@@ -528,23 +572,19 @@ class Dashboard:
         for card in self.fact_cards:
             card.grid_forget()
         if narrow:
-            self.facts.columnconfigure(0, weight=1, uniform="kpi")
-            self.facts.columnconfigure(1, weight=1, uniform="kpi")
+            for index in range(3):
+                self.facts.columnconfigure(index, weight=1, uniform="kpi")
             self.facts.rowconfigure(0, weight=1)
-            self.facts.rowconfigure(1, weight=1)
-            for index, card in enumerate(self.fact_cards):
-                if index == 2:
-                    card.grid(row=1, column=0, columnspan=2, sticky="nsew")
-                else:
-                    card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(10)) if index == 0 else 0)
-            rows = 2
+            for index, card in enumerate(self.fact_cards[:2]):
+                card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(8)) if index < 2 else 0)
+            rows = 1
         else:
             for index in range(3):
                 self.facts.columnconfigure(index, weight=1, uniform="kpi")
             for index, card in enumerate(self.fact_cards):
                 card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(12)) if index < 2 else 0)
             rows = 1
-        card_height = 60 if compact else 76
+        card_height = 60 if (compact or narrow) else 76
         self.facts.configure(height=self._px(card_height * rows + (self._px(8) if rows > 1 else 0)))
 
     def _layout_overview(self, narrow: bool, compact: bool) -> None:
@@ -555,14 +595,16 @@ class Dashboard:
         self.overview_summary.grid_forget()
         self.gauge_panel.grid_forget()
         self.checks_panel.grid_forget()
+        self.recovery_panel.grid_forget()
         if narrow:
             self.overview.columnconfigure(0, weight=1, minsize=0)
             self.overview.columnconfigure(1, weight=0, minsize=0)
-            for row in range(3):
+            for row in range(4):
                 self.overview.rowconfigure(row, weight=0, minsize=0)
             self.map_panel.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(10)))
             self.trend_panel.grid(row=1, column=0, sticky="nsew", pady=(0, self._px(10)))
             self.overview_summary.grid(row=2, column=0, sticky="nsew")
+            self.recovery_panel.grid(row=3, column=0, sticky="nsew", pady=(self._px(8), 0))
             self.overview_summary.columnconfigure(0, weight=1, uniform="")
             self.overview_summary.columnconfigure(1, weight=0, uniform="")
             self.overview_summary.rowconfigure(0, weight=0)
@@ -574,15 +616,18 @@ class Dashboard:
                 (self.trend_canvas, 170 if compact else 210),
                 (self.gauge_canvas, 145),
                 (self.health, 180),
+                (self.recovery_canvas, 104),
             )
         else:
             self.overview.columnconfigure(0, weight=4, minsize=self._px(320))
             self.overview.columnconfigure(1, weight=7, minsize=self._px(520))
             self.overview.rowconfigure(0, weight=4)
             self.overview.rowconfigure(1, weight=1)
-            self.map_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, self._px(10)))
+            self.overview.rowconfigure(2, weight=1)
+            self.map_panel.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=(0, self._px(10)))
             self.trend_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(0, self._px(8)))
             self.overview_summary.grid(row=1, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(self._px(8), 0))
+            self.recovery_panel.grid(row=2, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(self._px(8), 0))
             self.overview_summary.columnconfigure(0, weight=1, uniform="overview_summary")
             self.overview_summary.columnconfigure(1, weight=1, uniform="overview_summary")
             self.overview_summary.rowconfigure(0, weight=1)
@@ -593,9 +638,41 @@ class Dashboard:
                 (self.trend_canvas, 180 if compact else 230),
                 (self.gauge_canvas, 128),
                 (self.health, 128),
+                (self.recovery_canvas, 104),
             )
         for canvas, canvas_height in heights:
             canvas.configure(height=self._px(canvas_height))
+
+    def _layout_trends(self, narrow: bool, compact: bool) -> None:
+        """Keep longer-term charts legible on narrow and high-DPI screens."""
+
+        if not hasattr(self, "trends_lower"):
+            return
+        self.latency_panel.grid_forget()
+        self.capacity_panel.grid_forget()
+        if narrow:
+            self.trends_lower.columnconfigure(0, weight=1, uniform="")
+            self.trends_lower.columnconfigure(1, weight=0, uniform="")
+            self.latency_panel.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(8)))
+            self.capacity_panel.grid(row=1, column=0, sticky="nsew")
+            latency_height = capacity_height = 108 if compact else 124
+        else:
+            self.trends_lower.columnconfigure(0, weight=1, uniform="trend_lower")
+            self.trends_lower.columnconfigure(1, weight=1, uniform="trend_lower")
+            self.latency_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(4)))
+            self.capacity_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(4), 0))
+            latency_height = capacity_height = 135 if compact else 170
+        self.status_history_canvas.configure(height=self._px(180 if compact else 220))
+        self.latency_canvas.configure(height=self._px(latency_height))
+        self.capacity_canvas.configure(height=self._px(capacity_height))
+
+    def _layout_notebook_tabs(self, narrow: bool) -> None:
+        """Keep every operational screen reachable on a narrow notebook."""
+
+        if not hasattr(self, "notebook_tab_labels"):
+            return
+        for page, full_label, compact_label in self.notebook_tab_labels:
+            self.notebook.tab(page, text=compact_label if narrow else full_label)
 
     @staticmethod
     def _grid_groups(groups: tuple[ttk.Frame, ...], placements: tuple[tuple[int, int, int], ...]) -> None:
@@ -687,6 +764,41 @@ class Dashboard:
     def _refresh_overview_scrollregion(self) -> None:
         if hasattr(self, "overview_scroll_canvas"):
             self.overview_scroll_canvas.configure(scrollregion=self.overview_scroll_canvas.bbox("all"))
+
+    def _scrollable_trends(self, parent: ttk.Frame) -> ttk.Frame:
+        """Create a scrollable Trends page so lower charts stay reachable."""
+
+        canvas = tk.Canvas(parent, bg=COLORS["surface"], highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        content = ttk.Frame(canvas, style="Surface.TFrame", padding=self._px(16))
+        window_id = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_region(_event: tk.Event[tk.Misc]) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def fit_content(event: tk.Event[tk.Misc]) -> None:
+            canvas.itemconfigure(window_id, width=event.width)
+
+        content.bind("<Configure>", update_region)
+        canvas.bind("<Configure>", fit_content)
+        canvas.bind("<MouseWheel>", self._scroll_trends)
+        self.trends_scroll_canvas = canvas
+        return content
+
+    def _scroll_trends(self, event: tk.Event[tk.Misc]) -> str:
+        if hasattr(self, "notebook") and self.notebook.select() == str(self.trends_page):
+            delta = getattr(event, "delta", 0)
+            if delta:
+                self.trends_scroll_canvas.yview_scroll(-max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120), "units")
+                return "break"
+        return ""
+
+    def _refresh_trends_scrollregion(self) -> None:
+        if hasattr(self, "trends_scroll_canvas"):
+            self.trends_scroll_canvas.configure(scrollregion=self.trends_scroll_canvas.bbox("all"))
 
     def _resize_brand_images(self, compact: bool) -> None:
         """Keep the header recognisable without letting it consume a short window."""
@@ -918,8 +1030,10 @@ class Dashboard:
         brand_block = ttk.Frame(header, style="App.TFrame")
         brand_block.pack(side="left")
         self.brand_block = brand_block
+        self.wordmark_block: ttk.Frame | None = None
         if self.wordmark_shield_image is not None and self.wordmark_lettering_image is not None:
             mark = ttk.Frame(brand_block, style="App.TFrame")
+            self.wordmark_block = mark
             mark.pack(anchor="w")
             self.wordmark_shield_label = tk.Label(mark, image=self.wordmark_shield_image, bg=COLORS["page"], bd=0, highlightthickness=0)
             self.wordmark_shield_label.pack(side="left")
@@ -937,6 +1051,15 @@ class Dashboard:
             ttk.Label(title_block, text="SMAI Analytics", style="Title.TLabel").pack(anchor="w")
             self.brand_tagline = ttk.Label(title_block, text="運用コンソール  /  常時ローカル監視", style="Subtitle.TLabel")
             self.brand_tagline.pack(anchor="w", pady=(3, 0))
+        self.compact_brand_label = tk.Label(
+            brand_block,
+            text="SMAI Analytics",
+            bg=COLORS["page"],
+            fg=COLORS["heading"],
+            font=self._font(20, "bold"),
+            bd=0,
+            highlightthickness=0,
+        )
         status_block = ttk.Frame(header, style="App.TFrame")
         status_block.pack(side="right", anchor="n")
         self.status_block = status_block
@@ -952,6 +1075,8 @@ class Dashboard:
         self.status_label.pack(anchor="e")
         self.status_detail_label = ttk.Label(status_text, textvariable=self.status_detail, style="Subtitle.TLabel")
         self.status_detail_label.pack(anchor="e", pady=(self._px(5), 0))
+        self.status_checked_label = ttk.Label(status_text, textvariable=self.checked_summary, style="Subtitle.TLabel")
+        self.status_checked_label.pack(anchor="e", pady=(self._px(2), 0))
 
         facts = ttk.Frame(outer, style="App.TFrame")
         self.facts = facts
@@ -976,20 +1101,25 @@ class Dashboard:
         overview_page = ttk.Frame(notebook, style="Surface.TFrame")
         self.overview_page = overview_page
         overview = self._scrollable_overview(overview_page)
+        trends_page = ttk.Frame(notebook, style="Surface.TFrame")
+        self.trends_page = trends_page
+        trends = self._scrollable_trends(trends_page)
         sessions, history, incidents, reports, tasks, logs = [
             ttk.Frame(notebook, style="Surface.TFrame", padding=self._px(16)) for _ in range(6)
         ]
         self.overview = overview
-        for frame, name in (
-            (overview_page, "概要"),
-            (sessions, "セッション"),
-            (history, "操作履歴"),
-            (incidents, "障害"),
-            (reports, "改善レポート"),
-            (tasks, "タスク"),
-            (logs, "ログ"),
-        ):
-            notebook.add(frame, text=name)
+        self.notebook_tab_labels = (
+            (overview_page, "概要", "概要"),
+            (trends_page, "推移", "推移"),
+            (sessions, "セッション", "接続"),
+            (history, "操作履歴", "履歴"),
+            (incidents, "障害", "障害"),
+            (reports, "改善レポート", "報告"),
+            (tasks, "タスク", "タスク"),
+            (logs, "ログ", "ログ"),
+        )
+        for frame, full_label, _compact_label in self.notebook_tab_labels:
+            notebook.add(frame, text=full_label)
         # Make the service path a tall, scan-friendly sidebar.  The timeline
         # owns the primary right-hand area, while the score and check matrix
         # remain concise supporting diagnostics below it.
@@ -997,9 +1127,10 @@ class Dashboard:
         overview.columnconfigure(1, weight=7, minsize=self._px(520))
         overview.rowconfigure(0, weight=4)
         overview.rowconfigure(1, weight=1)
+        overview.rowconfigure(2, weight=1)
         map_panel = self._panel(overview, "SERVICE TOPOLOGY", "接続経路と状態")
         self.map_panel = map_panel
-        map_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, self._px(10)))
+        map_panel.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=(0, self._px(10)))
         trend_panel = self._panel(overview, "HEALTH TIMELINE", "直近の状態推移")
         self.trend_panel = trend_panel
         trend_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(0, self._px(8)))
@@ -1015,6 +1146,9 @@ class Dashboard:
         checks_panel = self._panel(overview_summary, "CHECK MATRIX", "接続・画面・保存")
         self.checks_panel = checks_panel
         checks_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(8), 0))
+        recovery_panel = self._panel(overview, "RECOVERY READINESS", "復元検証と保存容量")
+        self.recovery_panel = recovery_panel
+        recovery_panel.grid(row=2, column=1, sticky="nsew", padx=(self._px(10), 0), pady=(self._px(8), 0))
         self.map_canvas = self._canvas(map_panel, height=300)
         self.map_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         self.gauge_canvas = self._canvas(gauge_panel, height=128)
@@ -1023,8 +1157,46 @@ class Dashboard:
         self.trend_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
         self.health = self._canvas(checks_panel, height=128)
         self.health.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
-        for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health):
+        self.recovery_canvas = self._canvas(recovery_panel, height=104)
+        self.recovery_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        for canvas in (self.map_canvas, self.gauge_canvas, self.trend_canvas, self.health, self.recovery_canvas):
             canvas.bind("<Configure>", lambda _event: self._redraw_visuals())
+        trends_controls = ttk.Frame(trends, style="Surface.TFrame")
+        trends_controls.pack(fill="x", pady=(0, self._px(8)))
+        ttk.Label(trends_controls, text="表示期間", style="Section.TLabel").pack(side="left")
+        trend_window = ttk.Combobox(
+            trends_controls,
+            textvariable=self.trends_window_filter,
+            values=TIME_WINDOW_OPTIONS[:3],
+            state="readonly",
+            width=11,
+        )
+        trend_window.pack(side="left", padx=(self._px(8), self._px(6)))
+        trend_window.bind("<<ComboboxSelected>>", lambda _event: self.refresh_trends())
+        ttk.Button(trends_controls, text="更新", command=self.refresh_trends).pack(side="left")
+        self.trends_summary = tk.StringVar(value="永続ヘルス履歴を読み込み中")
+        ttk.Label(trends_controls, textvariable=self.trends_summary, style="FilterMeta.TLabel").pack(side="right")
+        status_history_panel = self._panel(trends, "HEALTH HISTORY", "L1〜L3の5分集計・欠損も表示")
+        status_history_panel.pack(fill="x", pady=(0, self._px(8)))
+        self.status_history_canvas = self._canvas(status_history_panel, height=220)
+        self.status_history_canvas.pack(fill="x", padx=self._px(14), pady=(0, self._px(14)))
+        trends_lower = ttk.Frame(trends, style="Surface.TFrame")
+        self.trends_lower = trends_lower
+        trends_lower.pack(fill="both", expand=True)
+        trends_lower.columnconfigure(0, weight=1, uniform="trend_lower")
+        trends_lower.columnconfigure(1, weight=1, uniform="trend_lower")
+        latency_panel = self._panel(trends_lower, "RESPONSE LATENCY", "Streamlit応答の5分 p95")
+        self.latency_panel = latency_panel
+        latency_panel.grid(row=0, column=0, sticky="nsew", padx=(0, self._px(4)))
+        capacity_panel = self._panel(trends_lower, "STORAGE HEADROOM", "SMAIデータとRuntimeの空き容量")
+        self.capacity_panel = capacity_panel
+        capacity_panel.grid(row=0, column=1, sticky="nsew", padx=(self._px(4), 0))
+        self.latency_canvas = self._canvas(latency_panel, height=170)
+        self.latency_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        self.capacity_canvas = self._canvas(capacity_panel, height=170)
+        self.capacity_canvas.pack(fill="both", expand=True, padx=self._px(14), pady=(0, self._px(14)))
+        for canvas in (self.status_history_canvas, self.latency_canvas, self.capacity_canvas):
+            canvas.bind("<Configure>", lambda _event: self._draw_trends())
         sessions_summary = self._panel(sessions, "端末接続状況", "端末種別ごとの現在接続数と監視開始後の累計")
         sessions_summary.pack(fill="x", pady=(0, self._px(8)))
         self.connection_total_summary = tk.StringVar(value="現在接続・累計端末を確認中")
@@ -1246,6 +1418,8 @@ class Dashboard:
         self._draw_service_map()
         self._draw_gauge()
         self._draw_trend()
+        self._draw_recovery()
+        self._draw_trends()
 
     def _animate_topology(self) -> None:
         self.flow_phase = (self.flow_phase + 1) % 24
@@ -1461,6 +1635,195 @@ class Dashboard:
         message = "安定" if all(value >= 80 for value in values) else "注意: 閾値を下回った履歴あり"
         canvas.create_text(left, self._px(4), text=f"総合スコア · {message}", anchor="nw", fill=COLORS["heading"], font=self._font(9, "bold"))
         canvas.create_text(right, self._px(22), text="緑: 正常  /  黄: 注意  /  赤: 早期対応", anchor="ne", fill=COLORS["muted"], font=self._font(8))
+
+    def _draw_recovery(self) -> None:
+        if not hasattr(self, "recovery_canvas"):
+            return
+        canvas = self.recovery_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 450)
+        card_width = (width - self._px(24)) / 3
+        smoke_status = str(self.backup_smoke.get("overall") or "unknown").lower()
+        checked_at = self.backup_smoke.get("checked_at")
+        restore_value = "未記録" if smoke_status == "unknown" else smoke_status.upper()
+        restore_detail = "復元スモークの記録がありません" if smoke_status == "unknown" else f"最終検証 {relative_time(checked_at)}"
+        storage_rows = [item for item in self.latest_storage if isinstance(item, dict)]
+        available_storage = [item for item in storage_rows if isinstance(item.get("free_percent"), (int, float))]
+        if available_storage:
+            lowest = min(available_storage, key=lambda item: float(item.get("free_percent", 0)))
+            headroom_value = f"{float(lowest['free_percent']):.1f}%"
+            headroom_detail = f"最小空き容量 · {lowest.get('name', 'volume')}"
+            headroom_color = COLORS["red"] if float(lowest["free_percent"]) < 5 else COLORS["amber"] if float(lowest["free_percent"]) < 15 else COLORS["green"]
+        else:
+            headroom_value, headroom_detail, headroom_color = "—", "容量の観測記録がありません", COLORS["muted"]
+        coverage = telemetry.window_summary(self.health_rollups, window=telemetry_window(self.trends_window_filter.get()))
+        coverage_value = f"{coverage['coverage_percent']}%"
+        coverage_detail = f"履歴観測 {coverage['available_buckets']} / {coverage['expected_buckets']} 枠"
+        coverage_color = COLORS["green"] if float(coverage["coverage_percent"]) >= 95 else COLORS["amber"] if float(coverage["coverage_percent"]) else COLORS["muted"]
+        self._canvas_metric(canvas, 0, card_width - self._px(6), "復元検証", restore_value, restore_detail, self._status_color(smoke_status))
+        self._canvas_metric(canvas, card_width + self._px(6), card_width - self._px(6), "保存容量", headroom_value, headroom_detail, headroom_color)
+        self._canvas_metric(canvas, card_width * 2 + self._px(12), card_width - self._px(12), "履歴カバレッジ", coverage_value, coverage_detail, coverage_color)
+
+    def refresh_trends(self) -> None:
+        """Refresh durable telemetry without treating missing records as healthy."""
+
+        window = telemetry_window(self.trends_window_filter.get())
+        self.health_rollups = telemetry.read_health_rollups(RUNTIME_ROOT, window=window)
+        summary = telemetry.window_summary(self.health_rollups, window=window)
+        overall = summary.get("overall", {})
+        critical = int(overall.get("critical", 0)) if isinstance(overall, dict) else 0
+        self.trends_summary.set(
+            f"記録 {summary['available_buckets']} / {summary['expected_buckets']} 枠 · "
+            f"カバレッジ {summary['coverage_percent']}% · Critical {critical}"
+        )
+        latest = self.health_rollups[-1] if self.health_rollups else {}
+        storage = latest.get("storage") if isinstance(latest, dict) else None
+        if isinstance(storage, list):
+            self.latest_storage = [item for item in storage if isinstance(item, dict)]
+        if not self.latest_storage:
+            snapshot = read_json(SNAPSHOT)
+            snapshot_storage = snapshot.get("storage")
+            self.latest_storage = [item for item in snapshot_storage if isinstance(item, dict)] if isinstance(snapshot_storage, list) else []
+        self.backup_smoke = read_json(BACKUP_SMOKE_STATE)
+        self._draw_recovery()
+        self._draw_trends()
+
+    def _trend_range(self) -> tuple[datetime, datetime, timedelta]:
+        window = telemetry_window(self.trends_window_filter.get())
+        current = datetime.now(UTC)
+        return current - window, current, window
+
+    def _draw_trends(self) -> None:
+        if not hasattr(self, "status_history_canvas"):
+            return
+        self._draw_status_history()
+        self._draw_latency_history()
+        self._draw_capacity_history()
+
+    def _draw_status_history(self) -> None:
+        canvas = self.status_history_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 480)
+        height = max(canvas.winfo_height(), self._px(180))
+        start, end, window = self._trend_range()
+        left, right = self._px(68), width - self._px(12)
+        top, bottom = self._px(38), height - self._px(26)
+        row_height = max(self._px(22), (bottom - top) / 3)
+        levels = ("L1", "L2", "L3")
+        labels = {"L1": "L1 接続", "L2": "L2 画面", "L3": "L3 保存"}
+        for index, level in enumerate(levels):
+            y1 = top + row_height * index + self._px(2)
+            y2 = top + row_height * (index + 1) - self._px(2)
+            canvas.create_rectangle(left, y1, right, y2, fill=COLORS["elevated"], outline="")
+            canvas.create_text(self._px(4), (y1 + y2) / 2, text=labels[level], anchor="w", fill=COLORS["muted"], font=self._font(8, "bold"))
+        seconds = max(1.0, window.total_seconds())
+        for row in self.health_rollups:
+            observed = parse_timestamp(row.get("bucket_start"))
+            if observed is None or not start <= observed <= end:
+                continue
+            x = left + (observed - start).total_seconds() / seconds * (right - left)
+            bucket_width = max(1.0, telemetry.BUCKET_SECONDS / seconds * (right - left))
+            for index, level in enumerate(levels):
+                status = telemetry.level_status(row, level)
+                y1 = top + row_height * index + self._px(2)
+                y2 = top + row_height * (index + 1) - self._px(2)
+                canvas.create_rectangle(x, y1, min(right, x + bucket_width + 0.5), y2, fill=self._status_color(status), outline="")
+        summary = telemetry.window_summary(self.health_rollups, window=window)
+        canvas.create_text(
+            left,
+            self._px(5),
+            text=f"5分枠の最悪状態 · 記録カバレッジ {summary['coverage_percent']}%（灰=欠損/不明）",
+            anchor="nw",
+            fill=COLORS["heading"],
+            font=self._font(9, "bold"),
+        )
+        for ratio, label in ((0, start.strftime("%m/%d %H:%M")), (0.5, (start + window / 2).strftime("%m/%d %H:%M")), (1, end.strftime("%m/%d %H:%M"))):
+            x = left + ratio * (right - left)
+            canvas.create_line(x, top, x, bottom, fill=COLORS["border"], dash=(2, 4))
+            canvas.create_text(x, height - self._px(7), text=label, anchor="s", fill=COLORS["muted"], font=self._font(8))
+        if not self.health_rollups:
+            canvas.create_text(left, (top + bottom) / 2, text="永続ヘルス履歴はまだありません。最初の5分集計後に表示します。", anchor="w", fill=COLORS["muted"], font=self._font(9))
+
+    def _trend_points(self, series: list[tuple[datetime, float]], *, left: float, right: float, top: float, bottom: float, start: datetime, end: datetime, maximum: float) -> list[float]:
+        if not series or maximum <= 0:
+            return []
+        seconds = max(1.0, (end - start).total_seconds())
+        points: list[float] = []
+        for observed, value in series:
+            if not start <= observed <= end:
+                continue
+            x = left + (observed - start).total_seconds() / seconds * (right - left)
+            y = bottom - min(1.0, max(0.0, value / maximum)) * (bottom - top)
+            points.extend((x, y))
+        return points
+
+    def _draw_latency_history(self) -> None:
+        canvas = self.latency_canvas
+        canvas.delete("all")
+        width, height = max(canvas.winfo_width(), 300), max(canvas.winfo_height(), self._px(140))
+        start, end, _window = self._trend_range()
+        left, right, top, bottom = self._px(30), width - self._px(10), self._px(24), height - self._px(24)
+        series_by_name: dict[str, list[tuple[datetime, float]]] = {"Streamlit health": [], "Streamlit page": []}
+        for row in self.health_rollups:
+            observed = parse_timestamp(row.get("bucket_start"))
+            latency = row.get("latency_ms")
+            if observed is None or not isinstance(latency, dict):
+                continue
+            for name in series_by_name:
+                metric = latency.get(name)
+                if isinstance(metric, dict) and isinstance(metric.get("p95_ms"), int):
+                    series_by_name[name].append((observed, float(metric["p95_ms"])))
+        values = [value for series in series_by_name.values() for _time, value in series]
+        if not values:
+            canvas.create_text(self._px(8), self._px(12), text="応答時間の履歴はまだありません。", anchor="nw", fill=COLORS["muted"], font=self._font(9))
+            return
+        maximum = max(100.0, max(values) * 1.15)
+        for ratio in (0, 0.5, 1):
+            y = bottom - ratio * (bottom - top)
+            canvas.create_line(left, y, right, y, fill=COLORS["border"], dash=(2, 4))
+            canvas.create_text(self._px(3), y, text=f"{int(maximum * ratio)}", anchor="w", fill=COLORS["muted"], font=self._font(7))
+        colors = {"Streamlit health": COLORS["cyan"], "Streamlit page": COLORS["blue"]}
+        for index, (name, series) in enumerate(series_by_name.items()):
+            points = self._trend_points(series, left=left, right=right, top=top, bottom=bottom, start=start, end=end, maximum=maximum)
+            if len(points) >= 4:
+                canvas.create_line(*points, fill=colors[name], width=self._px(2), smooth=True)
+            canvas.create_text(right, self._px(5 + index * 14), text=name, anchor="ne", fill=colors[name], font=self._font(7, "bold"))
+        canvas.create_text(left, height - self._px(5), text="ms · 5分 p95", anchor="sw", fill=COLORS["muted"], font=self._font(7))
+
+    def _draw_capacity_history(self) -> None:
+        canvas = self.capacity_canvas
+        canvas.delete("all")
+        width, height = max(canvas.winfo_width(), 300), max(canvas.winfo_height(), self._px(140))
+        start, end, _window = self._trend_range()
+        left, right, top, bottom = self._px(34), width - self._px(10), self._px(24), height - self._px(24)
+        series_by_name: dict[str, list[tuple[datetime, float]]] = {}
+        for row in self.health_rollups:
+            observed = parse_timestamp(row.get("bucket_start"))
+            storage = row.get("storage")
+            if observed is None or not isinstance(storage, list):
+                continue
+            for item in storage:
+                if not isinstance(item, dict) or not isinstance(item.get("free_percent"), (int, float)):
+                    continue
+                name = str(item.get("name") or "Volume")[:24]
+                series_by_name.setdefault(name, []).append((observed, float(item["free_percent"])))
+        if not series_by_name:
+            canvas.create_text(self._px(8), self._px(12), text="保存容量の履歴はまだありません。", anchor="nw", fill=COLORS["muted"], font=self._font(9))
+            return
+        for percent in (0, 15, 100):
+            y = bottom - percent / 100 * (bottom - top)
+            color = COLORS["red"] if percent == 15 else COLORS["border"]
+            canvas.create_line(left, y, right, y, fill=color, dash=(2, 4))
+            canvas.create_text(self._px(3), y, text=f"{percent}%", anchor="w", fill=COLORS["muted"], font=self._font(7))
+        colors = (COLORS["green"], COLORS["cyan"], COLORS["blue"])
+        for index, (name, series) in enumerate(sorted(series_by_name.items())[:3]):
+            points = self._trend_points(series, left=left, right=right, top=top, bottom=bottom, start=start, end=end, maximum=100)
+            color = colors[index]
+            if len(points) >= 4:
+                canvas.create_line(*points, fill=color, width=self._px(2), smooth=True)
+            latest = series[-1][1]
+            canvas.create_text(right, self._px(5 + index * 14), text=f"{name} {latest:.1f}%", anchor="ne", fill=color, font=self._font(7, "bold"))
+        canvas.create_text(left, height - self._px(5), text="空き容量 · 赤線=15%注意", anchor="sw", fill=COLORS["muted"], font=self._font(7))
 
     def _draw_checks(self, checks: list[object], overall: str, checked_at: object) -> None:
         canvas = self.health
@@ -1692,6 +2055,7 @@ class Dashboard:
         self._set_status(overall)
         checked_at = snapshot.get("checked_at", "not available")
         self.checked.set(compact_timestamp(checked_at))
+        self.checked_summary.set(f"最終確認 {self.checked.get()}")
         checks = snapshot.get("checks", [])
         check_items = checks if isinstance(checks, list) else []
         self.check_statuses = {
@@ -1701,6 +2065,8 @@ class Dashboard:
         }
         self.health_history.append((str(checked_at), self._health_score(overall)))
         self.health_history = self.health_history[-30:]
+        snapshot_storage = snapshot.get("storage")
+        self.latest_storage = [item for item in snapshot_storage if isinstance(item, dict)] if isinstance(snapshot_storage, list) else []
         self._draw_checks(check_items, overall, checked_at)
         activity = read_json(ACTIVITY)
         sessions = activity.get("sessions", {})
@@ -1816,6 +2182,7 @@ class Dashboard:
         self.log_lines = recent_logs()
         self.set_text(self.logs, self.log_lines)
         self._draw_tab_visuals()
+        self.refresh_trends()
         self.refresh_state.set("5秒ごとに更新  /  最終更新 " + datetime.now().astimezone().strftime("%H:%M:%S"))
         self.root.after(5000, self.refresh)
 

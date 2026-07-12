@@ -5,4 +5,4 @@ backups/
 __pycache__/
 .venv/
 .env
-
+.ui-validation/

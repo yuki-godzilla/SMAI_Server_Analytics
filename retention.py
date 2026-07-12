@@ -14,7 +14,7 @@ POLICY = Path(__file__).with_name("retention_policy.json")
 def _expired_files(root: Path, cutoff: float) -> list[Path]:
     if not root.is_dir():
         return []
-    return [path for path in root.glob("*") if path.is_file() and path.stat().st_mtime < cutoff]
+    return [path for path in root.rglob("*") if path.is_file() and path.stat().st_mtime < cutoff]
 
 
 def _expired_backups(root: Path, cutoff: float) -> list[Path]:
@@ -36,9 +36,17 @@ def _expired_backups(root: Path, cutoff: float) -> list[Path]:
 def retention_candidates(runtime_root: Path, policy: dict[str, object], *, now: float | None = None) -> dict[str, list[Path]]:
     now = time.time() if now is None else now
     log_cutoff = now - int(policy["log_days"]) * 86400
+    raw_health_cutoff = now - int(policy.get("health_raw_days", policy["log_days"])) * 86400
     backup_cutoff = now - int(policy["backup_days"]) * 86400
+    raw_health_root = runtime_root / "logs" / "health"
+    logs = [path for path in _expired_files(runtime_root / "logs", log_cutoff) if not path.is_relative_to(raw_health_root)]
+    # The 5-second raw stream is useful for a recent incident, while the
+    # compact telemetry rollups provide the longer visual history.
+    logs.extend(_expired_files(raw_health_root, raw_health_cutoff))
+    logs.extend(_expired_files(runtime_root / "metrics" / "health", log_cutoff))
+    unique_logs = sorted(set(logs))
     return {
-        "logs": _expired_files(runtime_root / "logs", log_cutoff),
+        "logs": unique_logs,
         "backups": _expired_backups(runtime_root, backup_cutoff),
     }
 

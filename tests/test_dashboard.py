@@ -44,6 +44,15 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(dashboard.result_filter_key("失敗"), "failed")
         self.assertEqual(dashboard.result_filter_key("重大"), "critical")
 
+    def test_trend_windows_do_not_allow_unbounded_history(self) -> None:
+        self.assertEqual(dashboard.telemetry_window("過去24時間").total_seconds(), 24 * 3600)
+        self.assertEqual(dashboard.telemetry_window("過去30日間").days, 30)
+        self.assertEqual(dashboard.telemetry_window("すべて").total_seconds(), 24 * 3600)
+
+    def test_byte_formatting_is_compact_and_safe_for_bad_values(self) -> None:
+        self.assertEqual(dashboard.format_bytes(1024), "1.0 KB")
+        self.assertEqual(dashboard.format_bytes("bad"), "—")
+
     def test_parse_timestamp_accepts_utc_z_suffix(self) -> None:
         parsed = dashboard.parse_timestamp("2026-07-11T04:24:17Z")
         self.assertIsNotNone(parsed)

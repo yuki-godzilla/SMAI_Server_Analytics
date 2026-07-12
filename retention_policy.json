@@ -1,5 +1,6 @@
 {
   "log_days": 30,
+  "health_raw_days": 2,
   "error_log_days": 90,
   "max_log_bytes": 52428800,
   "backup_days": 30,
@@ -10,4 +11,3 @@
     "data/marketdata/*manifest*.json"
   ]
 }
-
