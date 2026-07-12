@@ -363,16 +363,19 @@ def layout_mode_for_window(
     *,
     layout_scale: float = 1.0,
 ) -> tuple[bool, bool]:
-    """Return ``(compact, narrow)`` without mixing DPI and screen pixels.
+    """Return ``(compact, narrow)`` from the usable window dimensions.
 
-    ``compact`` reduces decorative space on short windows.  ``narrow``
-    changes multi-column controls into readable rows before their labels can
-    collide.  The latter uses the same DPI-aware layout scale as card padding
-    and fixed widget heights.
+    Windows already reports Tk window geometry in the desktop coordinate
+    system for the active monitor.  Applying the DPI scale to the breakpoints
+    a second time made a normal 4K desktop look like a narrow notebook and
+    replaced its complete navigation and branded header with the micro UI.
+    DPI is still used for fonts, padding, and canvas sizes; reflow itself is
+    reserved for windows that are genuinely short or narrow.
     """
 
-    compact = width / max(1, screen_width) < 0.72 or height / max(1, screen_height) < 0.72
-    narrow = width < 1060 * max(1.0, layout_scale)
+    del screen_width, screen_height, layout_scale
+    compact = width < 1180 or height < 680
+    narrow = width < 1080
     return compact, narrow
 
 
@@ -384,13 +387,12 @@ def micro_layout_for_window(width: int, height: int, *, layout_scale: float = 1.
     fixed-width cards and tab captions must still stay separate in that case.
     """
 
-    scale = max(1.0, layout_scale)
+    del layout_scale
     # A short window can use its page scrollbar; reserve the stronger micro
-    # transformations for genuinely constrained height.  Applying them to a
-    # 700px-high operations console would needlessly hide useful tab labels.
-    # Height is already expressed in the current desktop's pixels, whereas
-    # card widths need the scale adjustment to avoid label collisions.
-    return width < 760 * scale or height < 560
+    # transformations for genuinely constrained working areas.  This keeps
+    # the complete tab names, header assets, and three KPI cards available on
+    # ordinary 1080p and 4K monitors at any Windows DPI setting.
+    return width < 720 or height <= 520
 
 
 class Dashboard:
@@ -524,12 +526,10 @@ class Dashboard:
         wrap_width = max(self._px(220), width - self._px(40))
         self.connection_total_summary_label.configure(wraplength=wrap_width)
         self.report_summary_label.configure(wraplength=wrap_width)
-        # A high-DPI notebook can be wide in pixels but still lack room for
-        # the full wordmark and the operational status block.  Treat either
-        # compact or narrow layouts as header-compact so diagnostics stay in
-        # view before decorative branding.
+        # Keep the visual identity on every desktop profile.  Only the truly
+        # constrained micro profile substitutes a text-only compact mark.
         if profile_changed:
-            self._resize_brand_images(compact or narrow)
+            self._resize_brand_images(micro)
             self._resize_topology_images(compact or micro)
         self._layout_ready = True
         self.root.after_idle(self._redraw_visuals)
@@ -569,10 +569,11 @@ class Dashboard:
             self.status_detail_label.pack(anchor="e", pady=(self._px(3), 0))
             self.status_checked_label.pack(anchor="e", pady=(self._px(2), 0))
         elif narrow:
+            # A normal laptop/monitor can still show the complete brand.  Put
+            # the live status below it before removing useful visual context.
             if self.wordmark_block is not None:
-                self.compact_brand_label.pack(anchor="w")
-            if not micro:
-                self.brand_tagline.pack(anchor="w", pady=(self._px(2), 0))
+                self.wordmark_block.pack(anchor="w")
+            self.brand_tagline.pack(anchor="w", pady=(self._px(2), 0))
             self.brand_block.pack(fill="x", anchor="w")
             self.status_block.pack(fill="x", anchor="w", pady=(self._px(5 if micro else 8), 0))
             self.status_label.pack(anchor="w")
@@ -585,7 +586,10 @@ class Dashboard:
             self.status_checked_label.pack(anchor="w", pady=(self._px(2), 0))
         else:
             if self.wordmark_block is not None:
-                self.wordmark_block.pack(anchor="w", before=self.brand_tagline)
+                # ``brand_tagline`` has just been pack_forget() above.  Tk
+                # rejects it as a ``before`` target, which previously aborted
+                # all remaining layout work and left the header blank.
+                self.wordmark_block.pack(anchor="w")
             self.brand_tagline.pack(anchor="w", pady=(self._px(2), 0))
             self.brand_block.pack(side="left", anchor="w")
             self.status_block.pack(side="right", anchor="ne")
@@ -608,18 +612,19 @@ class Dashboard:
                 meta_label.pack(anchor="w")
         if micro:
             self.facts.columnconfigure(0, weight=1, uniform="kpi")
-            self.facts.columnconfigure(1, weight=1, uniform="kpi")
-            for index in range(2):
-                self.fact_cards[index].grid(row=0, column=index, sticky="nsew", padx=(0, self._px(6)) if index == 0 else 0)
-            self.facts.rowconfigure(0, weight=1)
-            rows = 1
+            for index, card in enumerate(self.fact_cards):
+                card.grid(row=index, column=0, sticky="nsew", pady=(0, self._px(6)) if index < len(self.fact_cards) - 1 else 0)
+                self.facts.rowconfigure(index, weight=1)
+            rows = len(self.fact_cards)
         elif narrow:
-            for index in range(3):
+            for index in range(2):
                 self.facts.columnconfigure(index, weight=1, uniform="kpi")
             self.facts.rowconfigure(0, weight=1)
+            self.facts.rowconfigure(1, weight=1)
             for index, card in enumerate(self.fact_cards[:2]):
                 card.grid(row=0, column=index, sticky="nsew", padx=(0, self._px(8)) if index < 2 else 0)
-            rows = 1
+            self.fact_cards[2].grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(self._px(8), 0))
+            rows = 2
         else:
             for index in range(3):
                 self.facts.columnconfigure(index, weight=1, uniform="kpi")

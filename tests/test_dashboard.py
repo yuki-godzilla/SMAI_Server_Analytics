@@ -17,7 +17,7 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertGreater(dashboard.ui_scale_for_display(3840, 2160), 1.5)
         self.assertLessEqual(dashboard.ui_scale_for_display(7680, 4320), 1.65)
 
-    def test_layout_mode_reflows_small_or_high_dpi_windows_before_labels_collide(self) -> None:
+    def test_layout_mode_reflows_only_genuinely_constrained_windows(self) -> None:
         self.assertEqual(
             dashboard.layout_mode_for_window(1920, 1080, 1920, 1080),
             (False, False),
@@ -28,15 +28,84 @@ class DashboardFormattingTests(unittest.TestCase):
         )
         self.assertEqual(
             dashboard.layout_mode_for_window(1366, 768, 1366, 768, layout_scale=1.5),
-            (False, True),
+            (False, False),
         )
 
     def test_micro_layout_stacks_controls_before_small_window_labels_collide(self) -> None:
         self.assertTrue(dashboard.micro_layout_for_window(640, 480))
         self.assertTrue(dashboard.micro_layout_for_window(900, 520))
-        self.assertTrue(dashboard.micro_layout_for_window(980, 680, layout_scale=1.5))
+        self.assertFalse(dashboard.micro_layout_for_window(980, 680, layout_scale=1.5))
         self.assertFalse(dashboard.micro_layout_for_window(980, 680))
         self.assertFalse(dashboard.micro_layout_for_window(1180, 700, layout_scale=1.5))
+
+    def test_desktop_header_does_not_pack_before_a_hidden_tagline(self) -> None:
+        class Widget:
+            def __init__(self) -> None:
+                self.pack_calls: list[dict[str, object]] = []
+
+            def pack_forget(self) -> None:
+                return None
+
+            def pack(self, **kwargs: object) -> None:
+                self.pack_calls.append(kwargs)
+
+            def configure(self, **_kwargs: object) -> None:
+                return None
+
+        dashboard_like = SimpleNamespace(
+            brand_block=Widget(),
+            status_block=Widget(),
+            status_label=Widget(),
+            status_detail_label=Widget(),
+            status_checked_label=Widget(),
+            wordmark_block=Widget(),
+            compact_brand_label=Widget(),
+            brand_tagline=Widget(),
+            _font=lambda *args: ("Segoe UI", 10, "bold"),
+            _px=lambda value: value,
+        )
+
+        dashboard.Dashboard._layout_header(dashboard_like, narrow=False, micro=False, width=1920)
+
+        self.assertEqual(dashboard_like.wordmark_block.pack_calls, [{"anchor": "w"}])
+
+    def test_narrow_layout_keeps_all_three_kpi_cards(self) -> None:
+        class GridWidget:
+            def __init__(self) -> None:
+                self.grid_calls: list[dict[str, object]] = []
+
+            def grid_forget(self) -> None:
+                return None
+
+            def grid(self, **kwargs: object) -> None:
+                self.grid_calls.append(kwargs)
+
+            def pack_forget(self) -> None:
+                return None
+
+            def pack(self, **_kwargs: object) -> None:
+                return None
+
+            def columnconfigure(self, *_args: object, **_kwargs: object) -> None:
+                return None
+
+            def rowconfigure(self, *_args: object, **_kwargs: object) -> None:
+                return None
+
+            def configure(self, **_kwargs: object) -> None:
+                return None
+
+        cards = [GridWidget(), GridWidget(), GridWidget()]
+        dashboard_like = SimpleNamespace(
+            facts=GridWidget(),
+            fact_cards=cards,
+            fact_meta_labels=[GridWidget(), GridWidget(), GridWidget()],
+            _px=lambda value: value,
+        )
+
+        dashboard.Dashboard._layout_facts(dashboard_like, narrow=True, compact=False, micro=False)
+
+        self.assertEqual(cards[2].grid_calls, [{"row": 1, "column": 0, "columnspan": 2, "sticky": "nsew", "pady": (8, 0)}])
 
     def test_event_window_rejects_bad_and_expired_timestamps(self) -> None:
         now = datetime(2026, 7, 11, 12, tzinfo=UTC)

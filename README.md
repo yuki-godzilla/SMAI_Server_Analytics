@@ -81,6 +81,18 @@ To restart only the local Analytics dashboard without stopping SMAI Streamlit,
 run `restart_dashboard.bat`. It identifies Python processes by the absolute
 `dashboard.py` path, then starts the standard dashboard launcher again.
 
+## 信頼済みLAN向けブラウザー画面
+
+`run_analytics_web.bat` は、同じ信頼済みプライベートネットワーク上のPC、タブレット、スマートフォンから閲覧できる、読み取り専用のOperations Consoleを起動します。SMAI本体の既存`venv_SMAI`にあるStreamlitを使用し、SMAI本体のTCP 8501を変えずにTCP 8502で待ち受けます。
+
+```powershell
+.\run_analytics_web.bat
+```
+
+起動時にはローカルURLと検出したLAN URLを表示します。同じWi-Fi上の別端末で、たとえば`http://192.168.x.x:8502`を開いてください。この画面はSMAIの計算、ランキング、Forecast、ユーザーデータ、タスク設定を変更しません。Operations snapshotを読み取り、デスクトップ画面と同じ範囲のサーバー内health probeを5秒ごとに実行します。
+
+信頼済みプライベートネットワークだけで使用し、TCP 8502をインターネットへ公開しないでください。別端末から接続できない場合は、同じプライベートネットワークにいることを確認したうえで、Windows Firewallのプライベートプロファイルに限りTCP 8502の受信許可を確認します。
+
 ## Critical incident operations
 
 `incident_automation.py` converts only fail-closed `critical` health conditions
