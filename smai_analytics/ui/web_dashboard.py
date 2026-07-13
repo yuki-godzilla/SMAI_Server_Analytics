@@ -104,9 +104,10 @@ TIME_WINDOW_OPTIONS = {
     "過去30日間": timedelta(days=30),
     "すべて": None,
 }
+DASHBOARD_HEALTH_WINDOW = timedelta(hours=24)
 HISTORY_RESULT_OPTIONS = ("すべて", "成功", "失敗", "取り消し")
 INCIDENT_SEVERITY_OPTIONS = ("すべて", "失敗", "エラー", "重大")
-WEB_TAB_LABELS = ("概要", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ")
+WEB_TAB_LABELS = ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ")
 RESULT_FILTER_KEYS = {
     "すべて": "all",
     "成功": "ok",
@@ -592,6 +593,50 @@ def _render_styles() -> None:
           .detail-handoff { color: #8FA4BE; display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 8px; }
           .detail-handoff strong { color: #DCEBFF; }
           .detail-handoff b { color: #60A5FA; font-weight: 750; }
+          .dashboard-visual-grid { align-items: stretch; display: grid; gap: 22px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); margin: 4px 0 20px; }
+          .visual-surface { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; min-width: 0; padding: 16px 0 13px; }
+          .visual-heading { align-items: baseline; display: flex; justify-content: space-between; margin-bottom: 6px; }
+          .visual-heading strong { color: #F8FBFF; font-size: 1rem; }
+          .visual-heading span { color: #60A5FA; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; }
+          .visual-copy { color: #8FA4BE; font-size: 0.82rem; margin: 0 0 8px; }
+          .network-canvas { background: radial-gradient(circle at 50% 12%, rgba(34, 211, 238, 0.09), transparent 48%); height: 248px; overflow: hidden; position: relative; }
+          .network-links { height: 100%; inset: 0; overflow: visible; position: absolute; width: 100%; }
+          .network-link { fill: none; stroke: #28415e; stroke-dasharray: 7 7; stroke-width: 2; }
+          .network-link-active { stroke: var(--flow-color); stroke-opacity: 0.68; }
+          .network-packet { filter: drop-shadow(0 0 6px var(--flow-color)); }
+          .network-node { align-items: center; background: #0b1626; border: 1px solid #26384f; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; min-height: 68px; padding: 7px 9px; position: absolute; text-align: center; transform: translateX(-50%); width: 126px; }
+          .network-node::before { background: var(--node-color); border-radius: 50%; box-shadow: 0 0 12px var(--node-color); content: ""; height: 7px; left: 10px; position: absolute; top: 10px; width: 7px; }
+          .network-node.active::after { animation: network-pulse 1.8s ease-out infinite; border: 1px solid var(--node-color); border-radius: 50%; content: ""; height: 8px; left: 9px; position: absolute; top: 9px; width: 8px; }
+          .network-node b { color: #DCEBFF; font-size: 0.67rem; letter-spacing: 0.08em; }
+          .network-node strong { color: #F8FBFF; font-size: 0.88rem; margin-top: 2px; }
+          .network-node span { color: #8FA4BE; font-size: 0.72rem; margin-top: 2px; }
+          .network-server { left: 50%; top: 9px; width: 152px; }
+          .network-desktop { bottom: 8px; left: 16%; }
+          .network-smartphone { bottom: 8px; left: 50%; }
+          .network-tablet { bottom: 8px; left: 84%; }
+          .network-legend { color: #758BA6; font-size: 0.73rem; margin: 4px 0 0; }
+          .health-score-line { align-items: baseline; display: flex; gap: 8px; margin: 4px 0 2px; }
+          .health-score-line strong { color: #F8FBFF; font-size: 1.55rem; }
+          .health-score-line span { color: #8FA4BE; font-size: 0.76rem; }
+          .sparkline { display: block; height: 116px; margin: 5px 0 2px; overflow: visible; width: 100%; }
+          .spark-grid { stroke: #1E3047; stroke-dasharray: 3 4; stroke-width: 1; }
+          .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+          .spark-last { stroke: #070D19; stroke-width: 3; }
+          .chart-unavailable { align-items: center; border: 1px dashed #31445e; color: #8FA4BE; display: flex; font-size: 0.8rem; height: 104px; justify-content: center; padding: 8px 14px; text-align: center; }
+          .micro-trend-grid { border-top: 1px solid #1E3047; display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 9px; padding-top: 10px; }
+          .micro-trend { min-width: 0; }
+          .micro-trend header { align-items: baseline; display: flex; justify-content: space-between; }
+          .micro-trend header span { color: #8FA4BE; font-size: 0.72rem; }
+          .micro-trend header strong { color: #E5EDF7; font-size: 0.86rem; }
+          .micro-trend .sparkline { height: 46px; margin: 4px 0 0; }
+          .micro-trend .chart-unavailable { font-size: 0.7rem; height: 46px; }
+          .evidence-rail { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; display: grid; gap: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0 0 24px; }
+          .evidence-signal { border-left: 1px solid #1E3047; min-height: 72px; padding: 11px 13px; }
+          .evidence-signal:first-child { border-left: 0; }
+          .evidence-signal small { color: #8FA4BE; display: block; font-size: 0.7rem; letter-spacing: 0.06em; }
+          .evidence-signal strong { color: var(--signal-color); display: block; font-size: 0.92rem; margin-top: 5px; }
+          .evidence-signal span { color: #B9C7D8; display: block; font-size: 0.72rem; margin-top: 2px; }
+          @keyframes network-pulse { 0% { opacity: 0.95; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(3.8); } }
           @media (max-width: 760px) {
             [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 72px; padding: 10px 0; }
             .app-shell { align-items: flex-start; flex-direction: column; gap: 9px; }
@@ -603,6 +648,15 @@ def _render_styles() -> None:
             .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 16px 0 0; }
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
+            .dashboard-visual-grid { grid-template-columns: 1fr; }
+            .network-canvas { height: 262px; }
+            .network-node { min-height: 61px; padding: 6px 4px; width: 102px; }
+            .network-server { width: 132px; }
+            .network-desktop { left: 17%; }
+            .network-tablet { left: 83%; }
+            .evidence-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .evidence-signal:nth-child(odd) { border-left: 0; }
+            .evidence-signal:nth-child(n + 3) { border-top: 1px solid #1E3047; }
           }
         </style>
         """,
@@ -681,6 +735,127 @@ def _session_statuses(sessions: list[dict[str, str]]) -> dict[str, str]:
         if any(item.get("client_type") == client for item in sessions)
         else "unknown"
         for client in connection_watch.CLIENT_TYPES
+    }
+
+
+def _dashboard_connection_nodes(data: Mapping[str, object]) -> tuple[bool, list[dict[str, object]]]:
+    """Return privacy-safe, current connection facts for the live topology."""
+
+    available = bool(data.get("activity_available"))
+    sessions = [item for item in data.get("sessions", []) if isinstance(item, dict)] if isinstance(data.get("sessions"), list) else []
+    nodes: list[dict[str, object]] = []
+    for client in connection_watch.CLIENT_TYPES:
+        typed = [item for item in sessions if str(item.get("client_type") or "") == client]
+        active = sum(session_connection_status(item) == "ok" for item in typed)
+        status = worst_status(*(session_connection_status(item) for item in typed)) if typed else "idle"
+        if not available:
+            status = "unknown"
+        nodes.append(
+            {
+                "client": client,
+                "label": CLIENT_TYPE_LABELS[client],
+                "active": active if available else None,
+                "observed": len(typed) if available else None,
+                "status": status,
+                "flow": available and active > 0,
+            }
+        )
+    return available, nodes
+
+
+def _dashboard_rollups(data: Mapping[str, object]) -> list[dict[str, object]]:
+    return _rollups_for_window(data, "過去24時間")
+
+
+def _dashboard_health_points(data: Mapping[str, object]) -> list[tuple[datetime, float]]:
+    points: list[tuple[datetime, float]] = []
+    for row in _dashboard_rollups(data):
+        timestamp = parse_timestamp(row.get("bucket_start"))
+        if timestamp is None:
+            continue
+        points.append((timestamp, float(health_score(telemetry.status_from_counts(row.get("overall"))))))
+    return points
+
+
+def _dashboard_latency_points(data: Mapping[str, object]) -> list[tuple[datetime, float]]:
+    points: list[tuple[datetime, float]] = []
+    for row in _dashboard_rollups(data):
+        timestamp = parse_timestamp(row.get("bucket_start"))
+        metrics = row.get("latency_ms")
+        if timestamp is None or not isinstance(metrics, dict):
+            continue
+        p95_values = [
+            float(metric.get("p95_ms"))
+            for metric in metrics.values()
+            if isinstance(metric, dict) and isinstance(metric.get("p95_ms"), int) and int(metric["p95_ms"]) >= 0
+        ]
+        if p95_values:
+            points.append((timestamp, max(p95_values)))
+    return points
+
+
+def _dashboard_headroom_points(data: Mapping[str, object]) -> list[tuple[datetime, float]]:
+    points: list[tuple[datetime, float]] = []
+    for row in _dashboard_rollups(data):
+        timestamp = parse_timestamp(row.get("bucket_start"))
+        storage = row.get("storage")
+        if timestamp is None or not isinstance(storage, list):
+            continue
+        values = [
+            float(item.get("free_percent"))
+            for item in storage
+            if isinstance(item, dict) and isinstance(item.get("free_percent"), (int, float))
+        ]
+        if values:
+            points.append((timestamp, min(values)))
+    return points
+
+
+def _sparkline_svg(
+    points: list[tuple[datetime, float]],
+    *,
+    color: str,
+    label: str,
+    lower: float = 0.0,
+    upper: float | None = None,
+) -> str:
+    """Render a bounded inline SVG without inventing missing telemetry."""
+
+    if not points:
+        return '<div class="chart-unavailable">履歴なし。欠損を正常の線として描画しません。</div>'
+    width, height, padding = 480.0, 116.0, 10.0
+    values = [value for _, value in points]
+    ceiling = upper if upper is not None else max(max(values) * 1.15, lower + 1.0)
+    ceiling = max(ceiling, lower + 1.0)
+    count = max(1, len(points) - 1)
+    coordinates = [
+        (
+            padding + (width - padding * 2) * index / count,
+            padding + (height - padding * 2) * (1 - min(1.0, max(0.0, (value - lower) / (ceiling - lower)))),
+        )
+        for index, (_, value) in enumerate(points)
+    ]
+    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y in coordinates)
+    last_x, last_y = coordinates[-1]
+    grid = "".join(
+        f'<line class="spark-grid" x1="{padding}" x2="{width - padding}" y1="{y:.1f}" y2="{y:.1f}" />'
+        for y in (padding, height / 2, height - padding)
+    )
+    return (
+        f'<svg class="sparkline" viewBox="0 0 {int(width)} {int(height)}" preserveAspectRatio="none" '
+        f'role="img" aria-label="{html.escape(label)}">{grid}'
+        f'<polyline class="spark-line" points="{polyline}" style="stroke:{color}" />'
+        f'<circle class="spark-last" cx="{last_x:.1f}" cy="{last_y:.1f}" r="5" style="fill:{color}" /></svg>'
+    )
+
+
+def _current_level_statuses(data: Mapping[str, object]) -> dict[str, str]:
+    checks = [item for item in data.get("checks", []) if isinstance(item, dict)] if isinstance(data.get("checks"), list) else []
+    return {
+        level: worst_status(*(str(item.get("status") or "unknown") for item in checks if str(item.get("level") or "").upper() == level))
+        if any(str(item.get("level") or "").upper() == level for item in checks)
+        else "unknown"
+        for level in ("L1", "L2", "L3")
     }
 
 
@@ -789,7 +964,7 @@ def _next_check(data: Mapping[str, object]) -> tuple[str, str, str]:
     task_statuses = [str(row.get("status") or "unknown") for row in tasks if isinstance(row, dict)] if isinstance(tasks, list) else []
     if task_statuses and worst_status(*task_statuses) not in {"healthy", "ok"}:
         return "タスク", "Scheduled Taskまたは復元検証に要確認の記録があります。", "タスクタブで鮮度と実行結果を確認"
-    return "概要", "直近の監視結果に緊急の要確認項目はありません。", "詳細な推移は推移タブで確認"
+    return "DashBoard", "直近の監視結果に緊急の要確認項目はありません。", "詳細な推移は推移タブで確認"
 
 
 def _render_overview_route(tab_name: str, title: str, description: str) -> None:
@@ -798,6 +973,112 @@ def _render_overview_route(tab_name: str, title: str, description: str) -> None:
         f'<div class="overview-route"><strong>{html.escape(tab_name)}</strong><h3>{html.escape(title)}</h3><p>{html.escape(description)}</p></div>',
         unsafe_allow_html=True,
     )
+
+
+def _visual_status(status: object) -> tuple[str, str]:
+    normalized = str(status or "unknown").casefold()
+    if normalized == "idle":
+        return "待機", "#758BA6"
+    return status_label(normalized), status_color(normalized)
+
+
+def _render_live_connection_map(data: Mapping[str, object]) -> None:
+    assert st is not None
+    available, nodes = _dashboard_connection_nodes(data)
+    overall = str(data.get("overall") or "unknown")
+    server_label, server_color = _visual_status(overall)
+    server_class = " active" if overall.casefold() in {"healthy", "ok", "active", "running"} else ""
+    paths = {
+        "desktop": "M 500 61 C 445 90 262 132 160 204",
+        "smartphone": "M 500 61 C 500 102 500 154 500 204",
+        "tablet": "M 500 61 C 555 90 738 132 840 204",
+    }
+    node_markup: list[str] = []
+    link_markup: list[str] = []
+    packet_markup: list[str] = []
+    for index, node in enumerate(nodes):
+        client = str(node["client"])
+        status_label_text, color = _visual_status(node["status"])
+        active = node["active"]
+        observed = node["observed"]
+        active_text = "観測不能" if active is None else f"現在 {active} 接続"
+        observed_text = "" if observed is None or observed == active else f" / 観測 {observed}"
+        classes = f"network-node network-{client}" + (" active" if bool(node["flow"]) else "")
+        node_markup.append(
+            f'<div class="{classes}" style="--node-color:{color}"><b>{html.escape(CLIENT_TYPE_LABELS[client].upper())}</b>'
+            f'<strong>{active_text}</strong><span>{html.escape(status_label_text)}{observed_text}</span></div>'
+        )
+        path = paths[client]
+        link_class = "network-link network-link-active" if bool(node["flow"]) else "network-link"
+        link_markup.append(f'<path class="{link_class}" style="--flow-color:{color}" d="{path}" />')
+        if bool(node["flow"]):
+            duration = 2.6 + index * 0.28
+            packet_markup.append(
+                f'<circle class="network-packet" style="--flow-color:{color}" fill="{color}" r="5">'
+                f'<animateMotion dur="{duration:.2f}s" repeatCount="indefinite" path="{path}" /></circle>'
+            )
+    availability_note = "接続情報を読めません。未接続とは判断していません。" if not available else "Pulseは90秒以内のheartbeat観測であり、通信量を表しません。"
+    st.markdown(
+        f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT</span></div>'
+        f'<p class="visual-copy">SMAI Serverと端末種別の現在接続を、個人情報を表示せずに集約します。</p>'
+        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 248" preserveAspectRatio="none" aria-hidden="true">'
+        f'{"".join(link_markup)}{"".join(packet_markup)}</svg>'
+        f'<div class="network-node network-server{server_class}" style="--node-color:{server_color}"><b>SERVER</b>'
+        f'<strong>SMAI Server</strong><span>{html.escape(server_label)}</span></div>{"".join(node_markup)}</div>'
+        f'<p class="network-legend">{html.escape(availability_note)}</p></section>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_health_timeline(data: Mapping[str, object]) -> None:
+    assert st is not None
+    rollups = _dashboard_rollups(data)
+    summary = telemetry.window_summary(rollups, window=DASHBOARD_HEALTH_WINDOW)
+    health_points = _dashboard_health_points(data)
+    latency_points = _dashboard_latency_points(data)
+    headroom_points = _dashboard_headroom_points(data)
+    score = health_score(data.get("overall"))
+    current_color = status_color(data.get("overall"))
+    latency_value = "—" if not latency_points else f"{latency_points[-1][1]:.0f} ms"
+    headroom_value = "—" if not headroom_points else f"{headroom_points[-1][1]:.1f}%"
+    health_chart = _sparkline_svg(health_points, color=current_color, label="過去24時間のHealth score", upper=100.0)
+    latency_chart = _sparkline_svg(latency_points, color="#A78BFA", label="応答p95の推移")
+    headroom_chart = _sparkline_svg(headroom_points, color="#34D399", label="空き容量率の推移", upper=100.0)
+    st.markdown(
+        f'<section class="visual-surface"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'
+        f'<div class="health-score-line"><strong style="color:{current_color}">{score}</strong>'
+        f'<span>履歴カバレッジ {summary["coverage_percent"]}% / {summary["available_buckets"]} 枠</span></div>{health_chart}'
+        f'<div class="micro-trend-grid"><div class="micro-trend"><header><span>応答 p95</span><strong>{latency_value}</strong></header>{latency_chart}</div>'
+        f'<div class="micro-trend"><header><span>最小空き率</span><strong>{headroom_value}</strong></header>{headroom_chart}</div></div></section>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_evidence_rail(data: Mapping[str, object]) -> None:
+    assert st is not None
+    levels = _current_level_statuses(data)
+    checks = [item for item in data.get("checks", []) if isinstance(item, dict)] if isinstance(data.get("checks"), list) else []
+    latest_latency = max((int(item["latency_ms"]) for item in checks if isinstance(item.get("latency_ms"), int)), default=None)
+    storage = [item for item in data.get("storage", []) if isinstance(item, dict)] if isinstance(data.get("storage"), list) else []
+    headroom = min((float(item["free_percent"]) for item in storage if isinstance(item.get("free_percent"), (int, float))), default=None)
+    tasks = [item for item in data.get("tasks", []) if isinstance(item, dict)] if isinstance(data.get("tasks"), list) else []
+    task_status = worst_status(*(str(item.get("status") or "unknown") for item in tasks)) if tasks else "unknown"
+    signals: list[tuple[str, str, str, str]] = []
+    for level in ("L1", "L2", "L3"):
+        label, color = _visual_status(levels[level])
+        signals.append((level, label, "現在の検査結果", color))
+    signals.extend(
+        (
+            ("直近応答", "—" if latest_latency is None else f"{latest_latency} ms", "health/pageを含む最大値", "#60A5FA"),
+            ("最小空き率", "—" if headroom is None else f"{headroom:.1f}%", "SMAI data / Runtime", "#34D399" if headroom is not None else "#AAB8C8"),
+            ("タスク鮮度", status_label(task_status), "Scheduled Task・復元検証", status_color(task_status)),
+        )
+    )
+    rail = "".join(
+        f'<div class="evidence-signal" style="--signal-color:{color}"><small>{html.escape(title)}</small><strong>{html.escape(value)}</strong><span>{html.escape(detail)}</span></div>'
+        for title, value, detail, color in signals
+    )
+    st.markdown(f'<div class="evidence-rail">{rail}</div>', unsafe_allow_html=True)
 
 
 def _render_overview(data: Mapping[str, object]) -> None:
@@ -815,6 +1096,14 @@ def _render_overview(data: Mapping[str, object]) -> None:
         f'<section class="overview-command" style="--health-color:{color}"><div class="overview-state"><div class="overview-score">{score}</div><div><p class="panel-kicker">システム状態</p><h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div></div><div class="overview-action"><p class="panel-kicker">次の確認先</p><div class="overview-destination">{html.escape(destination)} <span>→</span></div><p class="overview-guidance">{html.escape(guidance)}</p><small>{html.escape(route)}</small></div></section>',
         unsafe_allow_html=True,
     )
+
+    _panel_heading("現在の監視シグナル", "接続、Health、応答、容量、タスクの根拠を一画面で把握し、詳細は専用タブへ進みます。", kicker="LIVE DASHBOARD")
+    network, health = st.columns((7, 5))
+    with network:
+        _render_live_connection_map(data)
+    with health:
+        _render_health_timeline(data)
+    _render_evidence_rail(data)
 
     _panel_heading("サービス状態", "現在の3サービスだけを並べます。履歴と個別の根拠は専用タブで確認します。", kicker="LIVE SYSTEMS")
     services = (

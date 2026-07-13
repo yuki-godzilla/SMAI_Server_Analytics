@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TABS = ["概要", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"]
+EXPECTED_TABS = ["DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"]
 
 
 def _snapshot(now: datetime, status: str) -> dict[str, object]:

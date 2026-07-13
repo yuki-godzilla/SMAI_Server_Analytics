@@ -1,5 +1,5 @@
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import analytics_web
 
@@ -63,7 +63,7 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
     def test_web_tab_contract_covers_every_operations_surface(self) -> None:
         self.assertEqual(
             analytics_web.WEB_TAB_LABELS,
-            ("概要", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
+            ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
         )
 
     def test_overview_next_check_keeps_unknown_and_critical_fail_closed(self) -> None:
@@ -71,13 +71,46 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertEqual(analytics_web._next_check({"overall": "critical"})[0], "障害")
 
     def test_overview_next_check_does_not_treat_missing_tasks_as_a_task_failure(self) -> None:
-        self.assertEqual(analytics_web._next_check({"overall": "healthy", "tasks": []})[0], "概要")
+        self.assertEqual(analytics_web._next_check({"overall": "healthy", "tasks": []})[0], "DashBoard")
         self.assertEqual(
             analytics_web._next_check(
                 {"overall": "healthy", "tasks": [{"status": "degraded"}]}
             )[0],
             "タスク",
         )
+
+    def test_dashboard_connection_nodes_animate_only_current_heartbeats(self) -> None:
+        now = datetime.now(UTC).isoformat()
+        available, nodes = analytics_web._dashboard_connection_nodes(
+            {
+                "activity_available": True,
+                "sessions": [
+                    {"client_type": "desktop", "last_seen_at": now, "connection_state": "connected"},
+                    {"client_type": "smartphone", "last_seen_at": now, "connection_state": "connected"},
+                    {"client_type": "tablet", "last_seen_at": now, "connection_state": "closed"},
+                ],
+            }
+        )
+        by_client = {str(node["client"]): node for node in nodes}
+
+        self.assertTrue(available)
+        self.assertTrue(by_client["desktop"]["flow"])
+        self.assertTrue(by_client["smartphone"]["flow"])
+        self.assertFalse(by_client["tablet"]["flow"])
+        self.assertEqual(by_client["tablet"]["status"], "degraded")
+
+    def test_dashboard_health_points_keep_unknown_at_zero(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        points = analytics_web._dashboard_health_points(
+            {
+                "rollups": [
+                    {"bucket_start": (now - timedelta(minutes=5)).isoformat(), "overall": {"healthy": 1}},
+                    {"bucket_start": now.isoformat(), "overall": {"unknown": 1}},
+                ]
+            }
+        )
+
+        self.assertEqual([100.0, 0.0], [value for _, value in points])
 
 
 if __name__ == "__main__":
