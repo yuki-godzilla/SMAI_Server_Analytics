@@ -5,6 +5,18 @@ import analytics_web
 
 
 class AnalyticsWebFormattingTests(unittest.TestCase):
+    def test_current_check_summary_marks_failures_and_unknowns_for_attention(self) -> None:
+        level, message = analytics_web._check_attention_summary(
+            {"checks": [{"status": "failed"}, {"status": "unknown"}, {"status": "ok"}]}
+        ) or (None, "")
+
+        self.assertEqual("error", level)
+        self.assertIn("失敗・重大 1件", message)
+        self.assertIn("不明 1件", message)
+
+    def test_current_check_summary_omits_only_healthy_evidence(self) -> None:
+        self.assertIsNone(analytics_web._check_attention_summary({"checks": [{"status": "ok"}, {"status": "healthy"}]}))
+
     def test_web_health_score_is_fail_closed(self) -> None:
         self.assertEqual(analytics_web.health_score("healthy"), 100)
         self.assertEqual(analytics_web.health_score("unknown"), 0)

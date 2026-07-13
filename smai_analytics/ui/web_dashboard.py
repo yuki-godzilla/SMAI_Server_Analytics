@@ -641,6 +641,26 @@ def _check_rows(data: Mapping[str, object]) -> list[dict[str, str]]:
     ] if isinstance(checks, list) else []
 
 
+def _check_attention_summary(data: Mapping[str, object]) -> tuple[str, str] | None:
+    """Return a fail-closed visual summary for non-healthy current checks."""
+    checks = data.get("checks")
+    statuses = [str(item.get("status") or "unknown").casefold() for item in checks if isinstance(item, dict)] if isinstance(checks, list) else []
+    failed = sum(STATUS_PRIORITY.get(status, STATUS_PRIORITY["unknown"]) >= STATUS_PRIORITY["failed"] for status in statuses)
+    attention = sum(status in {"degraded", "stale"} for status in statuses)
+    unknown = sum(status == "unknown" or status not in STATUS_PRIORITY for status in statuses)
+    labels = []
+    if failed:
+        labels.append(f"失敗・重大 {failed}件")
+    if attention:
+        labels.append(f"要確認・期限超過 {attention}件")
+    if unknown:
+        labels.append(f"不明 {unknown}件")
+    if not labels:
+        return None
+    level = "error" if failed else "warning"
+    return level, f"{' / '.join(labels)}。下の表で対象と詳細を確認してください。"
+
+
 def _render_gauge(data: Mapping[str, object]) -> None:
     assert st is not None
     score = health_score(data["overall"])
@@ -727,6 +747,10 @@ def _render_trends(data: Mapping[str, object]) -> None:
 
     _panel_heading("LATEST CHECK MATRIX", "現在のL1〜L3検査結果です。時系列の変化はこの下のグラフで確認します。", kicker="CURRENT EVIDENCE")
     check_rows = _check_rows(data)
+    attention_summary = _check_attention_summary(data)
+    if attention_summary is not None:
+        level, message = attention_summary
+        getattr(st, level)(message)
     if check_rows:
         st.dataframe(check_rows, use_container_width=True, hide_index=True)
     else:
