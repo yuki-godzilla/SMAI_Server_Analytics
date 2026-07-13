@@ -21,6 +21,8 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertEqual(analytics_web.health_score("healthy"), 100)
         self.assertEqual(analytics_web.health_score("unknown"), 0)
         self.assertEqual(analytics_web.health_score(""), 0)
+        self.assertEqual(analytics_web.health_gauge_class("healthy"), "health-score-healthy")
+        self.assertEqual(analytics_web.health_gauge_class("not-a-status"), "health-score-unknown")
 
     def test_web_session_connection_needs_fresh_heartbeat(self) -> None:
         now = datetime(2026, 7, 13, 5, 0, tzinfo=UTC)

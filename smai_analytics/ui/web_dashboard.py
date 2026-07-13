@@ -483,7 +483,7 @@ def _render_styles() -> None:
           .gauge-wrap { align-items: center; display: flex; gap: 20px; min-height: 205px; }
           .gauge {
             align-items: center;
-            background: conic-gradient(var(--health-color) calc(var(--score) * 1%), #253a58 0);
+            background: conic-gradient(var(--health-color) var(--score), #253a58 0);
             border-radius: 50%;
             display: flex;
             height: 142px;
@@ -567,17 +567,33 @@ def _render_styles() -> None:
           }
           .overview-state { align-items: center; display: flex; gap: 18px; min-width: 0; }
           .overview-score {
+            --health-color: #AAB8C8;
+            --score: 0%;
             align-items: center;
-            border: 2px solid var(--health-color);
+            background: conic-gradient(var(--health-color) var(--score), #253a58 0);
             border-radius: 50%;
             color: #F8FBFF;
             display: flex;
             font-size: 1.7rem;
             font-weight: 850;
-            height: 82px;
+            height: 94px;
             justify-content: center;
-            min-width: 82px;
+            min-width: 94px;
+            position: relative;
           }
+          .overview-score::before {
+            background: #070D19;
+            border-radius: 50%;
+            content: "";
+            height: 74px;
+            position: absolute;
+            width: 74px;
+          }
+          .overview-score span { position: relative; z-index: 1; }
+          .overview-score.health-score-healthy, .overview-score.health-score-ok, .overview-score.health-score-active, .overview-score.health-score-running, .overview-score.health-score-ready, .gauge.health-score-healthy, .gauge.health-score-ok, .gauge.health-score-active, .gauge.health-score-running, .gauge.health-score-ready { --health-color: #34D399; --score: 100%; }
+          .overview-score.health-score-degraded, .overview-score.health-score-stale, .gauge.health-score-degraded, .gauge.health-score-stale { --health-color: #FBBF24; --score: 62%; }
+          .overview-score.health-score-critical, .overview-score.health-score-failed, .overview-score.health-score-error, .gauge.health-score-critical, .gauge.health-score-failed, .gauge.health-score-error { --health-color: #F87171; --score: 18%; }
+          .overview-score.health-score-unknown, .gauge.health-score-unknown { --health-color: #AAB8C8; --score: 0%; }
           .overview-state h2 { color: #F8FBFF; font-size: 1.45rem; margin: 0 0 6px; }
           .overview-state p { color: #AAB8C8; margin: 0; }
           .overview-action { border-left: 1px solid #26384f; padding-left: 28px; }
@@ -985,12 +1001,16 @@ def _check_attention_summary(data: Mapping[str, object]) -> tuple[str, str] | No
 def _render_gauge(data: Mapping[str, object]) -> None:
     assert st is not None
     score = health_score(data["overall"])
-    color = status_color(data["overall"])
     title, detail = _narrative(str(data["overall"]))
     st.markdown(
-        f'<div class="ops-panel gauge-wrap"><div class="gauge" style="--score:{score};--health-color:{color}"><span class="gauge-value">{score}</span></div><div class="gauge-copy"><p class="panel-kicker">システム健全性</p><h3>{html.escape(title)}</h3><p>{html.escape(detail)}</p><p style="margin-top:12px">{_status_pill(data["overall"])}</p></div></div>',
+        f'<div class="ops-panel gauge-wrap"><div class="gauge {health_gauge_class(data["overall"])}"><span class="gauge-value">{score}</span></div><div class="gauge-copy"><p class="panel-kicker">システム健全性</p><h3>{html.escape(title)}</h3><p>{html.escape(detail)}</p><p style="margin-top:12px">{_status_pill(data["overall"])}</p></div></div>',
         unsafe_allow_html=True,
     )
+
+
+def health_gauge_class(status: object) -> str:
+    normalized = str(status or "unknown").casefold()
+    return f"health-score-{normalized}" if normalized in STATUS_COLORS else "health-score-unknown"
 
 
 def _next_check(data: Mapping[str, object]) -> tuple[str, str, str]:
@@ -1142,11 +1162,10 @@ def _render_overview(data: Mapping[str, object]) -> None:
     storage_rows = [item for item in storage if isinstance(item, dict)] if isinstance(storage, list) else []
     storage_status = worst_status(*(str(item.get("status") or "unknown") for item in storage_rows))
     score = health_score(data["overall"])
-    color = status_color(data["overall"])
     title, detail = _narrative(str(data["overall"]))
     destination, guidance, route = _next_check(data)
     st.markdown(
-        f'<section class="overview-command" style="--health-color:{color}"><div class="overview-state"><div class="overview-score">{score}</div><div><p class="panel-kicker">システム状態</p><h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div></div><div class="overview-action"><p class="panel-kicker">次の確認先</p><div class="overview-destination">{html.escape(destination)} <span>→</span></div><p class="overview-guidance">{html.escape(guidance)}</p><small>{html.escape(route)}</small></div></section>',
+        f'<section class="overview-command"><div class="overview-state"><div class="overview-score {health_gauge_class(data["overall"])}" role="img" aria-label="Health score {score} / 100"><span>{score}</span></div><div><p class="panel-kicker">システム状態</p><h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div></div><div class="overview-action"><p class="panel-kicker">次の確認先</p><div class="overview-destination">{html.escape(destination)} <span>→</span></div><p class="overview-guidance">{html.escape(guidance)}</p><small>{html.escape(route)}</small></div></section>',
         unsafe_allow_html=True,
     )
 
