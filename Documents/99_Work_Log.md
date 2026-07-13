@@ -2,6 +2,9 @@
 
 ## 2026-07-13
 
+- Overviewを「現在の安全性と次の確認先」に絞り、時系列・検査表・復元準備・端末別詳細を推移、改善レポート、セッションへ分散
+- overall状態とTask鮮度に応じて、確認すべきタブを決定的に案内するNext Checkを追加
+- healthy、degraded、critical、高件数、復旧後の5状態をStreamlitレンダラーで再確認
 - Tkinter版を廃止し、`analytics_web.py`を正規のWeb Operations Console入口へ統一
 - Overview、推移、セッション、操作履歴、障害、改善レポート、タスク、ログの8画面をWeb版へ実装
 - 共有されたChrome全画面を確認し、4K／通常モニター向けにコンテンツ幅、カード内の画像配置、文字・余白、timelineのラベル密度を改善

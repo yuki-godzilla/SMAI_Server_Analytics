@@ -441,7 +441,7 @@ def _render_styles() -> None:
           [data-testid="stMetricLabel"] { color: #AAB8C8; font-weight: 700; }
           [data-testid="stMetricValue"] { color: #F8FBFF; }
           button[kind="secondary"] { border-color: #3b587d; color: #DCEBFF; }
-          .status-card, .ops-panel, .topology-node, .brand-block {
+          .status-card, .ops-panel, .topology-node, .brand-block, .overview-route {
             background: linear-gradient(145deg, #14243d, #0e1a2e);
             border: 1px solid #354763;
             border-radius: 14px;
@@ -470,6 +470,10 @@ def _render_styles() -> None:
           .topology-image { display: block; height: 60px; margin: 0 auto 4px; object-fit: contain; width: 76px; }
           .topology-node strong { color: #F8FBFF; display: block; margin-top: 3px; }
           .topology-node small { color: #AAB8C8; }
+          .overview-route { min-height: 116px; padding: 15px 16px; }
+          .overview-route h3 { color: #F8FBFF; font-size: 1rem; margin: 0 0 7px; }
+          .overview-route p { color: #AAB8C8; font-size: 0.88rem; margin: 0; }
+          .overview-route strong { color: #22D3EE; display: block; font-size: 0.74rem; letter-spacing: 0.08em; margin-bottom: 8px; }
           .gauge-wrap { align-items: center; display: flex; gap: 20px; min-height: 205px; }
           .gauge {
             align-items: center;
@@ -648,60 +652,66 @@ def _render_gauge(data: Mapping[str, object]) -> None:
     )
 
 
+def _next_check(data: Mapping[str, object]) -> tuple[str, str, str]:
+    """Return a concise, deterministic next-step message for the overview."""
+    overall = str(data.get("overall") or "unknown").casefold()
+    if overall == "critical":
+        return "障害", "L1接続と本体Streamlitの稼働状況を優先して確認してください。", "障害タブで失敗記録を確認"
+    if overall == "degraded":
+        return "推移", "黄色の検査項目と直近の変化を確認してください。", "推移タブでL1〜L3の詳細を確認"
+    if overall == "unknown":
+        return "推移", "監視証跡を読めません。状態を正常とは判断していません。", "推移タブで検査証跡を確認"
+
+    tasks = data.get("tasks")
+    task_statuses = [str(row.get("status") or "unknown") for row in tasks if isinstance(row, dict)] if isinstance(tasks, list) else []
+    if task_statuses and worst_status(*task_statuses) not in {"healthy", "ok"}:
+        return "タスク", "Scheduled Taskまたは復元検証に要確認の記録があります。", "タスクタブで鮮度と実行結果を確認"
+    return "概要", "直近の監視結果に緊急の要確認項目はありません。", "詳細な推移は推移タブで確認"
+
+
+def _render_overview_route(tab_name: str, title: str, description: str) -> None:
+    assert st is not None
+    st.markdown(
+        f'<div class="overview-route"><strong>{html.escape(tab_name)}</strong><h3>{html.escape(title)}</h3><p>{html.escape(description)}</p></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _render_overview(data: Mapping[str, object]) -> None:
     assert st is not None
-    topology, health = st.columns((7, 5))
     checks = data.get("check_statuses")
     check_statuses = checks if isinstance(checks, dict) else {}
-    raw_sessions = data.get("sessions")
-    sessions = [item for item in raw_sessions if isinstance(item, dict)] if isinstance(raw_sessions, list) else []
-    statuses = _session_statuses(sessions)
     storage = data.get("storage")
     storage_rows = [item for item in storage if isinstance(item, dict)] if isinstance(storage, list) else []
     storage_status = worst_status(*(str(item.get("status") or "unknown") for item in storage_rows))
-    with topology:
-        _panel_heading("SERVICE TOPOLOGY", "端末の状態はSMAIが受信したheartbeatの鮮度だけを根拠に表示します。")
-        clients = st.columns(3)
-        _render_topology_node(clients[0], label="SMAI UI", detail="PC browser", status=statuses["desktop"], image=_topology_tile(0))
-        _render_topology_node(clients[1], label="スマートフォン", detail="mobile browser", status=statuses["smartphone"], image=str(TOPOLOGY_SMARTPHONE))
-        _render_topology_node(clients[2], label="タブレット", detail="tablet browser", status=statuses["tablet"], image=str(TOPOLOGY_TABLET))
-        st.markdown("<p class='section-note' style='text-align:center'>↓ 同じ信頼済みネットワーク内のWeb App ↓</p>", unsafe_allow_html=True)
-        services = st.columns(3)
-        _render_topology_node(services[0], label="Streamlit", detail="SMAI Web App", status=service_status(check_statuses, "streamlit"), image=_topology_tile(1))
-        _render_topology_node(services[1], label="Runtime", detail="local state / backup", status=storage_status, image=_topology_tile(2))
-        _render_topology_node(services[2], label="Analytics", detail="operations console", status=str(data["overall"]), image=_topology_tile(3))
+    health, next_step = st.columns((5, 7))
     with health:
         _render_gauge(data)
-        _panel_heading("HEALTH TIMELINE", "5分単位の永続履歴。欠損は正常として扱いません。", kicker="LIVE HISTORY")
-        history = [
-            {
-                "時刻": parse_timestamp(row.get("bucket_start")).astimezone().strftime("%m/%d %H:%M") if parse_timestamp(row.get("bucket_start")) else "時刻不明",
-                "Health score": health_score(telemetry.status_from_counts(row.get("overall"))),
-            }
-            for row in _rollups_for_window(data, "過去24時間")
-        ]
-        if history:
-            st.line_chart(_downsample_rows(history, maximum=24), x="時刻", y="Health score", height=250, use_container_width=True)
-        else:
-            st.info("永続ヘルス履歴はまだありません。最初の5分集計後に表示されます。")
+    with next_step:
+        destination, guidance, route = _next_check(data)
+        _panel_heading("NEXT CHECK", "状態に応じて、次に開くべき詳細画面を一つだけ案内します。", kicker="OPERATIONS GUIDE")
+        st.markdown(
+            f'<div class="overview-route"><strong>{html.escape(destination)} タブ</strong><h3>{html.escape(guidance)}</h3><p>{html.escape(route)}</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("詳細な時系列、検査表、復元準備、端末別の状況は下記の専用タブへ分散しています。")
 
-    left, right = st.columns((7, 5))
-    with left:
-        _panel_heading("CHECK MATRIX", "L1〜L3の接続・画面・保存の検証結果です。")
-        rows = _check_rows(data)
-        if rows:
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        else:
-            st.warning("ヘルスチェックの証跡を読み取れません。正常とは判定していません。")
-    with right:
-        _panel_heading("RECOVERY READINESS", "復元検証、保存容量、履歴カバレッジを確認します。")
-        smoke = next((row for row in data.get("tasks", []) if isinstance(row, dict) and row.get("name") == "Backup Restore Smoke"), {})
-        summary = telemetry.window_summary(_rollups_for_window(data, "過去24時間"), window=timedelta(hours=24))
-        headroom = min((float(item.get("free_percent")) for item in storage_rows if isinstance(item.get("free_percent"), (int, float))), default=None)
-        metrics = st.columns(3)
-        metrics[0].metric("復元検証", status_label(smoke.get("status")), str(smoke.get("detail") or "記録なし"))
-        metrics[1].metric("最小空き率", "—" if headroom is None else f"{headroom:.1f}%", "SMAI data / Runtime")
-        metrics[2].metric("履歴カバレッジ", f"{summary['coverage_percent']}%", f"{summary['available_buckets']} / {summary['expected_buckets']} 枠")
+    _panel_heading("SERVICE AT A GLANCE", "Overviewでは現在のサービス状態だけを表示します。端末別の接続はセッション、検査履歴は推移で確認します。")
+    services = st.columns(3)
+    _render_topology_node(services[0], label="SMAI UI", detail="SMAI Streamlit service", status=service_status(check_statuses, "streamlit"), image=_topology_tile(1))
+    _render_topology_node(services[1], label="Runtime", detail="local state / backup", status=storage_status, image=_topology_tile(2))
+    _render_topology_node(services[2], label="Analytics", detail="operations console", status=str(data["overall"]), image=_topology_tile(3))
+
+    _panel_heading("詳細を開く", "同じ情報をOverviewへ繰り返して載せず、用途別のタブで確認します。", kicker="OPERATIONS MAP")
+    routes = st.columns(4)
+    with routes[0]:
+        _render_overview_route("推移", "検査・応答・容量の履歴", "L1〜L3の最新検査表と時系列を確認します。")
+    with routes[1]:
+        _render_overview_route("セッション", "端末ごとの接続状況", "PC・スマートフォン・タブレットの観測を確認します。")
+    with routes[2]:
+        _render_overview_route("改善レポート", "復元の準備状況", "復元検証、容量、履歴カバレッジを確認します。")
+    with routes[3]:
+        _render_overview_route("タスク", "実行鮮度と失敗理由", "Scheduled Taskの結果と期限を確認します。")
 
 
 def _render_trends(data: Mapping[str, object]) -> None:
@@ -714,6 +724,14 @@ def _render_trends(data: Mapping[str, object]) -> None:
     summary = telemetry.window_summary(rollups, window=duration)
     with coverage:
         st.caption(f"履歴カバレッジ: {summary['coverage_percent']}%  /  {summary['available_buckets']} / {summary['expected_buckets']} 枠。欠損は正常として数えません。")
+
+    _panel_heading("LATEST CHECK MATRIX", "現在のL1〜L3検査結果です。時系列の変化はこの下のグラフで確認します。", kicker="CURRENT EVIDENCE")
+    check_rows = _check_rows(data)
+    if check_rows:
+        st.dataframe(check_rows, use_container_width=True, hide_index=True)
+    else:
+        st.warning("ヘルスチェックの証跡を読み取れません。正常とは判定していません。")
+
     _panel_heading("HEALTH HISTORY", "overallとL1〜L3の状態スコアを5分集計で表示します。", kicker="TRENDS")
     health_rows: list[dict[str, object]] = []
     for row in rollups:
@@ -945,6 +963,37 @@ def _render_incidents(data: Mapping[str, object]) -> None:
 
 def _render_reports(data: Mapping[str, object]) -> None:
     assert st is not None
+    _panel_heading("RECOVERY READINESS", "復元検証、容量、履歴カバレッジをここで確認します。", kicker="RECOVERY")
+    tasks = data.get("tasks")
+    smoke = next(
+        (
+            row
+            for row in tasks
+            if isinstance(row, dict) and row.get("name") == "Backup Restore Smoke"
+        ),
+        {},
+    ) if isinstance(tasks, list) else {}
+    storage = data.get("storage")
+    storage_rows = [item for item in storage if isinstance(item, dict)] if isinstance(storage, list) else []
+    headroom = min(
+        (
+            float(item.get("free_percent"))
+            for item in storage_rows
+            if isinstance(item.get("free_percent"), (int, float))
+        ),
+        default=None,
+    )
+    summary = telemetry.window_summary(_rollups_for_window(data, "過去24時間"), window=timedelta(hours=24))
+    metrics = st.columns(3)
+    metrics[0].metric("復元検証", status_label(smoke.get("status")), str(smoke.get("detail") or "記録なし"))
+    metrics[1].metric("最小空き率", "—" if headroom is None else f"{headroom:.1f}%", "SMAI data / Runtime")
+    metrics[2].metric(
+        "履歴カバレッジ",
+        f"{summary['coverage_percent']}%",
+        f"{summary['available_buckets']} / {summary['expected_buckets']} 枠",
+    )
+    st.caption("復元の実行結果と期限はタスク、容量・healthの時系列は推移タブで詳しく確認できます。")
+
     _panel_heading("改善レポート", "重大な障害の調査結果を確認します。メール送信は別途SMTP設定がある場合だけです。", kicker="REPORTS")
     reports = data.get("reports")
     rows = [

@@ -52,6 +52,19 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
             ("概要", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
         )
 
+    def test_overview_next_check_keeps_unknown_and_critical_fail_closed(self) -> None:
+        self.assertEqual(analytics_web._next_check({"overall": "unknown"})[0], "推移")
+        self.assertEqual(analytics_web._next_check({"overall": "critical"})[0], "障害")
+
+    def test_overview_next_check_does_not_treat_missing_tasks_as_a_task_failure(self) -> None:
+        self.assertEqual(analytics_web._next_check({"overall": "healthy", "tasks": []})[0], "概要")
+        self.assertEqual(
+            analytics_web._next_check(
+                {"overall": "healthy", "tasks": [{"status": "degraded"}]}
+            )[0],
+            "タスク",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
