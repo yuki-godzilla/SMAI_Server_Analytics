@@ -40,6 +40,8 @@ LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_RO
 ASSET_ROOT = REPOSITORY_ROOT / "assets"
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
+ANALYTICS_MASCOT_HEADER = ASSET_ROOT / "smai-analytics-mascot-header.png"
+ANALYTICS_APP_ICON = ASSET_ROOT / "smai-analytics-app-icon-v3.png"
 ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-luminous.png"
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
@@ -531,8 +533,19 @@ def _render_styles() -> None:
             min-height: 58px;
             padding: 0 4px 12px;
           }
-          .app-brand, .app-state, .app-title { align-items: center; display: flex; gap: 14px; min-width: 0; }
-          .app-mark { display: block; height: 34px; object-fit: contain; width: 34px; }
+          .app-brand, .app-state, .app-title, .app-state-copy { align-items: center; display: flex; min-width: 0; }
+          .app-brand, .app-state, .app-title { gap: 14px; }
+          .app-state-copy { gap: 10px; }
+          .app-icon {
+            border: 1px solid #29496c;
+            border-radius: 9px;
+            box-shadow: 0 0 14px rgba(34, 211, 238, 0.16);
+            display: block;
+            height: 40px;
+            object-fit: cover;
+            width: 40px;
+          }
+          .app-mascot { display: block; height: 50px; margin: -8px -3px -8px 0; object-fit: contain; width: 50px; }
           .app-name { color: #F8FBFF; font-size: 1.08rem; letter-spacing: 0.02em; }
           .app-context, .app-state span { color: #8FA4BE; font-size: 0.75rem; letter-spacing: 0.08em; white-space: nowrap; }
           .app-state { border-left: 1px solid #26384f; padding-left: 16px; }
@@ -584,6 +597,8 @@ def _render_styles() -> None:
             .app-shell { align-items: flex-start; flex-direction: column; gap: 9px; }
             .app-state { border-left: 0; padding-left: 0; }
             .app-context { display: none; }
+            .app-icon { height: 36px; width: 36px; }
+            .app-mascot { height: 44px; margin: -5px -2px -5px 0; width: 44px; }
             .overview-command { gap: 18px; grid-template-columns: 1fr; }
             .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 16px 0 0; }
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
@@ -673,10 +688,12 @@ def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
     app_bar, controls = st.columns((12, 1))
     with app_bar:
-        logo = _image_data_uri(ANALYTICS_LOGO)
-        brand_mark = f'<img class="app-mark" src="{logo}" alt="SMAI Analytics">' if logo else ""
+        app_icon = _image_data_uri(ANALYTICS_APP_ICON)
+        mascot = _image_data_uri(ANALYTICS_MASCOT_HEADER)
+        brand_mark = f'<img class="app-icon" src="{app_icon}" alt="SMAI Analytics app icon">' if app_icon else ""
+        mascot_mark = f'<img class="app-mascot" src="{mascot}" alt="SMAI Analytics operations mascot">' if mascot else ""
         st.markdown(
-            f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}<strong class="app-name">SMAI Analytics</strong></div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div>',
+            f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}<strong class="app-name">SMAI Analytics</strong></div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
             unsafe_allow_html=True,
         )
     with controls:

@@ -53,6 +53,8 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
     def test_web_assets_and_lan_launcher_are_project_bound(self) -> None:
         self.assertTrue(analytics_web.ANALYTICS_WORDMARK.is_file())
         self.assertTrue(analytics_web.ANALYTICS_MASCOT.is_file())
+        self.assertTrue(analytics_web.ANALYTICS_MASCOT_HEADER.is_file())
+        self.assertTrue(analytics_web.ANALYTICS_APP_ICON.is_file())
         launcher = analytics_web.Path(__file__).resolve().parents[1] / "run_analytics_web.bat"
         content = launcher.read_text(encoding="utf-8")
         self.assertIn("--server.address 0.0.0.0", content)
