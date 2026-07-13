@@ -609,9 +609,9 @@ def _render_metrics(data: Mapping[str, object]) -> None:
     sessions = "—" if data["session_count"] is None else str(data["session_count"])
     operations = "—" if data["operation_count"] is None else str(data["operation_count"])
     columns = st.columns(4)
-    columns[0].metric("Health score", f"{health_score(data['overall'])} / 100", status_label(data["overall"]))
+    columns[0].metric("ヘルススコア", f"{health_score(data['overall'])} / 100", status_label(data["overall"]))
     columns[1].metric("接続セッション", sessions, "現在の接続状態")
-    columns[2].metric("実行中の処理", operations, "activity state")
+    columns[2].metric("実行中の処理", operations, "現在の実行状態")
     columns[3].metric("最終確認", compact_timestamp(data["checked_at"]), format_timestamp(data["checked_at"]))
 
 
@@ -647,7 +647,7 @@ def _render_gauge(data: Mapping[str, object]) -> None:
     color = status_color(data["overall"])
     title, detail = _narrative(str(data["overall"]))
     st.markdown(
-        f'<div class="ops-panel gauge-wrap"><div class="gauge" style="--score:{score};--health-color:{color}"><span class="gauge-value">{score}</span></div><div class="gauge-copy"><p class="panel-kicker">SYSTEM HEALTH</p><h3>{html.escape(title)}</h3><p>{html.escape(detail)}</p><p style="margin-top:12px">{_status_pill(data["overall"])}</p></div></div>',
+        f'<div class="ops-panel gauge-wrap"><div class="gauge" style="--score:{score};--health-color:{color}"><span class="gauge-value">{score}</span></div><div class="gauge-copy"><p class="panel-kicker">システム健全性</p><h3>{html.escape(title)}</h3><p>{html.escape(detail)}</p><p style="margin-top:12px">{_status_pill(data["overall"])}</p></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -689,18 +689,18 @@ def _render_overview(data: Mapping[str, object]) -> None:
         _render_gauge(data)
     with next_step:
         destination, guidance, route = _next_check(data)
-        _panel_heading("NEXT CHECK", "状態に応じて、次に開くべき詳細画面を一つだけ案内します。", kicker="OPERATIONS GUIDE")
+        _panel_heading("次に確認", "状態に応じて、次に開くべき詳細画面を一つだけ案内します。", kicker="確認ガイド")
         st.markdown(
             f'<div class="overview-route"><strong>{html.escape(destination)} タブ</strong><h3>{html.escape(guidance)}</h3><p>{html.escape(route)}</p></div>',
             unsafe_allow_html=True,
         )
         st.caption("詳細な時系列、検査表、復元準備、端末別の状況は下記の専用タブへ分散しています。")
 
-    _panel_heading("SERVICE AT A GLANCE", "Overviewでは現在のサービス状態だけを表示します。端末別の接続はセッション、検査履歴は推移で確認します。")
+    _panel_heading("サービス概要", "概要では現在のサービス状態だけを表示します。端末別の接続はセッション、検査履歴は推移で確認します。")
     services = st.columns(3)
-    _render_topology_node(services[0], label="SMAI UI", detail="SMAI Streamlit service", status=service_status(check_statuses, "streamlit"), image=_topology_tile(1))
-    _render_topology_node(services[1], label="Runtime", detail="local state / backup", status=storage_status, image=_topology_tile(2))
-    _render_topology_node(services[2], label="Analytics", detail="operations console", status=str(data["overall"]), image=_topology_tile(3))
+    _render_topology_node(services[0], label="SMAI UI", detail="SMAI本体の画面サービス", status=service_status(check_statuses, "streamlit"), image=_topology_tile(1))
+    _render_topology_node(services[1], label="Runtime", detail="ローカル状態・バックアップ", status=storage_status, image=_topology_tile(2))
+    _render_topology_node(services[2], label="Analytics", detail="運用コンソール", status=str(data["overall"]), image=_topology_tile(3))
 
     _panel_heading("詳細を開く", "同じ情報をOverviewへ繰り返して載せず、用途別のタブで確認します。", kicker="OPERATIONS MAP")
     routes = st.columns(4)
