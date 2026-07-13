@@ -507,6 +507,88 @@ def _render_styles() -> None:
             .topology-node { min-height: 128px; padding: 9px; }
             [data-baseweb="tab"] { font-size: 0.83rem; padding-left: 9px; padding-right: 9px; }
           }
+
+          /* Dense operational shell: cues come from hierarchy and state, not decorative cards. */
+          [data-testid="stMainBlockContainer"], .block-container {
+            padding-bottom: 1.6rem;
+            padding-top: 3.25rem;
+          }
+          [data-testid="stMetric"] {
+            background: transparent;
+            border: 0;
+            border-left: 1px solid #26384f;
+            border-radius: 0;
+            min-height: 76px;
+            padding: 2px 18px 8px;
+          }
+          [data-testid="stMetricLabel"] { font-size: 0.78rem; letter-spacing: 0.02em; }
+          [data-testid="stMetricValue"] { font-size: 1.8rem; }
+          .app-shell {
+            align-items: center;
+            border-bottom: 1px solid #26384f;
+            display: flex;
+            justify-content: space-between;
+            min-height: 58px;
+            padding: 0 4px 12px;
+          }
+          .app-brand, .app-state, .app-title { align-items: center; display: flex; gap: 14px; min-width: 0; }
+          .app-mark { display: block; height: 34px; object-fit: contain; width: 34px; }
+          .app-name { color: #F8FBFF; font-size: 1.08rem; letter-spacing: 0.02em; }
+          .app-context, .app-state span { color: #8FA4BE; font-size: 0.75rem; letter-spacing: 0.08em; white-space: nowrap; }
+          .app-state { border-left: 1px solid #26384f; padding-left: 16px; }
+          .app-state .status-pill { padding: 3px 8px; }
+          [data-baseweb="tab-list"] { border-bottom: 1px solid #26384f; gap: 0; }
+          [data-baseweb="tab"] { border-bottom: 2px solid transparent; padding: 11px 15px 9px; }
+          [aria-selected="true"][data-baseweb="tab"] { border-bottom-color: #22D3EE; }
+          .overview-command {
+            align-items: stretch;
+            border-bottom: 1px solid #26384f;
+            border-top: 1px solid #26384f;
+            display: grid;
+            gap: 30px;
+            grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+            margin: 12px 0 28px;
+            padding: 20px 0;
+          }
+          .overview-state { align-items: center; display: flex; gap: 18px; min-width: 0; }
+          .overview-score {
+            align-items: center;
+            border: 2px solid var(--health-color);
+            border-radius: 50%;
+            color: #F8FBFF;
+            display: flex;
+            font-size: 1.7rem;
+            font-weight: 850;
+            height: 82px;
+            justify-content: center;
+            min-width: 82px;
+          }
+          .overview-state h2 { color: #F8FBFF; font-size: 1.45rem; margin: 0 0 6px; }
+          .overview-state p { color: #AAB8C8; margin: 0; }
+          .overview-action { border-left: 1px solid #26384f; padding-left: 28px; }
+          .overview-destination { color: #22D3EE; font-size: 1.08rem; font-weight: 800; margin: 0 0 7px; }
+          .overview-destination span { color: #8FA4BE; padding-left: 4px; }
+          .overview-guidance { color: #F8FBFF; font-weight: 700; margin: 0 0 5px; }
+          .overview-action small { color: #8FA4BE; }
+          .signal-table { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; margin: 2px 0 20px; }
+          .signal-row { align-items: center; border-bottom: 1px solid #1c2b40; display: flex; justify-content: space-between; padding: 13px 4px; }
+          .signal-row:last-child { border-bottom: 0; }
+          .signal-row div { align-items: baseline; display: flex; gap: 14px; min-width: 0; }
+          .signal-row strong { color: #F8FBFF; min-width: 96px; }
+          .signal-row span { color: #8FA4BE; font-size: 0.86rem; }
+          .detail-handoff { color: #8FA4BE; display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 8px; }
+          .detail-handoff strong { color: #DCEBFF; }
+          .detail-handoff b { color: #60A5FA; font-weight: 750; }
+          @media (max-width: 760px) {
+            [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 72px; padding: 10px 0; }
+            .app-shell { align-items: flex-start; flex-direction: column; gap: 9px; }
+            .app-state { border-left: 0; padding-left: 0; }
+            .app-context { display: none; }
+            .overview-command { gap: 18px; grid-template-columns: 1fr; }
+            .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 16px 0 0; }
+            .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
+            .detail-handoff { flex-direction: column; gap: 4px; }
+          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -589,19 +671,16 @@ def _session_statuses(sessions: list[dict[str, str]]) -> dict[str, str]:
 
 def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
-    brand, status, controls = st.columns((6, 3, 1))
-    with brand:
-        wordmark = _image_data_uri(ANALYTICS_WORDMARK)
-        brand_image = f'<img class="brand-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else "<h1>SMAI Analytics</h1>"
-        st.markdown(f'<div class="brand-block">{brand_image}<p class="brand-copy">Operations Console / 常時ローカル監視 / 信頼済みプライベートLAN閲覧</p></div>', unsafe_allow_html=True)
-    with status:
-        title, detail = _narrative(str(data["overall"]))
-        mascot = _image_data_uri(ANALYTICS_MASCOT)
-        mascot_image = f'<img class="status-mascot" src="{mascot}" alt="SMAI Analytics mascot">' if mascot else ""
-        st.markdown(f'<div class="status-card">{mascot_image}<div class="status-card-copy">{_status_pill(data["overall"])}<h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div></div>', unsafe_allow_html=True)
+    app_bar, controls = st.columns((12, 1))
+    with app_bar:
+        logo = _image_data_uri(ANALYTICS_LOGO)
+        brand_mark = f'<img class="app-mark" src="{logo}" alt="SMAI Analytics">' if logo else ""
+        st.markdown(
+            f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}<strong class="app-name">SMAI Analytics</strong></div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div>',
+            unsafe_allow_html=True,
+        )
     with controls:
-        st.caption("表示更新")
-        if st.button("今すぐ", key="refresh_now", use_container_width=True):
+        if st.button("更新", key="refresh_now", use_container_width=True):
             cached_operations_snapshot.clear()
             st.rerun()
 
@@ -612,10 +691,14 @@ def _render_metrics(data: Mapping[str, object]) -> None:
     session_detail = "接続情報を取得できません" if data["session_count"] is None else f"観測セッション {data['session_count']}件 / 90秒以内"
     operations = "—" if data["operation_count"] is None else str(data["operation_count"])
     columns = st.columns(4)
-    columns[0].metric("ヘルススコア", f"{health_score(data['overall'])} / 100", status_label(data["overall"]))
-    columns[1].metric("現在接続", active_sessions, session_detail, delta_color="off")
-    columns[2].metric("実行中の処理", operations, "現在の実行状態")
-    columns[3].metric("最終確認", compact_timestamp(data["checked_at"]), format_timestamp(data["checked_at"]))
+    columns[0].metric("ヘルススコア", f"{health_score(data['overall'])} / 100")
+    columns[0].caption(status_label(data["overall"]))
+    columns[1].metric("現在接続", active_sessions)
+    columns[1].caption(session_detail)
+    columns[2].metric("実行中の処理", operations)
+    columns[2].caption("現在の実行状態")
+    columns[3].metric("最終確認", compact_timestamp(data["checked_at"]))
+    columns[3].caption(format_timestamp(data["checked_at"]))
 
 
 def _render_topology_node(column: object, *, label: str, detail: str, status: str, image: bytes | str | None = None) -> None:
@@ -707,34 +790,30 @@ def _render_overview(data: Mapping[str, object]) -> None:
     storage = data.get("storage")
     storage_rows = [item for item in storage if isinstance(item, dict)] if isinstance(storage, list) else []
     storage_status = worst_status(*(str(item.get("status") or "unknown") for item in storage_rows))
-    health, next_step = st.columns((5, 7))
-    with health:
-        _render_gauge(data)
-    with next_step:
-        destination, guidance, route = _next_check(data)
-        _panel_heading("次に確認", "状態に応じて、次に開くべき詳細画面を一つだけ案内します。", kicker="確認ガイド")
-        st.markdown(
-            f'<div class="overview-route"><strong>{html.escape(destination)} タブ</strong><h3>{html.escape(guidance)}</h3><p>{html.escape(route)}</p></div>',
-            unsafe_allow_html=True,
-        )
-        st.caption("詳細な時系列、検査表、復元準備、端末別の状況は下記の専用タブへ分散しています。")
+    score = health_score(data["overall"])
+    color = status_color(data["overall"])
+    title, detail = _narrative(str(data["overall"]))
+    destination, guidance, route = _next_check(data)
+    st.markdown(
+        f'<section class="overview-command" style="--health-color:{color}"><div class="overview-state"><div class="overview-score">{score}</div><div><p class="panel-kicker">システム状態</p><h2>{html.escape(title)}</h2><p>{html.escape(detail)}</p></div></div><div class="overview-action"><p class="panel-kicker">次の確認先</p><div class="overview-destination">{html.escape(destination)} <span>→</span></div><p class="overview-guidance">{html.escape(guidance)}</p><small>{html.escape(route)}</small></div></section>',
+        unsafe_allow_html=True,
+    )
 
-    _panel_heading("サービス概要", "概要では現在のサービス状態だけを表示します。端末別の接続はセッション、検査履歴は推移で確認します。")
-    services = st.columns(3)
-    _render_topology_node(services[0], label="SMAI UI", detail="SMAI本体の画面サービス", status=service_status(check_statuses, "streamlit"), image=_topology_tile(1))
-    _render_topology_node(services[1], label="Runtime", detail="ローカル状態・バックアップ", status=storage_status, image=_topology_tile(2))
-    _render_topology_node(services[2], label="Analytics", detail="運用コンソール", status=str(data["overall"]), image=_topology_tile(3))
-
-    _panel_heading("詳細を開く", "同じ情報をOverviewへ繰り返して載せず、用途別のタブで確認します。", kicker="OPERATIONS MAP")
-    routes = st.columns(4)
-    with routes[0]:
-        _render_overview_route("推移", "検査・応答・容量の履歴", "L1〜L3の最新検査表と時系列を確認します。")
-    with routes[1]:
-        _render_overview_route("セッション", "端末ごとの接続状況", "PC・スマートフォン・タブレットの観測を確認します。")
-    with routes[2]:
-        _render_overview_route("改善レポート", "復元の準備状況", "復元検証、容量、履歴カバレッジを確認します。")
-    with routes[3]:
-        _render_overview_route("タスク", "実行鮮度と失敗理由", "Scheduled Taskの結果と期限を確認します。")
+    _panel_heading("サービス状態", "現在の3サービスだけを並べます。履歴と個別の根拠は専用タブで確認します。", kicker="LIVE SYSTEMS")
+    services = (
+        ("SMAI UI", "SMAI本体の画面サービス", service_status(check_statuses, "streamlit")),
+        ("Runtime", "ローカル状態・バックアップ", storage_status),
+        ("Analytics", "運用コンソール", str(data["overall"])),
+    )
+    service_rows = "".join(
+        f'<div class="signal-row"><div><strong>{html.escape(label)}</strong><span>{html.escape(description)}</span></div>{_status_pill(status)}</div>'
+        for label, description, status in services
+    )
+    st.markdown(f'<div class="signal-table">{service_rows}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="detail-handoff"><strong>詳細の確認先</strong><span><b>推移</b> 検査・応答・容量</span><span><b>セッション</b> 端末の接続</span><span><b>改善レポート</b> 復元準備</span><span><b>タスク</b> 鮮度・失敗理由</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _render_trends(data: Mapping[str, object]) -> None:
