@@ -44,6 +44,7 @@ ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_MASCOT_HEADER = ASSET_ROOT / "smai-analytics-mascot-header.png"
 ANALYTICS_APP_ICON = ASSET_ROOT / "smai-analytics-app-icon-v3.png"
 ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-luminous.png"
+ANALYTICS_WORDMARK_LARGE_TEXT = ASSET_ROOT / "smai-analytics-wordmark-luminous-large-text-v2.png"
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
 TOPOLOGY_TABLET = ASSET_ROOT / "smai-topology-tablet-v1.png"
@@ -541,8 +542,8 @@ def _render_styles() -> None:
           .app-wordmark {
             display: block;
             object-fit: cover;
-            height: 112px;
-            max-width: min(46vw, 620px);
+            height: 86px;
+            max-width: min(52vw, 700px);
             width: auto;
           }
           .app-mascot { display: block; height: 132px; margin: -10px 0 -10px -4px; object-fit: contain; width: 132px; }
@@ -616,7 +617,7 @@ def _render_styles() -> None:
           .visual-heading strong { color: #F8FBFF; font-size: 1rem; }
           .visual-heading span { color: #60A5FA; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; }
           .visual-copy { color: #8FA4BE; font-size: 0.82rem; margin: 0 0 8px; }
-          .network-canvas { background: radial-gradient(circle at 50% 13%, rgba(34, 211, 238, 0.11), transparent 54%); height: 440px; overflow: hidden; position: relative; }
+          .network-canvas { background: radial-gradient(circle at 50% 13%, rgba(34, 211, 238, 0.11), transparent 54%); height: 528px; overflow: hidden; position: relative; }
           .network-links { height: 100%; inset: 0; overflow: visible; position: absolute; width: 100%; }
           .network-link { fill: none; stroke: #28415e; stroke-dasharray: 7 7; stroke-width: 2; }
           .network-link-flow-halo { fill: none; stroke: #34D399; stroke-linecap: round; stroke-opacity: 0.12; stroke-width: 12; }
@@ -637,6 +638,7 @@ def _render_styles() -> None:
           .network-image-label span { color: var(--node-color); display: block; font-size: 0.82rem; margin-top: 3px; }
           .network-server { left: 50%; top: 0; }
           .network-server .network-topology-image { height: 152px; width: 182px; }
+          .network-server .network-image-label { left: auto; margin: 0; position: absolute; right: calc(100% + 16px); text-align: right; top: 42px; white-space: nowrap; width: 170px; }
           .network-desktop { bottom: 0; left: 16%; }
           .network-desktop .network-topology-image { height: 134px; width: 186px; }
           .network-smartphone { bottom: 0; left: 50%; }
@@ -647,7 +649,7 @@ def _render_styles() -> None:
           .health-score-line { align-items: baseline; display: flex; gap: 8px; margin: 4px 0 2px; }
           .health-score-line strong { color: #F8FBFF; font-size: 1.55rem; }
           .health-score-line span { color: #8FA4BE; font-size: 0.76rem; }
-          .sparkline { display: block; height: 166px; margin: 10px 0 8px; overflow: visible; width: 100%; }
+          .sparkline { display: block; height: 200px; margin: 10px 0 8px; overflow: visible; width: 100%; }
           .spark-grid { stroke: #1E3047; stroke-dasharray: 3 4; stroke-width: 1; }
           .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
           .spark-last { stroke: #070D19; stroke-width: 3; }
@@ -657,8 +659,8 @@ def _render_styles() -> None:
           .micro-trend header { align-items: baseline; display: flex; justify-content: space-between; }
           .micro-trend header span { color: #8FA4BE; font-size: 0.72rem; }
           .micro-trend header strong { color: #E5EDF7; font-size: 0.86rem; }
-          .micro-trend .sparkline { height: 78px; margin: 7px 0 0; }
-          .micro-trend .chart-unavailable { font-size: 0.7rem; height: 78px; }
+          .micro-trend .sparkline { height: 94px; margin: 7px 0 0; }
+          .micro-trend .chart-unavailable { font-size: 0.7rem; height: 94px; }
           .evidence-rail { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; display: grid; gap: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0 0 24px; }
           .evidence-signal { border-left: 1px solid #1E3047; min-height: 72px; padding: 11px 13px; }
           .evidence-signal:first-child { border-left: 0; }
@@ -676,7 +678,7 @@ def _render_styles() -> None:
             .app-state { border-left: 0; padding-left: 0; }
             .app-context { display: none; }
             .app-shell { min-height: 116px; padding: 12px 4px 16px; }
-            .app-wordmark { height: 72px; max-width: min(82vw, 430px); }
+            .app-wordmark { height: 54px; max-width: min(88vw, 700px); }
             .app-mascot { height: 82px; margin: -6px -3px -6px 0; width: 82px; }
             .app-context { display: none; }
             .app-state-copy { gap: 5px; }
@@ -688,10 +690,11 @@ def _render_styles() -> None:
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
             .dashboard-visual-grid { grid-template-columns: 1fr; }
-            .network-canvas { height: 370px; }
+            .network-canvas { height: 444px; }
             .network-image-node { width: 122px; }
             .network-server { width: 138px; }
             .network-server .network-topology-image { height: 120px; width: 142px; }
+            .network-server .network-image-label { margin-top: -4px; position: static; text-align: center; white-space: normal; width: auto; }
             .network-desktop { left: 17%; }
             .network-desktop .network-topology-image, .network-tablet .network-topology-image { height: 104px; width: 126px; }
             .network-smartphone .network-topology-image { height: 128px; width: 90px; }
@@ -898,7 +901,7 @@ def _sparkline_svg(
 
     if not points:
         return '<div class="chart-unavailable">履歴なし。欠損を正常の線として描画しません。</div>'
-    width, height, padding = 480.0, 166.0, 12.0
+    width, height, padding = 480.0, 200.0, 12.0
     values = [value for _, value in points]
     ceiling = upper if upper is not None else max(max(values) * 1.15, lower + 1.0)
     ceiling = max(ceiling, lower + 1.0)
@@ -938,7 +941,8 @@ def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
     app_bar, controls = st.columns((12, 1))
     with app_bar:
-        wordmark = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_WORDMARK), maximum=(700, 180)))
+        wordmark_asset = ANALYTICS_WORDMARK_LARGE_TEXT if ANALYTICS_WORDMARK_LARGE_TEXT.is_file() else ANALYTICS_WORDMARK
+        wordmark = _image_data_uri(_scaled_transparent_asset(str(wordmark_asset), maximum=(700, 180)))
         mascot = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_MASCOT_HEADER), maximum=(180, 180)))
         brand_mark = f'<img class="app-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else '<strong class="app-name">SMAI Analytics</strong>'
         mascot_mark = f'<img class="app-mascot" src="{mascot}" alt="SMAI Analytics operations mascot">' if mascot else ""
@@ -1075,14 +1079,14 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     server_class = " active" if overall.casefold() in {"healthy", "ok", "active", "running"} else ""
     server_status_class = _network_status_class(overall)
     paths = {
-        "desktop": "M 500 112 C 436 158 262 230 160 336",
-        "smartphone": "M 500 112 C 500 174 500 255 500 334",
-        "tablet": "M 500 112 C 564 158 738 230 840 336",
+        "desktop": "M 500 134 C 436 190 262 276 160 403",
+        "smartphone": "M 500 134 C 500 209 500 306 500 401",
+        "tablet": "M 500 134 C 564 190 738 276 840 403",
     }
     reverse_paths = {
-        "desktop": "M 160 336 C 262 230 436 158 500 112",
-        "smartphone": "M 500 334 C 500 255 500 174 500 112",
-        "tablet": "M 840 336 C 738 230 564 158 500 112",
+        "desktop": "M 160 403 C 262 276 436 190 500 134",
+        "smartphone": "M 500 401 C 500 306 500 209 500 134",
+        "tablet": "M 840 403 C 738 276 564 190 500 134",
     }
     topology_images = {
         "desktop": _topology_tile(0),
@@ -1133,7 +1137,7 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     st.markdown(
         f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT FLOW</span></div>'
         f'<p class="visual-copy">SMAI Serverと端末種別の現在接続を、個人情報を表示せずに集約します。</p>'
-        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 440" preserveAspectRatio="none" aria-hidden="true">'
+        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 528" preserveAspectRatio="none" aria-hidden="true">'
         f'{"".join(link_markup)}{"".join(packet_markup)}</svg>'
         f'<div class="network-image-node network-server {server_status_class}{server_class}">'
         f'<img class="network-topology-image" src="{server_image}" alt="SMAI Server"><div class="network-image-label"><b>SERVER</b>'

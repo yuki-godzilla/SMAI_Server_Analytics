@@ -54,6 +54,7 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
 
     def test_web_assets_and_lan_launcher_are_project_bound(self) -> None:
         self.assertTrue(analytics_web.ANALYTICS_WORDMARK.is_file())
+        self.assertTrue(analytics_web.ANALYTICS_WORDMARK_LARGE_TEXT.is_file())
         self.assertTrue(analytics_web.ANALYTICS_MASCOT.is_file())
         self.assertTrue(analytics_web.ANALYTICS_MASCOT_HEADER.is_file())
         self.assertTrue(analytics_web.ANALYTICS_APP_ICON.is_file())
@@ -133,7 +134,8 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn("LIVE HEARTBEAT FLOW", MarkdownRecorder.rendered)
         self.assertIn("network-link-flow-halo", MarkdownRecorder.rendered)
         self.assertIn("network-packet-return", MarkdownRecorder.rendered)
-        self.assertIn('path="M 160 336 C 262 230 436 158 500 112"', MarkdownRecorder.rendered)
+        self.assertIn('viewBox="0 0 1000 528"', MarkdownRecorder.rendered)
+        self.assertIn('path="M 160 403 C 262 276 436 190 500 134"', MarkdownRecorder.rendered)
         self.assertEqual(1, MarkdownRecorder.rendered.count('class="network-link network-link-active"'))
 
     def test_dashboard_health_points_keep_unknown_at_zero(self) -> None:
