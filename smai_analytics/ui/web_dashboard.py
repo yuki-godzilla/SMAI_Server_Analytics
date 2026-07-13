@@ -532,26 +532,26 @@ def _render_styles() -> None:
             border-bottom: 1px solid #26384f;
             display: flex;
             justify-content: space-between;
-            min-height: 78px;
-            padding: 0 4px 12px;
+            min-height: 176px;
+            padding: 18px 18px 20px;
           }
           .app-brand, .app-state, .app-title, .app-state-copy { align-items: center; display: flex; min-width: 0; }
-          .app-brand, .app-state, .app-title { gap: 14px; }
-          .app-state-copy { gap: 10px; }
-          .app-icon {
-            border: 1px solid #29496c;
-            border-radius: 9px;
-            box-shadow: 0 0 14px rgba(34, 211, 238, 0.16);
+          .app-brand, .app-state, .app-title { gap: 22px; }
+          .app-state-copy { align-items: flex-start; flex-direction: column; gap: 9px; }
+          .app-wordmark {
             display: block;
-            height: 60px;
             object-fit: cover;
-            width: 60px;
+            height: 112px;
+            max-width: min(46vw, 620px);
+            width: auto;
           }
-          .app-mascot { display: block; height: 70px; margin: -10px -4px -10px 0; object-fit: contain; width: 70px; }
-          .app-name { color: #F8FBFF; font-size: 1.16rem; letter-spacing: 0.02em; }
-          .app-context, .app-state span { color: #8FA4BE; font-size: 0.75rem; letter-spacing: 0.08em; white-space: nowrap; }
-          .app-state { border-left: 1px solid #26384f; padding-left: 16px; }
-          .app-state .status-pill { padding: 3px 8px; }
+          .app-mascot { display: block; height: 132px; margin: -10px 0 -10px -4px; object-fit: contain; width: 132px; }
+          .app-name { color: #F8FBFF; font-size: 2rem; letter-spacing: 0.02em; }
+          .app-context, .app-state span { color: #8FA4BE; font-size: 0.94rem; letter-spacing: 0.08em; white-space: nowrap; }
+          .app-state { border-left: 1px solid #26384f; padding-left: 26px; }
+          .app-state .status-pill { font-size: 0.92rem; padding: 6px 13px; }
+          .header-control-spacer { height: 57px; }
+          [data-testid="stButton"] > button { font-size: 1.02rem; min-height: 50px; }
           [data-baseweb="tab-list"] { border-bottom: 1px solid #26384f; gap: 0; }
           [data-baseweb="tab"] { border-bottom: 2px solid transparent; padding: 11px 15px 9px; }
           [aria-selected="true"][data-baseweb="tab"] { border-bottom-color: #22D3EE; }
@@ -611,47 +611,47 @@ def _render_styles() -> None:
           .detail-handoff strong { color: #DCEBFF; }
           .detail-handoff b { color: #60A5FA; font-weight: 750; }
           .dashboard-visual-grid { align-items: stretch; display: grid; gap: 22px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); margin: 4px 0 20px; }
-          .visual-surface { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; min-width: 0; padding: 16px 0 13px; }
+          .visual-surface { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; min-width: 0; padding: 22px 0 20px; }
           .visual-heading { align-items: baseline; display: flex; justify-content: space-between; margin-bottom: 6px; }
           .visual-heading strong { color: #F8FBFF; font-size: 1rem; }
           .visual-heading span { color: #60A5FA; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; }
           .visual-copy { color: #8FA4BE; font-size: 0.82rem; margin: 0 0 8px; }
-          .network-canvas { background: radial-gradient(circle at 50% 13%, rgba(34, 211, 238, 0.11), transparent 50%); height: 320px; overflow: hidden; position: relative; }
+          .network-canvas { background: radial-gradient(circle at 50% 13%, rgba(34, 211, 238, 0.11), transparent 54%); height: 440px; overflow: hidden; position: relative; }
           .network-links { height: 100%; inset: 0; overflow: visible; position: absolute; width: 100%; }
           .network-link { fill: none; stroke: #28415e; stroke-dasharray: 7 7; stroke-width: 2; }
           .network-link-active { stroke: var(--flow-color); stroke-opacity: 0.68; }
           .network-packet { filter: drop-shadow(0 0 6px var(--flow-color)); }
-          .network-image-node { align-items: center; display: flex; flex-direction: column; position: absolute; text-align: center; transform: translateX(-50%); width: 158px; z-index: 1; }
-          .network-topology-image { display: block; filter: drop-shadow(0 8px 11px rgba(0, 0, 0, 0.42)); height: 108px; object-fit: contain; transition: filter 180ms ease; width: 138px; }
+          .network-image-node { align-items: center; display: flex; flex-direction: column; position: absolute; text-align: center; transform: translateX(-50%); width: 190px; z-index: 1; }
+          .network-topology-image { display: block; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.42)); height: 136px; object-fit: contain; transition: filter 180ms ease; width: 174px; }
           .network-image-node.active .network-topology-image { animation: topology-image-pulse 1.8s ease-out infinite; filter: drop-shadow(0 0 12px var(--node-color)) drop-shadow(0 8px 11px rgba(0, 0, 0, 0.42)); }
           .network-image-label { margin-top: -4px; text-shadow: 0 1px 4px #070D19; }
-          .network-image-label b { color: #DCEBFF; display: block; font-size: 0.67rem; letter-spacing: 0.08em; }
-          .network-image-label strong { color: #F8FBFF; display: block; font-size: 0.88rem; margin-top: 2px; }
-          .network-image-label span { color: var(--node-color); display: block; font-size: 0.72rem; margin-top: 2px; }
+          .network-image-label b { color: #DCEBFF; display: block; font-size: 0.76rem; letter-spacing: 0.08em; }
+          .network-image-label strong { color: #F8FBFF; display: block; font-size: 1rem; margin-top: 3px; }
+          .network-image-label span { color: var(--node-color); display: block; font-size: 0.82rem; margin-top: 3px; }
           .network-server { left: 50%; top: 0; }
-          .network-server .network-topology-image { height: 112px; width: 136px; }
+          .network-server .network-topology-image { height: 152px; width: 182px; }
           .network-desktop { bottom: 0; left: 16%; }
-          .network-desktop .network-topology-image { height: 105px; width: 145px; }
+          .network-desktop .network-topology-image { height: 134px; width: 186px; }
           .network-smartphone { bottom: 0; left: 50%; }
-          .network-smartphone .network-topology-image { height: 121px; width: 94px; }
+          .network-smartphone .network-topology-image { height: 158px; width: 120px; }
           .network-tablet { bottom: 0; left: 84%; }
-          .network-tablet .network-topology-image { height: 105px; width: 145px; }
+          .network-tablet .network-topology-image { height: 134px; width: 186px; }
           .network-legend { color: #758BA6; font-size: 0.73rem; margin: 4px 0 0; }
           .health-score-line { align-items: baseline; display: flex; gap: 8px; margin: 4px 0 2px; }
           .health-score-line strong { color: #F8FBFF; font-size: 1.55rem; }
           .health-score-line span { color: #8FA4BE; font-size: 0.76rem; }
-          .sparkline { display: block; height: 116px; margin: 5px 0 2px; overflow: visible; width: 100%; }
+          .sparkline { display: block; height: 166px; margin: 10px 0 8px; overflow: visible; width: 100%; }
           .spark-grid { stroke: #1E3047; stroke-dasharray: 3 4; stroke-width: 1; }
           .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
           .spark-last { stroke: #070D19; stroke-width: 3; }
-          .chart-unavailable { align-items: center; border: 1px dashed #31445e; color: #8FA4BE; display: flex; font-size: 0.8rem; height: 104px; justify-content: center; padding: 8px 14px; text-align: center; }
-          .micro-trend-grid { border-top: 1px solid #1E3047; display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 9px; padding-top: 10px; }
+          .chart-unavailable { align-items: center; border: 1px dashed #31445e; color: #8FA4BE; display: flex; font-size: 0.8rem; height: 150px; justify-content: center; padding: 8px 14px; text-align: center; }
+          .micro-trend-grid { border-top: 1px solid #1E3047; display: grid; gap: 18px; grid-template-columns: 1fr 1fr; margin-top: 15px; padding-top: 15px; }
           .micro-trend { min-width: 0; }
           .micro-trend header { align-items: baseline; display: flex; justify-content: space-between; }
           .micro-trend header span { color: #8FA4BE; font-size: 0.72rem; }
           .micro-trend header strong { color: #E5EDF7; font-size: 0.86rem; }
-          .micro-trend .sparkline { height: 46px; margin: 4px 0 0; }
-          .micro-trend .chart-unavailable { font-size: 0.7rem; height: 46px; }
+          .micro-trend .sparkline { height: 78px; margin: 7px 0 0; }
+          .micro-trend .chart-unavailable { font-size: 0.7rem; height: 78px; }
           .evidence-rail { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; display: grid; gap: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0 0 24px; }
           .evidence-signal { border-left: 1px solid #1E3047; min-height: 72px; padding: 11px 13px; }
           .evidence-signal:first-child { border-left: 0; }
@@ -661,24 +661,29 @@ def _render_styles() -> None:
           @keyframes topology-image-pulse { 0%, 100% { opacity: 1; transform: translateY(0); } 50% { opacity: 0.95; transform: translateY(-3px); } }
           @media (max-width: 760px) {
             [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 72px; padding: 10px 0; }
-            .app-shell { align-items: flex-start; flex-direction: column; gap: 9px; }
+            .app-shell { align-items: flex-start; flex-direction: column; gap: 13px; }
             .app-state { border-left: 0; padding-left: 0; }
             .app-context { display: none; }
-            .app-shell { min-height: 66px; }
-            .app-icon { height: 48px; width: 48px; }
-            .app-mascot { height: 58px; margin: -7px -3px -7px 0; width: 58px; }
+            .app-shell { min-height: 116px; padding: 12px 4px 16px; }
+            .app-wordmark { height: 72px; max-width: min(82vw, 430px); }
+            .app-mascot { height: 82px; margin: -6px -3px -6px 0; width: 82px; }
+            .app-context { display: none; }
+            .app-state-copy { gap: 5px; }
+            .app-state .status-pill { font-size: 0.8rem; padding: 4px 9px; }
+            .app-state span { font-size: 0.78rem; }
+            .header-control-spacer { display: none; }
             .overview-command { gap: 18px; grid-template-columns: 1fr; }
             .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 16px 0 0; }
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
             .dashboard-visual-grid { grid-template-columns: 1fr; }
-            .network-canvas { height: 304px; }
-            .network-image-node { width: 112px; }
-            .network-server { width: 128px; }
-            .network-server .network-topology-image { height: 100px; width: 120px; }
+            .network-canvas { height: 370px; }
+            .network-image-node { width: 122px; }
+            .network-server { width: 138px; }
+            .network-server .network-topology-image { height: 120px; width: 142px; }
             .network-desktop { left: 17%; }
-            .network-desktop .network-topology-image, .network-tablet .network-topology-image { height: 88px; width: 108px; }
-            .network-smartphone .network-topology-image { height: 108px; width: 76px; }
+            .network-desktop .network-topology-image, .network-tablet .network-topology-image { height: 104px; width: 126px; }
+            .network-smartphone .network-topology-image { height: 128px; width: 90px; }
             .network-tablet { left: 83%; }
             .evidence-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .evidence-signal:nth-child(odd) { border-left: 0; }
@@ -721,9 +726,9 @@ def _topology_tile(index: int) -> bytes | str | None:
         return str(TOPOLOGY_SPRITE)
 
 
-@lru_cache(maxsize=4)
-def _topology_image(path: str, *, maximum: tuple[int, int]) -> bytes | str | None:
-    """Return one existing topology asset at display density, preserving transparency."""
+@lru_cache(maxsize=8)
+def _scaled_transparent_asset(path: str, *, maximum: tuple[int, int]) -> bytes | str | None:
+    """Trim transparent margins from a local visual asset at display density."""
 
     source_path = Path(path)
     if not source_path.is_file():
@@ -882,7 +887,7 @@ def _sparkline_svg(
 
     if not points:
         return '<div class="chart-unavailable">履歴なし。欠損を正常の線として描画しません。</div>'
-    width, height, padding = 480.0, 116.0, 10.0
+    width, height, padding = 480.0, 166.0, 12.0
     values = [value for _, value in points]
     ceiling = upper if upper is not None else max(max(values) * 1.15, lower + 1.0)
     ceiling = max(ceiling, lower + 1.0)
@@ -922,15 +927,16 @@ def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
     app_bar, controls = st.columns((12, 1))
     with app_bar:
-        app_icon = _image_data_uri(ANALYTICS_APP_ICON)
-        mascot = _image_data_uri(ANALYTICS_MASCOT_HEADER)
-        brand_mark = f'<img class="app-icon" src="{app_icon}" alt="SMAI Analytics app icon">' if app_icon else ""
+        wordmark = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_WORDMARK), maximum=(700, 180)))
+        mascot = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_MASCOT_HEADER), maximum=(180, 180)))
+        brand_mark = f'<img class="app-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else '<strong class="app-name">SMAI Analytics</strong>'
         mascot_mark = f'<img class="app-mascot" src="{mascot}" alt="SMAI Analytics operations mascot">' if mascot else ""
         st.markdown(
-            f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}<strong class="app-name">SMAI Analytics</strong></div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
+            f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}</div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
             unsafe_allow_html=True,
         )
     with controls:
+        st.markdown('<div class="header-control-spacer"></div>', unsafe_allow_html=True)
         if st.button("更新", key="refresh_now", use_container_width=True):
             cached_operations_snapshot.clear()
             st.rerun()
@@ -1052,14 +1058,14 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     server_label, server_color = _visual_status(overall)
     server_class = " active" if overall.casefold() in {"healthy", "ok", "active", "running"} else ""
     paths = {
-        "desktop": "M 500 82 C 436 118 262 170 160 246",
-        "smartphone": "M 500 82 C 500 132 500 190 500 242",
-        "tablet": "M 500 82 C 564 118 738 170 840 246",
+        "desktop": "M 500 112 C 436 158 262 230 160 336",
+        "smartphone": "M 500 112 C 500 174 500 255 500 334",
+        "tablet": "M 500 112 C 564 158 738 230 840 336",
     }
     topology_images = {
         "desktop": _topology_tile(0),
-        "smartphone": _topology_image(str(TOPOLOGY_SMARTPHONE), maximum=(120, 180)),
-        "tablet": _topology_image(str(TOPOLOGY_TABLET), maximum=(180, 130)),
+        "smartphone": _scaled_transparent_asset(str(TOPOLOGY_SMARTPHONE), maximum=(120, 180)),
+        "tablet": _scaled_transparent_asset(str(TOPOLOGY_TABLET), maximum=(180, 130)),
     }
     server_image = _image_data_uri(_topology_tile(2))
     node_markup: list[str] = []
@@ -1093,7 +1099,7 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     st.markdown(
         f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT</span></div>'
         f'<p class="visual-copy">SMAI Serverと端末種別の現在接続を、個人情報を表示せずに集約します。</p>'
-        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 320" preserveAspectRatio="none" aria-hidden="true">'
+        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 440" preserveAspectRatio="none" aria-hidden="true">'
         f'{"".join(link_markup)}{"".join(packet_markup)}</svg>'
         f'<div class="network-image-node network-server{server_class}" style="--node-color:{server_color}">'
         f'<img class="network-topology-image" src="{server_image}" alt="SMAI Server"><div class="network-image-label"><b>SERVER</b>'
