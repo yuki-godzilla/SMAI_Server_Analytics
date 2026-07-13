@@ -105,6 +105,37 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertFalse(by_client["tablet"]["flow"])
         self.assertEqual(by_client["tablet"]["status"], "degraded")
 
+    def test_live_connection_map_uses_bidirectional_particles_only_for_current_heartbeats(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        now = datetime.now(UTC).isoformat()
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_live_connection_map(
+                {
+                    "activity_available": True,
+                    "overall": "healthy",
+                    "sessions": [
+                        {"client_type": "desktop", "last_seen_at": now, "connection_state": "connected"},
+                        {"client_type": "smartphone", "last_seen_at": now, "connection_state": "closed"},
+                    ],
+                }
+            )
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertIn("LIVE HEARTBEAT FLOW", MarkdownRecorder.rendered)
+        self.assertIn("network-link-flow-halo", MarkdownRecorder.rendered)
+        self.assertIn("network-packet-return", MarkdownRecorder.rendered)
+        self.assertIn('path="M 160 336 C 262 230 436 158 500 112"', MarkdownRecorder.rendered)
+        self.assertEqual(1, MarkdownRecorder.rendered.count('class="network-link network-link-active"'))
+
     def test_dashboard_health_points_keep_unknown_at_zero(self) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
         points = analytics_web._dashboard_health_points(

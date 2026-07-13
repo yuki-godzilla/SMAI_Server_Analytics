@@ -619,9 +619,16 @@ def _render_styles() -> None:
           .network-canvas { background: radial-gradient(circle at 50% 13%, rgba(34, 211, 238, 0.11), transparent 54%); height: 440px; overflow: hidden; position: relative; }
           .network-links { height: 100%; inset: 0; overflow: visible; position: absolute; width: 100%; }
           .network-link { fill: none; stroke: #28415e; stroke-dasharray: 7 7; stroke-width: 2; }
-          .network-link-active { stroke: var(--flow-color); stroke-opacity: 0.68; }
-          .network-packet { filter: drop-shadow(0 0 6px var(--flow-color)); }
+          .network-link-flow-halo { fill: none; stroke: #34D399; stroke-linecap: round; stroke-opacity: 0.12; stroke-width: 12; }
+          .network-link-active { stroke: #34D399; stroke-dasharray: none; stroke-linecap: round; stroke-opacity: 0.92; stroke-width: 3; }
+          .network-packet { filter: drop-shadow(0 0 7px #34D399); }
+          .network-packet-return { opacity: 0.72; }
           .network-image-node { align-items: center; display: flex; flex-direction: column; position: absolute; text-align: center; transform: translateX(-50%); width: 190px; z-index: 1; }
+          .network-status-healthy, .network-status-ok, .network-status-active, .network-status-running, .network-status-ready { --node-color: #34D399; }
+          .network-status-degraded, .network-status-stale { --node-color: #FBBF24; }
+          .network-status-critical, .network-status-failed, .network-status-error { --node-color: #F87171; }
+          .network-status-idle { --node-color: #758BA6; }
+          .network-status-unknown { --node-color: #AAB8C8; }
           .network-topology-image { display: block; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.42)); height: 136px; object-fit: contain; transition: filter 180ms ease; width: 174px; }
           .network-image-node.active .network-topology-image { animation: topology-image-pulse 1.8s ease-out infinite; filter: drop-shadow(0 0 12px var(--node-color)) drop-shadow(0 8px 11px rgba(0, 0, 0, 0.42)); }
           .network-image-label { margin-top: -4px; text-shadow: 0 1px 4px #070D19; }
@@ -659,6 +666,10 @@ def _render_styles() -> None:
           .evidence-signal strong { color: var(--signal-color); display: block; font-size: 0.92rem; margin-top: 5px; }
           .evidence-signal span { color: #B9C7D8; display: block; font-size: 0.72rem; margin-top: 2px; }
           @keyframes topology-image-pulse { 0%, 100% { opacity: 1; transform: translateY(0); } 50% { opacity: 0.95; transform: translateY(-3px); } }
+          @media (prefers-reduced-motion: reduce) {
+            .network-image-node.active .network-topology-image { animation: none; }
+            .network-packet { display: none; }
+          }
           @media (max-width: 760px) {
             [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 72px; padding: 10px 0; }
             .app-shell { align-items: flex-start; flex-direction: column; gap: 13px; }
@@ -1051,16 +1062,27 @@ def _visual_status(status: object) -> tuple[str, str]:
     return status_label(normalized), status_color(normalized)
 
 
+def _network_status_class(status: object) -> str:
+    normalized = str(status or "unknown").casefold()
+    return f"network-status-{normalized}" if normalized in {*STATUS_COLORS, "idle"} else "network-status-unknown"
+
+
 def _render_live_connection_map(data: Mapping[str, object]) -> None:
     assert st is not None
     available, nodes = _dashboard_connection_nodes(data)
     overall = str(data.get("overall") or "unknown")
-    server_label, server_color = _visual_status(overall)
+    server_label, _ = _visual_status(overall)
     server_class = " active" if overall.casefold() in {"healthy", "ok", "active", "running"} else ""
+    server_status_class = _network_status_class(overall)
     paths = {
         "desktop": "M 500 112 C 436 158 262 230 160 336",
         "smartphone": "M 500 112 C 500 174 500 255 500 334",
         "tablet": "M 500 112 C 564 158 738 230 840 336",
+    }
+    reverse_paths = {
+        "desktop": "M 160 336 C 262 230 436 158 500 112",
+        "smartphone": "M 500 334 C 500 255 500 174 500 112",
+        "tablet": "M 840 336 C 738 230 564 158 500 112",
     }
     topology_images = {
         "desktop": _topology_tile(0),
@@ -1078,30 +1100,42 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
         observed = node["observed"]
         active_text = "観測不能" if active is None else f"現在 {active} 接続"
         observed_text = "" if observed is None or observed == active else f" / 観測 {observed}"
-        classes = f"network-image-node network-{client}" + (" active" if bool(node["flow"]) else "")
+        classes = f"network-image-node network-{client} {_network_status_class(node['status'])}" + (" active" if bool(node["flow"]) else "")
         image_uri = _image_data_uri(topology_images[client])
         image_tag = f'<img class="network-topology-image" src="{image_uri}" alt="{html.escape(CLIENT_TYPE_LABELS[client])}">' if image_uri else ""
         node_markup.append(
-            f'<div class="{classes}" style="--node-color:{color}">{image_tag}<div class="network-image-label">'
+            f'<div class="{classes}">{image_tag}<div class="network-image-label">'
             f'<b>{html.escape(CLIENT_TYPE_LABELS[client].upper())}</b><strong>{active_text}</strong>'
             f'<span>{html.escape(status_label_text)}{observed_text}</span></div></div>'
         )
         path = paths[client]
-        link_class = "network-link network-link-active" if bool(node["flow"]) else "network-link"
-        link_markup.append(f'<path class="{link_class}" style="--flow-color:{color}" d="{path}" />')
+        if bool(node["flow"]):
+            link_markup.append(
+                f'<path class="network-link-flow-halo" d="{path}" />'
+                f'<path class="network-link network-link-active" d="{path}" />'
+            )
+        else:
+            link_markup.append(f'<path class="network-link" d="{path}" />')
         if bool(node["flow"]):
             duration = 2.6 + index * 0.28
-            packet_markup.append(
-                f'<circle class="network-packet" style="--flow-color:{color}" fill="{color}" r="5">'
+            reverse_path = reverse_paths[client]
+            packet_markup.extend((
+                f'<circle class="network-packet" fill="{color}" r="5">'
                 f'<animateMotion dur="{duration:.2f}s" repeatCount="indefinite" path="{path}" /></circle>'
-            )
-    availability_note = "接続情報を読めません。未接続とは判断していません。" if not available else "Pulseは90秒以内のheartbeat観測であり、通信量を表しません。"
+                f'<circle class="network-packet network-packet-return" fill="#E0F2FE" r="4">'
+                f'<animateMotion dur="{duration + 0.65:.2f}s" repeatCount="indefinite" path="{reverse_path}" /></circle>',
+            ))
+    availability_note = (
+        "接続情報を読めません。点線を未接続とは判断していません。"
+        if not available
+        else "実線と往復する粒子は90秒以内にheartbeat通信を観測した接続です。点線は現在の通信を観測していない端末種別です。通信量・内容は表示しません。"
+    )
     st.markdown(
-        f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT</span></div>'
+        f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT FLOW</span></div>'
         f'<p class="visual-copy">SMAI Serverと端末種別の現在接続を、個人情報を表示せずに集約します。</p>'
         f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 440" preserveAspectRatio="none" aria-hidden="true">'
         f'{"".join(link_markup)}{"".join(packet_markup)}</svg>'
-        f'<div class="network-image-node network-server{server_class}" style="--node-color:{server_color}">'
+        f'<div class="network-image-node network-server {server_status_class}{server_class}">'
         f'<img class="network-topology-image" src="{server_image}" alt="SMAI Server"><div class="network-image-label"><b>SERVER</b>'
         f'<strong>SMAI Server</strong><span>{html.escape(server_label)}</span></div></div>{"".join(node_markup)}</div>'
         f'<p class="network-legend">{html.escape(availability_note)}</p></section>',
