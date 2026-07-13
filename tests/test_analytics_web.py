@@ -55,6 +55,10 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertTrue(analytics_web.ANALYTICS_MASCOT.is_file())
         self.assertTrue(analytics_web.ANALYTICS_MASCOT_HEADER.is_file())
         self.assertTrue(analytics_web.ANALYTICS_APP_ICON.is_file())
+        self.assertTrue(analytics_web.TOPOLOGY_SPRITE.is_file())
+        self.assertTrue(analytics_web.TOPOLOGY_SMARTPHONE.is_file())
+        self.assertTrue(analytics_web.TOPOLOGY_TABLET.is_file())
+        self.assertTrue(analytics_web._browser_app_icon().startswith(b"\x89PNG"))
         launcher = analytics_web.Path(__file__).resolve().parents[1] / "run_analytics_web.bat"
         content = launcher.read_text(encoding="utf-8")
         self.assertIn("--server.address 0.0.0.0", content)

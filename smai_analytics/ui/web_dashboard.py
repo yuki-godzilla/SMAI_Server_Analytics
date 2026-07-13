@@ -15,6 +15,7 @@ import subprocess
 import sys
 from base64 import b64encode
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Mapping
@@ -531,7 +532,7 @@ def _render_styles() -> None:
             border-bottom: 1px solid #26384f;
             display: flex;
             justify-content: space-between;
-            min-height: 58px;
+            min-height: 78px;
             padding: 0 4px 12px;
           }
           .app-brand, .app-state, .app-title, .app-state-copy { align-items: center; display: flex; min-width: 0; }
@@ -542,12 +543,12 @@ def _render_styles() -> None:
             border-radius: 9px;
             box-shadow: 0 0 14px rgba(34, 211, 238, 0.16);
             display: block;
-            height: 40px;
+            height: 60px;
             object-fit: cover;
-            width: 40px;
+            width: 60px;
           }
-          .app-mascot { display: block; height: 50px; margin: -8px -3px -8px 0; object-fit: contain; width: 50px; }
-          .app-name { color: #F8FBFF; font-size: 1.08rem; letter-spacing: 0.02em; }
+          .app-mascot { display: block; height: 70px; margin: -10px -4px -10px 0; object-fit: contain; width: 70px; }
+          .app-name { color: #F8FBFF; font-size: 1.16rem; letter-spacing: 0.02em; }
           .app-context, .app-state span { color: #8FA4BE; font-size: 0.75rem; letter-spacing: 0.08em; white-space: nowrap; }
           .app-state { border-left: 1px solid #26384f; padding-left: 16px; }
           .app-state .status-pill { padding: 3px 8px; }
@@ -599,21 +600,26 @@ def _render_styles() -> None:
           .visual-heading strong { color: #F8FBFF; font-size: 1rem; }
           .visual-heading span { color: #60A5FA; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; }
           .visual-copy { color: #8FA4BE; font-size: 0.82rem; margin: 0 0 8px; }
-          .network-canvas { background: radial-gradient(circle at 50% 12%, rgba(34, 211, 238, 0.09), transparent 48%); height: 248px; overflow: hidden; position: relative; }
+          .network-canvas { background: radial-gradient(circle at 50% 13%, rgba(34, 211, 238, 0.11), transparent 50%); height: 320px; overflow: hidden; position: relative; }
           .network-links { height: 100%; inset: 0; overflow: visible; position: absolute; width: 100%; }
           .network-link { fill: none; stroke: #28415e; stroke-dasharray: 7 7; stroke-width: 2; }
           .network-link-active { stroke: var(--flow-color); stroke-opacity: 0.68; }
           .network-packet { filter: drop-shadow(0 0 6px var(--flow-color)); }
-          .network-node { align-items: center; background: #0b1626; border: 1px solid #26384f; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; min-height: 68px; padding: 7px 9px; position: absolute; text-align: center; transform: translateX(-50%); width: 126px; }
-          .network-node::before { background: var(--node-color); border-radius: 50%; box-shadow: 0 0 12px var(--node-color); content: ""; height: 7px; left: 10px; position: absolute; top: 10px; width: 7px; }
-          .network-node.active::after { animation: network-pulse 1.8s ease-out infinite; border: 1px solid var(--node-color); border-radius: 50%; content: ""; height: 8px; left: 9px; position: absolute; top: 9px; width: 8px; }
-          .network-node b { color: #DCEBFF; font-size: 0.67rem; letter-spacing: 0.08em; }
-          .network-node strong { color: #F8FBFF; font-size: 0.88rem; margin-top: 2px; }
-          .network-node span { color: #8FA4BE; font-size: 0.72rem; margin-top: 2px; }
-          .network-server { left: 50%; top: 9px; width: 152px; }
-          .network-desktop { bottom: 8px; left: 16%; }
-          .network-smartphone { bottom: 8px; left: 50%; }
-          .network-tablet { bottom: 8px; left: 84%; }
+          .network-image-node { align-items: center; display: flex; flex-direction: column; position: absolute; text-align: center; transform: translateX(-50%); width: 158px; z-index: 1; }
+          .network-topology-image { display: block; filter: drop-shadow(0 8px 11px rgba(0, 0, 0, 0.42)); height: 108px; object-fit: contain; transition: filter 180ms ease; width: 138px; }
+          .network-image-node.active .network-topology-image { animation: topology-image-pulse 1.8s ease-out infinite; filter: drop-shadow(0 0 12px var(--node-color)) drop-shadow(0 8px 11px rgba(0, 0, 0, 0.42)); }
+          .network-image-label { margin-top: -4px; text-shadow: 0 1px 4px #070D19; }
+          .network-image-label b { color: #DCEBFF; display: block; font-size: 0.67rem; letter-spacing: 0.08em; }
+          .network-image-label strong { color: #F8FBFF; display: block; font-size: 0.88rem; margin-top: 2px; }
+          .network-image-label span { color: var(--node-color); display: block; font-size: 0.72rem; margin-top: 2px; }
+          .network-server { left: 50%; top: 0; }
+          .network-server .network-topology-image { height: 112px; width: 136px; }
+          .network-desktop { bottom: 0; left: 16%; }
+          .network-desktop .network-topology-image { height: 105px; width: 145px; }
+          .network-smartphone { bottom: 0; left: 50%; }
+          .network-smartphone .network-topology-image { height: 121px; width: 94px; }
+          .network-tablet { bottom: 0; left: 84%; }
+          .network-tablet .network-topology-image { height: 105px; width: 145px; }
           .network-legend { color: #758BA6; font-size: 0.73rem; margin: 4px 0 0; }
           .health-score-line { align-items: baseline; display: flex; gap: 8px; margin: 4px 0 2px; }
           .health-score-line strong { color: #F8FBFF; font-size: 1.55rem; }
@@ -636,23 +642,27 @@ def _render_styles() -> None:
           .evidence-signal small { color: #8FA4BE; display: block; font-size: 0.7rem; letter-spacing: 0.06em; }
           .evidence-signal strong { color: var(--signal-color); display: block; font-size: 0.92rem; margin-top: 5px; }
           .evidence-signal span { color: #B9C7D8; display: block; font-size: 0.72rem; margin-top: 2px; }
-          @keyframes network-pulse { 0% { opacity: 0.95; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(3.8); } }
+          @keyframes topology-image-pulse { 0%, 100% { opacity: 1; transform: translateY(0); } 50% { opacity: 0.95; transform: translateY(-3px); } }
           @media (max-width: 760px) {
             [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 72px; padding: 10px 0; }
             .app-shell { align-items: flex-start; flex-direction: column; gap: 9px; }
             .app-state { border-left: 0; padding-left: 0; }
             .app-context { display: none; }
-            .app-icon { height: 36px; width: 36px; }
-            .app-mascot { height: 44px; margin: -5px -2px -5px 0; width: 44px; }
+            .app-shell { min-height: 66px; }
+            .app-icon { height: 48px; width: 48px; }
+            .app-mascot { height: 58px; margin: -7px -3px -7px 0; width: 58px; }
             .overview-command { gap: 18px; grid-template-columns: 1fr; }
             .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 16px 0 0; }
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
             .dashboard-visual-grid { grid-template-columns: 1fr; }
-            .network-canvas { height: 262px; }
-            .network-node { min-height: 61px; padding: 6px 4px; width: 102px; }
-            .network-server { width: 132px; }
+            .network-canvas { height: 304px; }
+            .network-image-node { width: 112px; }
+            .network-server { width: 128px; }
+            .network-server .network-topology-image { height: 100px; width: 120px; }
             .network-desktop { left: 17%; }
+            .network-desktop .network-topology-image, .network-tablet .network-topology-image { height: 88px; width: 108px; }
+            .network-smartphone .network-topology-image { height: 108px; width: 76px; }
             .network-tablet { left: 83%; }
             .evidence-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .evidence-signal:nth-child(odd) { border-left: 0; }
@@ -672,6 +682,7 @@ def _panel_heading(title: str, subtitle: str, *, kicker: str = "OPERATIONS") -> 
     )
 
 
+@lru_cache(maxsize=4)
 def _topology_tile(index: int) -> bytes | str | None:
     if not TOPOLOGY_SPRITE.is_file():
         return None
@@ -694,6 +705,29 @@ def _topology_tile(index: int) -> bytes | str | None:
         return str(TOPOLOGY_SPRITE)
 
 
+@lru_cache(maxsize=4)
+def _topology_image(path: str, *, maximum: tuple[int, int]) -> bytes | str | None:
+    """Return one existing topology asset at display density, preserving transparency."""
+
+    source_path = Path(path)
+    if not source_path.is_file():
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(source_path) as source:
+            image = source.convert("RGBA")
+            bounds = image.getchannel("A").point(lambda value: 255 if value >= 48 else 0).getbbox()
+            if bounds is not None:
+                image = image.crop(bounds)
+            image.thumbnail(maximum, Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+    except (OSError, ValueError, ImportError):
+        return str(source_path)
+
+
 def _image_data_uri(image: bytes | str | Path | None) -> str:
     if image is None:
         return ""
@@ -707,6 +741,15 @@ def _image_data_uri(image: bytes | str | Path | None) -> str:
         return f"data:{mime_type};base64," + b64encode(path.read_bytes()).decode("ascii")
     except OSError:
         return ""
+
+
+def _browser_app_icon() -> bytes | str:
+    """Use the Analytics square mark for the browser tab and installed shortcut."""
+
+    try:
+        return ANALYTICS_APP_ICON.read_bytes()
+    except OSError:
+        return "📡"
 
 
 def _downsample_rows(rows: list[dict[str, object]], *, maximum: int) -> list[dict[str, object]]:
@@ -989,10 +1032,16 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     server_label, server_color = _visual_status(overall)
     server_class = " active" if overall.casefold() in {"healthy", "ok", "active", "running"} else ""
     paths = {
-        "desktop": "M 500 61 C 445 90 262 132 160 204",
-        "smartphone": "M 500 61 C 500 102 500 154 500 204",
-        "tablet": "M 500 61 C 555 90 738 132 840 204",
+        "desktop": "M 500 82 C 436 118 262 170 160 246",
+        "smartphone": "M 500 82 C 500 132 500 190 500 242",
+        "tablet": "M 500 82 C 564 118 738 170 840 246",
     }
+    topology_images = {
+        "desktop": _topology_tile(0),
+        "smartphone": _topology_image(str(TOPOLOGY_SMARTPHONE), maximum=(120, 180)),
+        "tablet": _topology_image(str(TOPOLOGY_TABLET), maximum=(180, 130)),
+    }
+    server_image = _image_data_uri(_topology_tile(2))
     node_markup: list[str] = []
     link_markup: list[str] = []
     packet_markup: list[str] = []
@@ -1003,10 +1052,13 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
         observed = node["observed"]
         active_text = "観測不能" if active is None else f"現在 {active} 接続"
         observed_text = "" if observed is None or observed == active else f" / 観測 {observed}"
-        classes = f"network-node network-{client}" + (" active" if bool(node["flow"]) else "")
+        classes = f"network-image-node network-{client}" + (" active" if bool(node["flow"]) else "")
+        image_uri = _image_data_uri(topology_images[client])
+        image_tag = f'<img class="network-topology-image" src="{image_uri}" alt="{html.escape(CLIENT_TYPE_LABELS[client])}">' if image_uri else ""
         node_markup.append(
-            f'<div class="{classes}" style="--node-color:{color}"><b>{html.escape(CLIENT_TYPE_LABELS[client].upper())}</b>'
-            f'<strong>{active_text}</strong><span>{html.escape(status_label_text)}{observed_text}</span></div>'
+            f'<div class="{classes}" style="--node-color:{color}">{image_tag}<div class="network-image-label">'
+            f'<b>{html.escape(CLIENT_TYPE_LABELS[client].upper())}</b><strong>{active_text}</strong>'
+            f'<span>{html.escape(status_label_text)}{observed_text}</span></div></div>'
         )
         path = paths[client]
         link_class = "network-link network-link-active" if bool(node["flow"]) else "network-link"
@@ -1021,10 +1073,11 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     st.markdown(
         f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT</span></div>'
         f'<p class="visual-copy">SMAI Serverと端末種別の現在接続を、個人情報を表示せずに集約します。</p>'
-        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 248" preserveAspectRatio="none" aria-hidden="true">'
+        f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 320" preserveAspectRatio="none" aria-hidden="true">'
         f'{"".join(link_markup)}{"".join(packet_markup)}</svg>'
-        f'<div class="network-node network-server{server_class}" style="--node-color:{server_color}"><b>SERVER</b>'
-        f'<strong>SMAI Server</strong><span>{html.escape(server_label)}</span></div>{"".join(node_markup)}</div>'
+        f'<div class="network-image-node network-server{server_class}" style="--node-color:{server_color}">'
+        f'<img class="network-topology-image" src="{server_image}" alt="SMAI Server"><div class="network-image-label"><b>SERVER</b>'
+        f'<strong>SMAI Server</strong><span>{html.escape(server_label)}</span></div></div>{"".join(node_markup)}</div>'
         f'<p class="network-legend">{html.escape(availability_note)}</p></section>',
         unsafe_allow_html=True,
     )
@@ -1495,7 +1548,7 @@ def render_dashboard() -> None:
 def main() -> None:
     if st is None:
         raise RuntimeError("Streamlit is required. Run this app with the SMAI Analytics virtual environment.")
-    st.set_page_config(page_title="SMAI Analytics | Operations Console", page_icon="📡", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="SMAI Analytics | Operations Console", page_icon=_browser_app_icon(), layout="wide", initial_sidebar_state="collapsed")
     _render_styles()
 
     @st.fragment(run_every=5)
