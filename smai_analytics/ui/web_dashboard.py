@@ -356,6 +356,7 @@ def collect_operations_snapshot() -> dict[str, object]:
     raw_operations = activity.get("operations")
     activity_available = ACTIVITY.is_file() and isinstance(raw_sessions, dict) and isinstance(raw_operations, dict)
     sessions = [session_details(session_id, value) for session_id, value in raw_sessions.items()] if activity_available else []
+    active_session_count = sum(session_connection_status(session) == "ok" for session in sessions) if activity_available else None
     events = read_events()
     try:
         reports = incident_automation.report_rows()
@@ -379,6 +380,7 @@ def collect_operations_snapshot() -> dict[str, object]:
         "storage": storage,
         "activity_available": activity_available,
         "session_count": len(raw_sessions) if activity_available else None,
+        "active_session_count": active_session_count,
         "operation_count": len(raw_operations) if activity_available else None,
         "sessions": sessions,
         "tasks": task_rows(),
@@ -606,11 +608,12 @@ def _render_header(data: Mapping[str, object]) -> None:
 
 def _render_metrics(data: Mapping[str, object]) -> None:
     assert st is not None
-    sessions = "—" if data["session_count"] is None else str(data["session_count"])
+    active_sessions = "—" if data["active_session_count"] is None else str(data["active_session_count"])
+    session_detail = "接続情報を取得できません" if data["session_count"] is None else f"観測セッション {data['session_count']}件 / 90秒以内"
     operations = "—" if data["operation_count"] is None else str(data["operation_count"])
     columns = st.columns(4)
     columns[0].metric("ヘルススコア", f"{health_score(data['overall'])} / 100", status_label(data["overall"]))
-    columns[1].metric("接続セッション", sessions, "現在の接続状態")
+    columns[1].metric("現在接続", active_sessions, session_detail, delta_color="off")
     columns[2].metric("実行中の処理", operations, "現在の実行状態")
     columns[3].metric("最終確認", compact_timestamp(data["checked_at"]), format_timestamp(data["checked_at"]))
 
