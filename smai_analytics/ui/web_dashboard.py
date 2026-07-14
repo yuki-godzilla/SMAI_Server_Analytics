@@ -43,6 +43,7 @@ ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_MASCOT_HEADER = ASSET_ROOT / "smai-analytics-mascot-header.png"
 ANALYTICS_APP_ICON = ASSET_ROOT / "smai-analytics-app-icon-v3.png"
+PWA_COMPONENT_ROOT = Path(__file__).resolve().parent / "pwa_metadata_component"
 ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-luminous.png"
 ANALYTICS_WORDMARK_LARGE_TEXT = ASSET_ROOT / "smai-analytics-wordmark-luminous-large-text-v2.png"
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
@@ -447,7 +448,10 @@ def _render_styles() -> None:
           }
           [data-testid="stMetricLabel"] { color: #AAB8C8; font-weight: 700; }
           [data-testid="stMetricValue"] { color: #F8FBFF; }
-          button[kind="secondary"] { border-color: #3b587d; color: #DCEBFF; }
+          [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p, [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] * { color: #B9C7D8 !important; opacity: 1 !important; }
+          button[kind="secondary"], [data-testid="stButton"] > button { background: #111C2E !important; border-color: #3b587d !important; color: #DCEBFF !important; }
+          [data-testid="stButton"] > button:hover { background: #17283F !important; border-color: #60A5FA !important; }
+          [data-testid="stButton"] > button:focus-visible { outline: 3px solid rgba(96, 165, 250, 0.65); outline-offset: 2px; }
           .status-card, .ops-panel, .topology-node, .brand-block, .overview-route {
             background: linear-gradient(145deg, #14243d, #0e1a2e);
             border: 1px solid #354763;
@@ -499,18 +503,38 @@ def _render_styles() -> None:
           [data-baseweb="tab-list"] { gap: 5px; }
           [data-baseweb="tab"] { color: #AAB8C8; font-weight: 750; padding-left: 16px; padding-right: 16px; }
           [aria-selected="true"][data-baseweb="tab"] { color: #22D3EE; }
-          [data-testid="stDataFrame"] { font-size: 0.94rem; }
+          .responsive-table-wrap { border: 1px solid #26384F; border-radius: 12px; margin: 4px 0 20px; overflow: hidden; }
+          .responsive-data-table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+          .responsive-data-table th { background: #101C2F; color: #9CC7FF; font-size: 0.73rem; font-weight: 800; letter-spacing: 0.07em; padding: 11px 13px; text-align: left; }
+          .responsive-data-table td { border-top: 1px solid #1E3047; color: #DCEBFF; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; padding: 12px 13px; vertical-align: top; }
+          .responsive-data-table tbody tr { background: #0B1423; }
+          .responsive-data-table tbody tr:nth-child(even) { background: #0E192B; }
+          .responsive-data-table tbody tr:hover { background: #13243B; }
+          .responsive-table-status { font-weight: 800; }
+          .responsive-table-status-healthy { color: #34D399 !important; }
+          .responsive-table-status-degraded { color: #FBBF24 !important; }
+          .responsive-table-status-critical { color: #F87171 !important; }
+          .responsive-table-status-unknown { color: #AAB8C8 !important; }
           @media (min-width: 2200px) {
             [data-testid="stMainBlockContainer"], .block-container { padding-left: 3rem; padding-right: 3rem; }
             [data-testid="stMetric"] { min-height: 136px; padding: 21px 24px; }
             .topology-node { min-height: 168px; }
           }
-          @media (max-width: 760px) {
+          @media (max-width: 767px) {
             .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
             [data-testid="stMetric"] { min-height: 92px; padding: 12px; }
             .gauge-wrap { align-items: flex-start; flex-direction: column; }
             .topology-node { min-height: 128px; padding: 9px; }
             [data-baseweb="tab"] { font-size: 0.83rem; padding-left: 9px; padding-right: 9px; }
+            .responsive-table-wrap { border: 0; border-radius: 0; margin-bottom: 18px; overflow: visible; }
+            .responsive-data-table, .responsive-data-table tbody, .responsive-data-table tr, .responsive-data-table td { display: block; width: 100%; }
+            .responsive-data-table thead { display: none; }
+            .responsive-data-table tbody { display: grid; gap: 10px; }
+            .responsive-data-table tbody tr { border: 1px solid #26384F; border-radius: 12px; overflow: hidden; }
+            .responsive-data-table tbody tr:nth-child(even), .responsive-data-table tbody tr:hover { background: #0B1423; }
+            .responsive-data-table td { align-items: start; border-top: 1px solid #1E3047; display: grid; gap: 10px; grid-template-columns: minmax(86px, 0.72fr) minmax(0, 1.55fr); min-height: 44px; padding: 10px 12px; }
+            .responsive-data-table td:first-child { border-top: 0; }
+            .responsive-data-table td::before { color: #8FA4BE; content: attr(data-label); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.05em; padding-top: 2px; }
           }
 
           /* Dense operational shell: cues come from hierarchy and state, not decorative cards. */
@@ -681,36 +705,72 @@ def _render_styles() -> None:
             .network-image-node.active .network-topology-image { animation: none; }
             .network-packet { display: none; }
           }
-          @media (max-width: 760px) {
-            [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 72px; padding: 10px 0; }
-            .app-shell { align-items: flex-start; flex-direction: column; gap: 13px; }
+          /* The same responsive contract as SMAI: phone <= 767px, tablet 768–1024px, desktop >= 1025px. */
+          @media (min-width: 768px) and (max-width: 1024px) {
+            [data-testid="stMainBlockContainer"], .block-container { padding: 1.25rem 1.25rem 1.75rem; }
+            [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) { flex-wrap: wrap; }
+            [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) > [data-testid="column"] { flex: 1 1 calc(50% - 0.55rem) !important; min-width: calc(50% - 0.55rem) !important; width: calc(50% - 0.55rem) !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 7.75rem) !important; min-width: 0 !important; width: calc(100% - 7.75rem) !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 7rem !important; min-width: 7rem !important; width: 7rem !important; }
+            .app-shell { min-height: 142px; padding: 14px 12px; }
+            .app-brand, .app-state, .app-title { gap: 14px; }
+            .app-wordmark { height: 68px; max-width: min(46vw, 480px); }
+            .app-mascot { height: 100px; margin: -7px -4px -7px 0; width: 100px; }
+            .app-state { padding-left: 16px; }
+            .network-canvas { height: 468px; }
+          }
+          @media (min-width: 768px) and (max-width: 900px) {
+            [data-testid="stHorizontalBlock"]:has(.visual-surface) > [data-testid="column"] { flex: 1 1 100% !important; min-width: 100% !important; width: 100% !important; }
+            .health-visual-surface { min-height: 560px; }
+          }
+          @media (max-width: 767px) {
+            [data-testid="stMainBlockContainer"], .block-container { padding: 0.9rem 0.85rem calc(1.15rem + env(safe-area-inset-bottom)); }
+            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+            [data-testid="stHorizontalBlock"] > [data-testid="column"] { flex: 1 1 100% !important; min-width: 100% !important; width: 100% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"] [data-testid="stMetric"]) > [data-testid="column"] { flex: 1 1 calc(50% - 0.38rem) !important; min-width: calc(50% - 0.38rem) !important; width: calc(50% - 0.38rem) !important; }
+            [data-testid="stMetric"] { border-left: 0; border-top: 1px solid #26384f; min-height: 80px; padding: 9px 4px 8px; }
+            [data-testid="stMetricLabel"] { font-size: 0.72rem; }
+            [data-testid="stMetricValue"] { font-size: 1.45rem; }
+            [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { font-size: 0.7rem !important; line-height: 1.35; margin-top: 2px; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) { gap: 8px; }
+            .app-shell { align-items: flex-start; flex-direction: column; gap: 8px; min-height: 0; padding: 8px 0 10px; }
+            .app-brand { width: 100%; }
+            .app-brand, .app-state, .app-title { gap: 10px; }
             .app-state { border-left: 0; padding-left: 0; }
             .app-context { display: none; }
-            .app-shell { min-height: 116px; padding: 12px 4px 16px; }
-            .app-wordmark { height: 54px; max-width: min(88vw, 700px); }
-            .app-mascot { height: 82px; margin: -6px -3px -6px 0; width: 82px; }
-            .app-context { display: none; }
-            .app-state-copy { gap: 5px; }
-            .app-state .status-pill { font-size: 0.8rem; padding: 4px 9px; }
-            .app-state span { font-size: 0.78rem; }
+            .app-wordmark { height: 42px; max-width: min(92vw, 430px); }
+            .app-mascot { height: 56px; margin: 0; width: 56px; }
+            .app-state-copy { gap: 4px; }
+            .app-state .status-pill { font-size: 0.78rem; padding: 4px 9px; }
+            .app-state span { font-size: 0.76rem; letter-spacing: 0.04em; white-space: normal; }
             .header-control-spacer { display: none; }
-            .overview-command { gap: 18px; grid-template-columns: 1fr; }
-            .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 16px 0 0; }
+            [data-testid="stMarkdownContainer"]:has(.header-control-spacer) + [data-testid="stButton"] button { min-height: 44px; }
+            [data-testid="stButton"] > button { font-size: 0.96rem; min-height: 44px; }
+            [data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+            [data-baseweb="tab"] { flex: 0 0 auto; font-size: 0.82rem; min-height: 44px; padding: 10px 12px 8px; }
+            .overview-command { gap: 14px; grid-template-columns: 1fr; margin: 10px 0 18px; padding: 14px 0; }
+            .overview-score { font-size: 1.35rem; height: 76px; min-width: 76px; }
+            .overview-score::before { height: 60px; width: 60px; }
+            .overview-state { gap: 13px; }
+            .overview-state h2 { font-size: 1.2rem; }
+            .overview-action { border-left: 0; border-top: 1px solid #26384f; padding: 13px 0 0; }
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
-            .dashboard-visual-grid { grid-template-columns: 1fr; }
-            .health-visual-surface { height: 560px; min-height: 560px; }
+            .visual-surface { padding: 16px 0; }
+            .visual-heading { flex-wrap: wrap; gap: 4px 10px; }
+            .network-canvas { height: 360px; }
+            .health-visual-surface { height: 460px; min-height: 460px; }
             .health-history-block, .health-micro-block { min-height: 0; }
-            .network-canvas { height: 444px; }
-            .network-image-node { width: 122px; }
-            .network-server { width: 138px; }
-            .network-server .network-topology-image { height: 120px; width: 142px; }
+            .network-image-node { width: 112px; }
+            .network-server { width: 126px; }
+            .network-server .network-topology-image { height: 106px; width: 130px; }
             .network-server .network-image-label { margin-top: -4px; position: static; text-align: center; white-space: normal; width: auto; }
             .network-desktop { left: 17%; }
-            .network-desktop .network-topology-image, .network-tablet .network-topology-image { height: 104px; width: 126px; }
-            .network-smartphone .network-topology-image { height: 128px; width: 90px; }
+            .network-desktop .network-topology-image, .network-tablet .network-topology-image { height: 94px; width: 114px; }
+            .network-smartphone .network-topology-image { height: 116px; width: 82px; }
             .network-tablet { left: 83%; }
             .evidence-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .evidence-signal { min-height: 68px; padding: 9px 10px; }
             .evidence-signal:nth-child(odd) { border-left: 0; }
             .evidence-signal:nth-child(n + 3) { border-top: 1px solid #1E3047; }
           }
@@ -796,6 +856,27 @@ def _browser_app_icon() -> bytes | str:
         return ANALYTICS_APP_ICON.read_bytes()
     except OSError:
         return "📡"
+
+
+@lru_cache(maxsize=1)
+def _pwa_metadata_component():
+    """Serve shortcut metadata from a component so the manifest uses a JSON MIME type."""
+
+    import streamlit.components.v1 as components
+
+    return components.declare_component("smai_pwa_metadata", path=str(PWA_COMPONENT_ROOT))
+
+
+def _render_web_app_metadata() -> None:
+    """Install Apple/PWA metadata without widening the read-only app contract."""
+
+    assert st is not None
+    try:
+        _pwa_metadata_component()()
+    except (ImportError, OSError):
+        # The browser tab favicon remains available through set_page_config.
+        # Missing optional component support must not block Operations Console.
+        return
 
 
 def _downsample_rows(rows: list[dict[str, object]], *, maximum: int) -> list[dict[str, object]]:
@@ -968,7 +1049,7 @@ def _render_header(data: Mapping[str, object]) -> None:
             unsafe_allow_html=True,
         )
     with controls:
-        st.markdown('<div class="header-control-spacer"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="header-control-spacer header-refresh-anchor"></div>', unsafe_allow_html=True)
         if st.button("更新", key="refresh_now", use_container_width=True):
             cached_operations_snapshot.clear()
             st.rerun()
@@ -1014,6 +1095,141 @@ def _check_rows(data: Mapping[str, object]) -> list[dict[str, str]]:
         for item in checks
         if isinstance(item, dict)
     ] if isinstance(checks, list) else []
+
+
+def _table_status_class(value: object) -> str:
+    """Map the displayed Japanese state to a safe visual class."""
+
+    label = str(value or "").strip()
+    if label == "正常":
+        return "healthy"
+    if label in {"要確認", "期限超過"}:
+        return "degraded"
+    if label in {"重大", "失敗", "エラー"}:
+        return "critical"
+    return "unknown"
+
+
+def _render_readonly_table(rows: list[Mapping[str, object]]) -> None:
+    """Render read-only evidence as a desktop table and phone-sized evidence cards."""
+
+    assert st is not None
+    if not rows:
+        return
+    columns = list(rows[0].keys())
+    headers = "".join(f"<th>{html.escape(str(column))}</th>" for column in columns)
+    rendered_rows: list[str] = []
+    for row in rows:
+        cells: list[str] = []
+        for column in columns:
+            label = str(column)
+            value = str(row.get(column) if row.get(column) not in (None, "") else "—")
+            classes = "responsive-table-value"
+            if label in {"状態", "鮮度", "結果", "重要度"}:
+                classes += f" responsive-table-status responsive-table-status-{_table_status_class(value)}"
+            display_value = html.escape(value).replace("\n", "<br>")
+            cells.append(
+                f'<td class="{classes}" data-label="{html.escape(label)}">{display_value}</td>'
+            )
+        rendered_rows.append("<tr>" + "".join(cells) + "</tr>")
+    st.markdown(
+        '<div class="responsive-table-wrap"><table class="responsive-data-table"><thead><tr>'
+        + headers
+        + "</tr></thead><tbody>"
+        + "".join(rendered_rows)
+        + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_dark_trend_chart(
+    rows: list[Mapping[str, object]],
+    *,
+    x_field: str,
+    y_fields: tuple[str, ...],
+    height: int,
+    y_domain: tuple[float, float] | None = None,
+) -> None:
+    """Render a compact dark, touch-readable time series without dense x-axis labels."""
+
+    assert st is not None
+    try:
+        import altair as alt
+    except ImportError:  # pragma: no cover - Streamlit installs Altair.
+        st.line_chart(rows, x=x_field, y=y_fields, height=height, use_container_width=True)
+        return
+
+    points: list[dict[str, object]] = []
+    for row in rows:
+        timestamp = row.get(x_field)
+        if not timestamp:
+            continue
+        for series in y_fields:
+            value = row.get(series)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            points.append({"時刻": timestamp, "系列": series, "値": float(value)})
+    if not points:
+        st.info("選択期間の時系列値を読み取れません。正常とは判定していません。")
+        return
+
+    palette = ("#34D399", "#38BDF8", "#A78BFA", "#F87171", "#FBBF24", "#22D3EE")
+    y_scale = alt.Scale(domain=list(y_domain)) if y_domain is not None else alt.Undefined
+    chart = (
+        alt.Chart(alt.Data(values=points))
+        .mark_line(clip=True, strokeWidth=2.6)
+        .encode(
+            x=alt.X(
+                "時刻:T",
+                axis=alt.Axis(
+                    format="%m/%d %H:%M",
+                    grid=False,
+                    labelAngle=0,
+                    labelColor="#AAB8C8",
+                    labelFontSize=11,
+                    labelLimit=92,
+                    tickColor="#31445E",
+                    tickCount=4,
+                    title=None,
+                ),
+            ),
+            y=alt.Y(
+                "値:Q",
+                axis=alt.Axis(
+                    grid=True,
+                    gridColor="#1E3047",
+                    gridOpacity=1,
+                    labelColor="#AAB8C8",
+                    labelFontSize=11,
+                    tickColor="#31445E",
+                    tickCount=4,
+                    title=None,
+                ),
+                scale=y_scale,
+            ),
+            color=alt.Color(
+                "系列:N",
+                legend=alt.Legend(
+                    labelColor="#DCEBFF",
+                    labelFontSize=12,
+                    orient="bottom",
+                    symbolStrokeWidth=4,
+                    title=None,
+                ),
+                scale=alt.Scale(domain=list(y_fields), range=list(palette[: len(y_fields)])),
+            ),
+            tooltip=(
+                alt.Tooltip("時刻:T", format="%Y/%m/%d %H:%M", title="時刻"),
+                alt.Tooltip("系列:N", title="系列"),
+                alt.Tooltip("値:Q", format=".1f", title="値"),
+            ),
+        )
+        .properties(background="#0B1423", height=height)
+        .configure_view(stroke="#26384F", strokeOpacity=1)
+        .configure_axis(domainColor="#31445E")
+        .configure_legend(padding=12)
+    )
+    st.altair_chart(chart, use_container_width=True, theme=None)
 
 
 def _check_attention_summary(data: Mapping[str, object]) -> tuple[str, str] | None:
@@ -1273,7 +1489,7 @@ def _render_trends(data: Mapping[str, object]) -> None:
         level, message = attention_summary
         getattr(st, level)(message)
     if check_rows:
-        st.dataframe(check_rows, use_container_width=True, hide_index=True)
+        _render_readonly_table(check_rows)
     else:
         st.warning("ヘルスチェックの証跡を読み取れません。正常とは判定していません。")
 
@@ -1283,7 +1499,7 @@ def _render_trends(data: Mapping[str, object]) -> None:
         timestamp = parse_timestamp(row.get("bucket_start"))
         health_rows.append(
             {
-                "時刻": timestamp.astimezone().strftime("%m/%d %H:%M") if timestamp is not None else "時刻不明",
+                "時刻": timestamp.astimezone().isoformat() if timestamp is not None else None,
                 "overall": health_score(telemetry.status_from_counts(row.get("overall"))),
                 "L1": health_score(telemetry.level_status(row, "L1")),
                 "L2": health_score(telemetry.level_status(row, "L2")),
@@ -1291,7 +1507,13 @@ def _render_trends(data: Mapping[str, object]) -> None:
             }
         )
     if health_rows:
-        st.line_chart(_downsample_rows(health_rows, maximum=96), x="時刻", y=("overall", "L1", "L2", "L3"), height=280, use_container_width=True)
+        _render_dark_trend_chart(
+            _downsample_rows(health_rows, maximum=96),
+            x_field="時刻",
+            y_fields=("overall", "L1", "L2", "L3"),
+            height=272,
+            y_domain=(0, 100),
+        )
     else:
         st.info("選択期間のhealth履歴はまだありません。")
 
@@ -1306,13 +1528,18 @@ def _render_trends(data: Mapping[str, object]) -> None:
                 continue
             rows.append(
                 {
-                    "時刻": timestamp.astimezone().strftime("%m/%d %H:%M") if timestamp is not None else "時刻不明",
+                    "時刻": timestamp.astimezone().isoformat() if timestamp is not None else None,
                     "Streamlit health p95": int(values.get("Streamlit health", {}).get("p95_ms", 0)) if isinstance(values.get("Streamlit health"), dict) else 0,
                     "Streamlit page p95": int(values.get("Streamlit page", {}).get("p95_ms", 0)) if isinstance(values.get("Streamlit page"), dict) else 0,
                 }
             )
         if rows:
-            st.line_chart(_downsample_rows(rows, maximum=96), x="時刻", y=("Streamlit health p95", "Streamlit page p95"), height=230, use_container_width=True)
+            _render_dark_trend_chart(
+                _downsample_rows(rows, maximum=96),
+                x_field="時刻",
+                y_fields=("Streamlit health p95", "Streamlit page p95"),
+                height=210,
+            )
         else:
             st.info("応答時間の履歴はまだありません。")
     with storage:
@@ -1324,13 +1551,19 @@ def _render_trends(data: Mapping[str, object]) -> None:
             values = {str(item.get("name")): item.get("free_percent") for item in measures if isinstance(item, dict)} if isinstance(measures, list) else {}
             rows.append(
                 {
-                    "時刻": timestamp.astimezone().strftime("%m/%d %H:%M") if timestamp is not None else "時刻不明",
+                    "時刻": timestamp.astimezone().isoformat() if timestamp is not None else None,
                     "SMAI data": values.get("SMAI data"),
                     "Runtime": values.get("Runtime"),
                 }
             )
         if rows:
-            st.line_chart(_downsample_rows(rows, maximum=96), x="時刻", y=("SMAI data", "Runtime"), height=230, use_container_width=True)
+            _render_dark_trend_chart(
+                _downsample_rows(rows, maximum=96),
+                x_field="時刻",
+                y_fields=("SMAI data", "Runtime"),
+                height=210,
+                y_domain=(0, 100),
+            )
         else:
             st.info("保存容量の履歴はまだありません。")
 
@@ -1346,13 +1579,19 @@ def _render_trends(data: Mapping[str, object]) -> None:
             statuses = [str(item.get("status") or "unknown") for item in tasks if isinstance(item, dict)] if isinstance(tasks, list) else []
             task_rows.append(
                 {
-                    "観測時刻": observed.astimezone().strftime("%m/%d %H:%M") if observed is not None else "時刻不明",
+                    "観測時刻": observed.astimezone().isoformat() if observed is not None else None,
                     "鮮度スコア": health_score(worst_status(*statuses)),
                     "対象数": len(statuses),
                 }
             )
     if task_rows:
-        st.line_chart(task_rows, x="観測時刻", y="鮮度スコア", height=180, use_container_width=True)
+        _render_dark_trend_chart(
+            task_rows,
+            x_field="観測時刻",
+            y_fields=("鮮度スコア",),
+            height=190,
+            y_domain=(0, 100),
+        )
     else:
         st.info("タスク鮮度の履歴はまだありません。")
 
@@ -1391,7 +1630,7 @@ def _render_connections(data: Mapping[str, object]) -> None:
             )
         st.markdown("#### セッション一覧")
         if rows:
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            _render_readonly_table(rows)
         else:
             st.info("接続中のセッションはありません。")
 
@@ -1409,7 +1648,7 @@ def _render_connections(data: Mapping[str, object]) -> None:
         if isinstance(item, dict)
     ] if isinstance(raw_events, list) else []
     if event_rows:
-        st.dataframe(event_rows, use_container_width=True, hide_index=True)
+        _render_readonly_table(event_rows)
     else:
         st.info("接続観測履歴はまだありません。消失は切断と推測しません。")
 
@@ -1456,7 +1695,7 @@ def _render_activity_history(data: Mapping[str, object]) -> None:
         for event in matched
     ]
     if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        _render_readonly_table(rows)
     elif events:
         st.info("条件に一致する操作履歴はありません。")
     else:
@@ -1499,7 +1738,7 @@ def _render_incidents(data: Mapping[str, object]) -> None:
         for event in matched
     ]
     if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        _render_readonly_table(rows)
     elif source:
         st.info("条件に一致する障害はありません。")
     else:
@@ -1553,7 +1792,7 @@ def _render_reports(data: Mapping[str, object]) -> None:
         if isinstance(report, dict)
     ] if isinstance(reports, list) else []
     if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        _render_readonly_table(rows)
     else:
         st.info("改善レポートはまだありません。重大な障害が検知されると、調査結果がここに追加されます。")
 
@@ -1580,7 +1819,7 @@ def _render_tasks(data: Mapping[str, object]) -> None:
         }
         for row in tasks
     ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    _render_readonly_table(rows)
 
 
 def _render_logs(data: Mapping[str, object]) -> None:
@@ -1629,6 +1868,7 @@ def main() -> None:
     if st is None:
         raise RuntimeError("Streamlit is required. Run this app with the SMAI Analytics virtual environment.")
     st.set_page_config(page_title="SMAI Analytics | Operations Console", page_icon=_browser_app_icon(), layout="wide", initial_sidebar_state="collapsed")
+    _render_web_app_metadata()
     _render_styles()
 
     @st.fragment(run_every=5)

@@ -97,7 +97,7 @@ def _run_render(case: str, status: str, *, event_count: int) -> None:
             "assert not app.exception, app.exception; "
             "assert [tab.label for tab in app.tabs] == expected; "
             "assert len(app.metric) >= 20, len(app.metric); "
-            "assert len(app.dataframe) >= 4, len(app.dataframe); "
+            "assert len(app.markdown) >= 25, len(app.markdown); "
             f"print('WEB_RENDER_{case}=OK')"
         )
         result = subprocess.run([sys.executable, "-c", code], cwd=REPOSITORY_ROOT, env=environment, text=True, capture_output=True, check=False)

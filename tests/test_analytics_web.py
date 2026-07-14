@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 
@@ -202,8 +203,66 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         finally:
             analytics_web.st = original_streamlit
 
-        self.assertIn('.health-visual-surface { height: 560px; min-height: 560px; }', MarkdownRecorder.rendered)
+        self.assertIn('.health-visual-surface { height: 460px; min-height: 460px; }', MarkdownRecorder.rendered)
         self.assertIn('.health-history-block, .health-micro-block { min-height: 0; }', MarkdownRecorder.rendered)
+
+    def test_responsive_sprint_uses_smai_phone_and_tablet_contracts(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_styles()
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertIn('@media (min-width: 768px) and (max-width: 1024px)', MarkdownRecorder.rendered)
+        self.assertIn('@media (max-width: 767px)', MarkdownRecorder.rendered)
+        self.assertIn('min-height: 44px', MarkdownRecorder.rendered)
+        self.assertIn('overflow-x: auto', MarkdownRecorder.rendered)
+        self.assertIn('.health-visual-surface { height: 460px; min-height: 460px; }', MarkdownRecorder.rendered)
+        self.assertIn('#B9C7D8 !important', MarkdownRecorder.rendered)
+
+    def test_readonly_table_keeps_labels_and_status_when_rendered_as_mobile_cards(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_readonly_table(
+                [{"レベル": "L1", "状態": "正常", "詳細": "listener accepting connections"}]
+            )
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertIn('class="responsive-data-table"', MarkdownRecorder.rendered)
+        self.assertIn('data-label="状態"', MarkdownRecorder.rendered)
+        self.assertIn("responsive-table-status-healthy", MarkdownRecorder.rendered)
+        self.assertIn("listener accepting connections", MarkdownRecorder.rendered)
+
+    def test_web_app_metadata_exposes_an_apple_icon_and_pwa_manifest(self) -> None:
+        metadata = (analytics_web.PWA_COMPONENT_ROOT / "index.html").read_text(encoding="utf-8")
+        manifest = json.loads((analytics_web.PWA_COMPONENT_ROOT / "smai-analytics-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertIn("apple-touch-icon", metadata)
+        self.assertIn("smai-analytics-apple-touch-icon.png", metadata)
+        self.assertIn("smai-analytics-manifest.json", metadata)
+        self.assertEqual("SMAI Analytics", manifest["short_name"])
+        self.assertEqual("standalone", manifest["display"])
+        self.assertEqual("/", manifest["start_url"])
+        self.assertEqual(["192x192", "512x512"], [icon["sizes"] for icon in manifest["icons"]])
+        for filename in ("smai-analytics-apple-touch-icon.png", "smai-analytics-icon-192.png", "smai-analytics-icon-512.png"):
+            self.assertTrue((analytics_web.PWA_COMPONENT_ROOT / filename).is_file())
 
 
 if __name__ == "__main__":

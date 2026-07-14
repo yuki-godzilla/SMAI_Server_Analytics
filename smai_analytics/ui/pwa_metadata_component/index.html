@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <script>
+      (() => {
+        const parentDocument = window.parent?.document;
+        if (!parentDocument?.head) return;
+        const componentRoot = new URL("./", window.location.href).href;
+        const install = (selector, tag, attributes) => {
+          let element = parentDocument.head.querySelector(selector);
+          if (!element) {
+            element = parentDocument.createElement(tag);
+            parentDocument.head.appendChild(element);
+          }
+          Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
+        };
+
+        install('link[rel="apple-touch-icon"][data-smai-analytics="true"]', 'link', {
+          rel: 'apple-touch-icon', href: new URL('smai-analytics-apple-touch-icon.png', componentRoot).href,
+          sizes: '180x180', 'data-smai-analytics': 'true'
+        });
+        install('link[rel="manifest"][data-smai-analytics="true"]', 'link', {
+          rel: 'manifest', href: new URL('smai-analytics-manifest.json', componentRoot).href,
+          'data-smai-analytics': 'true'
+        });
+        install('meta[name="apple-mobile-web-app-capable"]', 'meta', {name: 'apple-mobile-web-app-capable', content: 'yes'});
+        install('meta[name="mobile-web-app-capable"]', 'meta', {name: 'mobile-web-app-capable', content: 'yes'});
+        install('meta[name="apple-mobile-web-app-title"]', 'meta', {name: 'apple-mobile-web-app-title', content: 'SMAI Analytics'});
+        install('meta[name="apple-mobile-web-app-status-bar-style"]', 'meta', {name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent'});
+        install('meta[name="theme-color"]', 'meta', {name: 'theme-color', content: '#070D19'});
+
+        window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:componentReady', apiVersion: 1}, '*');
+        window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:setFrameHeight', height: 0}, '*');
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

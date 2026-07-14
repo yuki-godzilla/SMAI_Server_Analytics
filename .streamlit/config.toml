@@ -9,5 +9,13 @@ enableWebsocketCompression = true
 [browser]
 gatherUsageStats = false
 
+[theme]
+base = "dark"
+primaryColor = "#22D3EE"
+backgroundColor = "#070D19"
+secondaryBackgroundColor = "#101C2F"
+textColor = "#E5EDF7"
+font = "sans serif"
+
 [client]
 toolbarMode = "viewer"
