@@ -93,6 +93,8 @@ Gmailアカウントでは先に2段階認証を有効化し、`SMAI Analytics A
 
 `SMAI-Incident-Automation`タスクが5分ごとに実行されると、critical検知、15分後の未復旧再通知、healthy復帰時の復旧通知を処理します。メール本文と添付レポートはboundedな運用証跡だけであり、secret、ユーザー入力、生ログ、raw provider response、LLM promptを含めません。配送失敗は最大3回まで遅延再試行し、成功として扱いません。
 
+件名はフローの段階を識別できるよう、初回障害は`[SMAI CRITICAL]`、未復旧再通知は`[SMAI REMINDER]`、管理者承認後のCodex依頼は`[SMAI CODEX APPROVED]`、調査結果は`[SMAI REPORT]`、healthy復帰は`[SMAI RECOVERED]`を使います。すべてに同じIncident IDとローカルレポートの添付を付けます。
+
 配送失敗は生のSMTP応答を保存せず、`smtp_authentication`、`smtp_connection`、`smtp_protocol`の安全な分類だけを監査記録へ残します。`smtp_authentication`の場合は、送信元Gmailの2段階認証、アプリパスワード、送信元アドレスの組み合わせを見直してください。
 
 状態だけを確認する場合は次を使います。

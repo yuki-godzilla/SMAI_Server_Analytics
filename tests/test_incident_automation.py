@@ -259,6 +259,26 @@ class IncidentAutomationTests(unittest.TestCase):
         self.assertEqual("smtp_authentication", row["failure_category"])
         self.assertNotIn("provider message", json.dumps(row, ensure_ascii=False))
 
+    def test_notification_subjects_distinguish_the_incident_workflow_steps(self) -> None:
+        incident_automation.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        attachment = incident_automation.REPORTS_DIR / "workflow-test.md"
+        attachment.write_text("TEST ONLY", encoding="utf-8")
+        expected_prefixes = {
+            "incident": "[SMAI CRITICAL]",
+            "repeat": "[SMAI REMINDER]",
+            "approval": "[SMAI CODEX APPROVED]",
+            "report": "[SMAI REPORT]",
+            "recovery": "[SMAI RECOVERED]",
+        }
+        for kind, prefix in expected_prefixes.items():
+            message = incident_automation._build_notification_message(
+                {"kind": kind, "severity": "critical", "request_id": "incident-test"},
+                sender="admin@example.com",
+                recipient="notify@example.com",
+                attachment=attachment,
+            )
+            self.assertTrue(str(message["Subject"]).startswith(prefix))
+
 
 if __name__ == "__main__":
     unittest.main()

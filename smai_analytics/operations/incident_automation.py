@@ -512,7 +512,13 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
     kind = _safe_text(payload.get("kind") or "incident", limit=30).lower()
     severity = _safe_text(payload.get("severity") or "critical", limit=20).upper()
     request_id = _safe_text(payload.get("request_id"), limit=120)
-    subject_prefix = "RECOVERED" if kind == "recovery" else severity
+    subject_prefix = {
+        "incident": severity,
+        "repeat": "REMINDER",
+        "approval": "CODEX APPROVED",
+        "report": "REPORT",
+        "recovery": "RECOVERED",
+    }.get(kind, severity)
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
@@ -522,10 +528,20 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
             "SMAI Analytics observed a healthy recovery for this incident. "
             "The attached local report remains the audit record."
         )
+    elif kind == "approval":
+        message.set_content(
+            "A local administrator approved the Codex repair request. "
+            "The attached report records the approval; no automatic code change was started."
+        )
     elif kind == "report":
         message.set_content(
             "SMAI Analytics recorded a bounded investigation outcome. "
             "The attached local report is available for administrator review."
+        )
+    elif kind == "repeat":
+        message.set_content(
+            "SMAI Analytics still observes this unresolved critical incident. "
+            "The attached local report remains the current audit record."
         )
     else:
         message.set_content(
@@ -687,7 +703,7 @@ def approve_codex_request(*, request_id: str, now: datetime | None = None) -> Pa
     queue_administrator_notification(
         {"request_id": normalized_id, "severity": _safe_text(request.get("severity") or "critical", limit=20)},
         report_path=report_path,
-        kind="report",
+        kind="approval",
     )
     return approval_path
 
