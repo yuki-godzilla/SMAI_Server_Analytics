@@ -220,6 +220,27 @@ class IncidentAutomationTests(unittest.TestCase):
         self.assertEqual("delivery_failed", payload["status"])
         self.assertNotIn("retry_not_before", payload)
 
+    def test_gmail_test_delivery_records_a_sanitized_failure_category(self) -> None:
+        configuration = {
+            "provider": "gmail_smtp",
+            "recipient": "notify@example.com",
+            "sender": "admin@example.com",
+            "host": "smtp.gmail.com",
+            "port": 587,
+            "username": "admin@example.com",
+            "password": "app-password",
+        }
+        error = __import__("smtplib").SMTPAuthenticationError(535, b"provider message is not retained")
+        with patch.object(incident_automation, "_gmail_delivery_configuration", return_value=configuration), patch.object(
+            incident_automation, "_send_message", side_effect=error
+        ):
+            self.assertFalse(incident_automation.send_gmail_test_email(now=datetime(2026, 7, 12, tzinfo=UTC)))
+
+        row = incident_automation._load_jsonl(incident_automation.OUTBOX_INDEX_PATH)[-1]
+        self.assertEqual("test_delivery_failed", row["status"])
+        self.assertEqual("smtp_authentication", row["failure_category"])
+        self.assertNotIn("provider message", json.dumps(row, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -545,6 +545,18 @@ def _send_message(configuration: Mapping[str, object], message: EmailMessage) ->
         client.send_message(message)
 
 
+def _delivery_failure_category(error: BaseException) -> str:
+    """Classify delivery failures without storing provider responses or secrets."""
+
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        return "smtp_authentication"
+    if isinstance(error, (smtplib.SMTPConnectError, TimeoutError, ConnectionError, OSError)):
+        return "smtp_connection"
+    if isinstance(error, smtplib.SMTPException):
+        return "smtp_protocol"
+    return "unknown"
+
+
 def _mark_delivery_failure(payload: dict[str, object], *, now: datetime) -> None:
     attempts = int(payload.get("attempt_count") or 0) + 1
     payload["attempt_count"] = attempts
@@ -696,8 +708,8 @@ def send_gmail_test_email(*, now: datetime | None = None) -> bool:
     }
     try:
         _send_message(configuration, message)
-    except (OSError, smtplib.SMTPException):
-        pass
+    except (OSError, smtplib.SMTPException) as error:
+        result["failure_category"] = _delivery_failure_category(error)
     else:
         result["status"] = "test_delivered"
         result["delivered_at"] = _timestamp(current)
@@ -735,11 +747,13 @@ def deliver_queued_notifications(*, now: datetime | None = None) -> int:
                 attachment=attachment,
             )
             _send_message(configuration, message)
-        except (OSError, smtplib.SMTPException):
+        except (OSError, smtplib.SMTPException) as error:
+            payload["failure_category"] = _delivery_failure_category(error)
             _mark_delivery_failure(payload, now=current)
         else:
             payload["status"] = "delivered"
             payload["delivered_at"] = _timestamp(current)
+            payload.pop("failure_category", None)
             payload.pop("retry_not_before", None)
             delivered += 1
         _write_json_atomic(outbox_path, payload)
