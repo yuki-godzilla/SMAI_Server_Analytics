@@ -649,18 +649,26 @@ def _render_styles() -> None:
           .health-score-line { align-items: baseline; display: flex; gap: 8px; margin: 4px 0 2px; }
           .health-score-line strong { color: #F8FBFF; font-size: 1.55rem; }
           .health-score-line span { color: #8FA4BE; font-size: 0.76rem; }
+          .health-visual-surface { display: flex; flex-direction: column; min-height: 674px; }
+          .health-history-chart { display: flex; flex: 1 1 0; min-height: 0; }
+          .health-history-chart .sparkline, .health-history-chart .chart-unavailable { flex: 1; height: auto; }
           .sparkline { display: block; height: 200px; margin: 10px 0 8px; overflow: visible; width: 100%; }
           .spark-grid { stroke: #1E3047; stroke-dasharray: 3 4; stroke-width: 1; }
+          .spark-area { fill-opacity: 0.1; }
           .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
           .spark-last { stroke: #070D19; stroke-width: 3; }
           .chart-unavailable { align-items: center; border: 1px dashed #31445e; color: #8FA4BE; display: flex; font-size: 0.8rem; height: 150px; justify-content: center; padding: 8px 14px; text-align: center; }
           .micro-trend-grid { border-top: 1px solid #1E3047; display: grid; gap: 18px; grid-template-columns: 1fr 1fr; margin-top: 15px; padding-top: 15px; }
+          .health-visual-surface .micro-trend-grid { flex: 1 1 0; min-height: 0; }
           .micro-trend { min-width: 0; }
+          .health-visual-surface .micro-trend { display: flex; flex-direction: column; }
           .micro-trend header { align-items: baseline; display: flex; justify-content: space-between; }
           .micro-trend header span { color: #8FA4BE; font-size: 0.72rem; }
           .micro-trend header strong { color: #E5EDF7; font-size: 0.86rem; }
           .micro-trend .sparkline { height: 94px; margin: 7px 0 0; }
+          .health-visual-surface .micro-trend .sparkline { flex: 1; height: auto; min-height: 0; }
           .micro-trend .chart-unavailable { font-size: 0.7rem; height: 94px; }
+          .health-visual-surface .micro-trend .chart-unavailable { flex: 1; height: auto; min-height: 0; }
           .evidence-rail { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; display: grid; gap: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0 0 24px; }
           .evidence-signal { border-left: 1px solid #1E3047; min-height: 72px; padding: 11px 13px; }
           .evidence-signal:first-child { border-left: 0; }
@@ -690,6 +698,8 @@ def _render_styles() -> None:
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
             .dashboard-visual-grid { grid-template-columns: 1fr; }
+            .health-visual-surface { min-height: 0; }
+            .health-history-chart { min-height: 220px; }
             .network-canvas { height: 444px; }
             .network-image-node { width: 122px; }
             .network-server { width: 138px; }
@@ -896,6 +906,7 @@ def _sparkline_svg(
     label: str,
     lower: float = 0.0,
     upper: float | None = None,
+    area: bool = False,
 ) -> str:
     """Render a bounded inline SVG without inventing missing telemetry."""
 
@@ -919,9 +930,14 @@ def _sparkline_svg(
         f'<line class="spark-grid" x1="{padding}" x2="{width - padding}" y1="{y:.1f}" y2="{y:.1f}" />'
         for y in (padding, height / 2, height - padding)
     )
+    area_fill = (
+        f'<polygon class="spark-area" points="{padding},{height - padding} {polyline} {width - padding},{height - padding}" style="fill:{color}" />'
+        if area
+        else ""
+    )
     return (
         f'<svg class="sparkline" viewBox="0 0 {int(width)} {int(height)}" preserveAspectRatio="none" '
-        f'role="img" aria-label="{html.escape(label)}">{grid}'
+        f'role="img" aria-label="{html.escape(label)}">{area_fill}{grid}'
         f'<polyline class="spark-line" points="{polyline}" style="stroke:{color}" />'
         f'<circle class="spark-last" cx="{last_x:.1f}" cy="{last_y:.1f}" r="5" style="fill:{color}" /></svg>'
     )
@@ -1158,13 +1174,13 @@ def _render_health_timeline(data: Mapping[str, object]) -> None:
     current_color = status_color(data.get("overall"))
     latency_value = "—" if not latency_points else f"{latency_points[-1][1]:.0f} ms"
     headroom_value = "—" if not headroom_points else f"{headroom_points[-1][1]:.1f}%"
-    health_chart = _sparkline_svg(health_points, color=current_color, label="過去24時間のHealth score", upper=100.0)
+    health_chart = _sparkline_svg(health_points, color=current_color, label="過去24時間のHealth score", upper=100.0, area=True)
     latency_chart = _sparkline_svg(latency_points, color="#A78BFA", label="応答p95の推移")
     headroom_chart = _sparkline_svg(headroom_points, color="#34D399", label="空き容量率の推移", upper=100.0)
     st.markdown(
-        f'<section class="visual-surface"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'
+        f'<section class="visual-surface health-visual-surface"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'
         f'<div class="health-score-line"><strong style="color:{current_color}">{score}</strong>'
-        f'<span>履歴カバレッジ {summary["coverage_percent"]}% / {summary["available_buckets"]} 枠</span></div>{health_chart}'
+        f'<span>履歴カバレッジ {summary["coverage_percent"]}% / {summary["available_buckets"]} 枠</span></div><div class="health-history-chart">{health_chart}</div>'
         f'<div class="micro-trend-grid"><div class="micro-trend"><header><span>応答 p95</span><strong>{latency_value}</strong></header>{latency_chart}</div>'
         f'<div class="micro-trend"><header><span>最小空き率</span><strong>{headroom_value}</strong></header>{headroom_chart}</div></div></section>',
         unsafe_allow_html=True,

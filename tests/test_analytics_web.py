@@ -151,6 +151,24 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
 
         self.assertEqual([100.0, 0.0], [value for _, value in points])
 
+    def test_health_history_uses_an_area_fill_without_changing_other_sparklines(self) -> None:
+        now = datetime.now(UTC)
+        health_chart = analytics_web._sparkline_svg(
+            [(now - timedelta(minutes=5), 100.0), (now, 100.0)],
+            color="#34D399",
+            label="Health",
+            upper=100.0,
+            area=True,
+        )
+        latency_chart = analytics_web._sparkline_svg(
+            [(now - timedelta(minutes=5), 15.0), (now, 18.0)],
+            color="#A78BFA",
+            label="Latency",
+        )
+
+        self.assertIn('class="spark-area"', health_chart)
+        self.assertNotIn('class="spark-area"', latency_chart)
+
 
 if __name__ == "__main__":
     unittest.main()
