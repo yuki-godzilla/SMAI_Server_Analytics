@@ -699,8 +699,8 @@ def _render_styles() -> None:
             .signal-row div { align-items: flex-start; flex-direction: column; gap: 3px; }
             .detail-handoff { flex-direction: column; gap: 4px; }
             .dashboard-visual-grid { grid-template-columns: 1fr; }
-            .health-visual-surface { min-height: 0; }
-            .health-history-block { min-height: 220px; }
+            .health-visual-surface { height: 560px; min-height: 560px; }
+            .health-history-block, .health-micro-block { min-height: 0; }
             .network-canvas { height: 444px; }
             .network-image-node { width: 122px; }
             .network-server { width: 138px; }

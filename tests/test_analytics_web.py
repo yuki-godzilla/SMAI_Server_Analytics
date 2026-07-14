@@ -187,6 +187,24 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn('class="health-history-block"><div class="visual-heading">', MarkdownRecorder.rendered)
         self.assertIn('</div></div><div class="health-micro-block"><div class="micro-trend-grid">', MarkdownRecorder.rendered)
 
+    def test_narrow_health_timeline_reserves_equal_height_for_both_blocks(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_styles()
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertIn('.health-visual-surface { height: 560px; min-height: 560px; }', MarkdownRecorder.rendered)
+        self.assertIn('.health-history-block, .health-micro-block { min-height: 0; }', MarkdownRecorder.rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
