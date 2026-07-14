@@ -45,4 +45,4 @@ python backup.py create
 python retention.py --dry-run
 ```
 
-ブラウザー画面は`run_analytics_web.bat`で起動します。通常アクセスは`config/network.json`から解決するMagicDNS URLの`http://desktop-bqrpr4c:8502`であり、サーバーPC内の確認は`http://localhost:8502`です。Main Applicationの`http://desktop-bqrpr4c:8501`とは同じホスト名・異なるポートで区別します。直接の`streamlit run analytics_web.py`はloopback（`127.0.0.1:8502`）が既定で、`0.0.0.0`待受は明示的なバッチ起動だけが行います。`0.0.0.0`は待受先であり、ブラウザーで開くURLではありません。
+ブラウザー画面は`run_analytics_web.bat`で起動します。通常アクセスは`config/network.json`から解決するMagicDNS URLの`http://smai-server:8502`であり、サーバーPC内の確認は`http://localhost:8502`です。Main Applicationの`http://smai-server:8501`とは同じホスト名・異なるポートで区別します。直接の`streamlit run analytics_web.py`はloopback（`127.0.0.1:8502`）が既定で、`0.0.0.0`待受は明示的なバッチ起動だけが行います。`0.0.0.0`は待受先であり、ブラウザーで開くURLではありません。

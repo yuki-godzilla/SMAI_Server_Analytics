@@ -86,7 +86,7 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
             analytics_web.st = original_streamlit
 
         self.assertIn("Server Analytics接続URL", MarkdownRecorder.rendered)
-        self.assertIn("http://desktop-bqrpr4c:8502", MarkdownRecorder.rendered)
+        self.assertIn("http://smai-server:8502", MarkdownRecorder.rendered)
         self.assertIn("LAN内でも外出先でも共通", MarkdownRecorder.rendered)
         self.assertNotIn("0.0.0.0", MarkdownRecorder.rendered)
 

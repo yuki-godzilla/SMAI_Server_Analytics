@@ -13,7 +13,7 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("--server.address 0.0.0.0", launcher)
         self.assertIn("-m smai_analytics.network --emit-batch", launcher)
         self.assertNotIn("SMAI_ANALYTICS_LAN_IP", launcher)
-        self.assertIn('"tailscale_hostname": "desktop-bqrpr4c"', network_config)
+        self.assertIn('"tailscale_hostname": "smai-server"', network_config)
         self.assertIn('"port": 8502', network_config)
         self.assertIn("--server.enableXsrfProtection true", launcher)
         self.assertNotIn("dashboard.py", launcher.casefold())

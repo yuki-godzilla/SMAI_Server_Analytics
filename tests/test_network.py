@@ -21,11 +21,11 @@ class ServerAnalyticsNetworkTests(unittest.TestCase):
         settings = network.load_network_settings()
         urls = network.resolve_network_urls(settings)
 
-        self.assertEqual("desktop-bqrpr4c", settings.tailscale_hostname)
+        self.assertEqual("smai-server", settings.tailscale_hostname)
         self.assertEqual(8501, settings.main_application.port)
         self.assertEqual(8502, settings.server_analytics.port)
-        self.assertEqual("http://desktop-bqrpr4c:8501", urls.main_application_url)
-        self.assertEqual("http://desktop-bqrpr4c:8502", urls.server_analytics_url)
+        self.assertEqual("http://smai-server:8501", urls.main_application_url)
+        self.assertEqual("http://smai-server:8502", urls.server_analytics_url)
         self.assertEqual("http://localhost:8502", urls.analytics_local_url)
 
     def test_environment_overrides_preserve_the_shared_hostname_contract(self) -> None:
@@ -78,7 +78,7 @@ class ServerAnalyticsNetworkTests(unittest.TestCase):
         self.assertNotIn("100.", urls.server_analytics_url)
 
     def test_url_resolution_never_depends_on_the_tailscale_cli(self) -> None:
-        self.assertEqual("http://desktop-bqrpr4c:8502", network.resolve_network_urls().server_analytics_url)
+        self.assertEqual("http://smai-server:8502", network.resolve_network_urls().server_analytics_url)
 
 
 if __name__ == "__main__":
