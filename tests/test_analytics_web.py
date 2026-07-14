@@ -169,6 +169,24 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn('class="spark-area"', health_chart)
         self.assertNotIn('class="spark-area"', latency_chart)
 
+    def test_health_timeline_groups_heading_with_chart_for_equal_blocks(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_health_timeline({"overall": "healthy", "rollups": []})
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertIn('class="health-history-block"><div class="visual-heading">', MarkdownRecorder.rendered)
+        self.assertIn('</div></div><div class="health-micro-block"><div class="micro-trend-grid">', MarkdownRecorder.rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

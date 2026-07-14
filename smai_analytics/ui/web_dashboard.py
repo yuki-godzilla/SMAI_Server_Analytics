@@ -649,7 +649,8 @@ def _render_styles() -> None:
           .health-score-line { align-items: baseline; display: flex; gap: 8px; margin: 4px 0 2px; }
           .health-score-line strong { color: #F8FBFF; font-size: 1.55rem; }
           .health-score-line span { color: #8FA4BE; font-size: 0.76rem; }
-          .health-visual-surface { display: flex; flex-direction: column; min-height: 674px; }
+          .health-visual-surface { display: flex; flex-direction: column; gap: 15px; min-height: 674px; }
+          .health-history-block, .health-micro-block { display: flex; flex: 1 1 0; flex-direction: column; min-height: 0; }
           .health-history-chart { display: flex; flex: 1 1 0; min-height: 0; }
           .health-history-chart .sparkline, .health-history-chart .chart-unavailable { flex: 1; height: auto; }
           .sparkline { display: block; height: 200px; margin: 10px 0 8px; overflow: visible; width: 100%; }
@@ -658,7 +659,7 @@ def _render_styles() -> None:
           .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
           .spark-last { stroke: #070D19; stroke-width: 3; }
           .chart-unavailable { align-items: center; border: 1px dashed #31445e; color: #8FA4BE; display: flex; font-size: 0.8rem; height: 150px; justify-content: center; padding: 8px 14px; text-align: center; }
-          .micro-trend-grid { border-top: 1px solid #1E3047; display: grid; gap: 18px; grid-template-columns: 1fr 1fr; margin-top: 15px; padding-top: 15px; }
+          .micro-trend-grid { border-top: 1px solid #1E3047; display: grid; gap: 18px; grid-template-columns: 1fr 1fr; margin-top: 0; padding-top: 15px; }
           .health-visual-surface .micro-trend-grid { flex: 1 1 0; min-height: 0; }
           .micro-trend { min-width: 0; }
           .health-visual-surface .micro-trend { display: flex; flex-direction: column; }
@@ -699,7 +700,7 @@ def _render_styles() -> None:
             .detail-handoff { flex-direction: column; gap: 4px; }
             .dashboard-visual-grid { grid-template-columns: 1fr; }
             .health-visual-surface { min-height: 0; }
-            .health-history-chart { min-height: 220px; }
+            .health-history-block { min-height: 220px; }
             .network-canvas { height: 444px; }
             .network-image-node { width: 122px; }
             .network-server { width: 138px; }
@@ -1178,11 +1179,11 @@ def _render_health_timeline(data: Mapping[str, object]) -> None:
     latency_chart = _sparkline_svg(latency_points, color="#A78BFA", label="応答p95の推移")
     headroom_chart = _sparkline_svg(headroom_points, color="#34D399", label="空き容量率の推移", upper=100.0)
     st.markdown(
-        f'<section class="visual-surface health-visual-surface"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'
+        f'<section class="visual-surface health-visual-surface"><div class="health-history-block"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'
         f'<div class="health-score-line"><strong style="color:{current_color}">{score}</strong>'
-        f'<span>履歴カバレッジ {summary["coverage_percent"]}% / {summary["available_buckets"]} 枠</span></div><div class="health-history-chart">{health_chart}</div>'
-        f'<div class="micro-trend-grid"><div class="micro-trend"><header><span>応答 p95</span><strong>{latency_value}</strong></header>{latency_chart}</div>'
-        f'<div class="micro-trend"><header><span>最小空き率</span><strong>{headroom_value}</strong></header>{headroom_chart}</div></div></section>',
+        f'<span>履歴カバレッジ {summary["coverage_percent"]}% / {summary["available_buckets"]} 枠</span></div><div class="health-history-chart">{health_chart}</div></div>'
+        f'<div class="health-micro-block"><div class="micro-trend-grid"><div class="micro-trend"><header><span>応答 p95</span><strong>{latency_value}</strong></header>{latency_chart}</div>'
+        f'<div class="micro-trend"><header><span>最小空き率</span><strong>{headroom_value}</strong></header>{headroom_chart}</div></div></div></section>',
         unsafe_allow_html=True,
     )
 
