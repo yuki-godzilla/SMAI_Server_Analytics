@@ -53,7 +53,7 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertEqual(analytics_web.service_status({"streamlit health": "ok"}, "runtime"), "unknown")
         self.assertEqual(analytics_web.service_status({"streamlit health": "ok"}, "streamlit"), "ok")
 
-    def test_web_assets_and_lan_launcher_are_project_bound(self) -> None:
+    def test_web_assets_and_magicdns_launcher_are_project_bound(self) -> None:
         self.assertTrue(analytics_web.ANALYTICS_WORDMARK.is_file())
         self.assertTrue(analytics_web.ANALYTICS_WORDMARK_LARGE_TEXT.is_file())
         self.assertTrue(analytics_web.ANALYTICS_MASCOT.is_file())
@@ -66,7 +66,71 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         launcher = analytics_web.Path(__file__).resolve().parents[1] / "run_analytics_web.bat"
         content = launcher.read_text(encoding="utf-8")
         self.assertIn("--server.address 0.0.0.0", content)
-        self.assertIn("SMAI_ANALYTICS_PORT=8502", content)
+        self.assertIn("-m smai_analytics.network --emit-batch", content)
+        self.assertIn("SMAI_SERVER_ANALYTICS_URL", content)
+        self.assertNotIn("SMAI_ANALYTICS_LAN_IP", content)
+
+    def test_access_guidance_uses_only_the_magicdns_analytics_url(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_access_guidance()
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertIn("Server Analytics接続URL", MarkdownRecorder.rendered)
+        self.assertIn("http://desktop-bqrpr4c:8502", MarkdownRecorder.rendered)
+        self.assertIn("LAN内でも外出先でも共通", MarkdownRecorder.rendered)
+        self.assertNotIn("0.0.0.0", MarkdownRecorder.rendered)
+
+    def test_browser_visible_logs_and_session_details_redact_sensitive_values(self) -> None:
+        line = analytics_web.sanitize_log_line(
+            "api_key=live-secret Authorization: Bearer session-token user@example.com "
+            "C:\\Users\\operator\\trace.log 192.168.68.50 100.111.89.60"
+        )
+        session = analytics_web.session_details(
+            "session-1",
+            {"user_id": "user@example.com", "profile_name": "Operator Name"},
+        )
+
+        for sensitive in ("live-secret", "session-token", "user@example.com", "C:\\Users", "192.168.68.50", "100.111.89.60"):
+            self.assertNotIn(sensitive, line)
+        self.assertIn("[redacted-secret]", line)
+        self.assertIn("[redacted-email]", line)
+        self.assertIn("[redacted-path]", line)
+        self.assertIn("[redacted-ip]", line)
+        self.assertNotIn("user_id", session)
+        self.assertNotIn("profile_name", session)
+        self.assertNotIn("user@example.com", session.values())
+
+    def test_readonly_table_masks_sensitive_dynamic_values(self) -> None:
+        class MarkdownRecorder:
+            rendered = ""
+
+            @staticmethod
+            def markdown(value: str, **_: object) -> None:
+                MarkdownRecorder.rendered = value
+
+        original_streamlit = analytics_web.st
+        analytics_web.st = MarkdownRecorder
+        try:
+            analytics_web._render_readonly_table(
+                [{"状態": "正常", "詳細": "token=not-for-browser C:\\Runtime\\trace.log"}]
+            )
+        finally:
+            analytics_web.st = original_streamlit
+
+        self.assertNotIn("not-for-browser", MarkdownRecorder.rendered)
+        self.assertNotIn("C:\\Runtime", MarkdownRecorder.rendered)
+        self.assertIn("[redacted-secret]", MarkdownRecorder.rendered)
+        self.assertIn("[redacted-path]", MarkdownRecorder.rendered)
 
     def test_web_tab_contract_covers_every_operations_surface(self) -> None:
         self.assertEqual(

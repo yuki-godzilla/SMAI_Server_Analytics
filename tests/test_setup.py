@@ -52,7 +52,9 @@ class SetupLayoutTests(unittest.TestCase):
             REPOSITORY_ROOT / "smai_analytics" / "operations" / "backup.py",
             REPOSITORY_ROOT / "smai_analytics" / "operations" / "retention.py",
             REPOSITORY_ROOT / "smai_analytics" / "ui" / "web_dashboard.py",
+            REPOSITORY_ROOT / "smai_analytics" / "network.py",
             REPOSITORY_ROOT / "config" / "retention_policy.json",
+            REPOSITORY_ROOT / "config" / "network.json",
         )
 
         self.assertTrue(all(path.is_file() for path in expected_modules))

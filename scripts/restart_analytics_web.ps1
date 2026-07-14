@@ -24,8 +24,11 @@ $processes = Get-CimInstance Win32_Process -ErrorAction Stop |
     Sort-Object Id -Unique
 
 foreach ($process in $processes) {
-    Stop-Process -Id $process.Id -Force -ErrorAction Stop
-    Write-Host "[SMAI] Stopped Analytics Web process: $($process.Id)"
+    $liveProcess = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+    if ($null -ne $liveProcess) {
+        Stop-Process -Id $process.Id -Force -ErrorAction Stop
+        Write-Host "[SMAI] Stopped Analytics Web process: $($process.Id)"
+    }
 }
 
 Start-Process -FilePath $env:ComSpec -ArgumentList @("/d", "/c", "`"$startScript`"") -WorkingDirectory $projectRoot -WindowStyle Hidden

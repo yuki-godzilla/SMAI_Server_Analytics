@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "network": {
+    "tailscale_hostname": "desktop-bqrpr4c",
+    "main_application": {
+      "scheme": "http",
+      "port": 8501
+    },
+    "server_analytics": {
+      "scheme": "http",
+      "port": 8502
+    }
+  }
+}

@@ -8,9 +8,11 @@
 SMAI_Server_Analytics/
 ├─ smai_analytics/             # 実装本体
 │  ├─ monitoring/              # health / telemetry / session / task observations
+│  ├─ network.py                # MagicDNS URL settings and safe URL builder
 │  ├─ operations/              # backup / retention / audit / incident workflows
 │  └─ ui/                      # Streamlit Web Operations Console
 ├─ config/                     # versioned, non-secret operational configuration
+│  ├─ network.json              # shared hostname, distinct Main/Analytics ports
 │  └─ retention_policy.json
 ├─ setup/                      # runtime/dev dependencies and venv bootstrap
 ├─ .streamlit/                 # browser console defaults (loopback by default)
@@ -43,4 +45,4 @@ python backup.py create
 python retention.py --dry-run
 ```
 
-ブラウザー画面は`run_analytics_web.bat`で起動します。直接の`streamlit run analytics_web.py`はloopback（`127.0.0.1:8502`）が既定で、信頼済みLAN向けの`0.0.0.0`待受は明示的なバッチ起動だけが行います。
+ブラウザー画面は`run_analytics_web.bat`で起動します。通常アクセスは`config/network.json`から解決するMagicDNS URLの`http://desktop-bqrpr4c:8502`であり、サーバーPC内の確認は`http://localhost:8502`です。Main Applicationの`http://desktop-bqrpr4c:8501`とは同じホスト名・異なるポートで区別します。直接の`streamlit run analytics_web.py`はloopback（`127.0.0.1:8502`）が既定で、`0.0.0.0`待受は明示的なバッチ起動だけが行います。`0.0.0.0`は待受先であり、ブラウザーで開くURLではありません。

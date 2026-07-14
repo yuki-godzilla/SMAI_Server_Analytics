@@ -5,12 +5,16 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class WebOperationsContractTests(unittest.TestCase):
-    def test_web_launcher_is_the_lan_operations_entrypoint(self) -> None:
+    def test_web_launcher_is_the_magicdns_operations_entrypoint(self) -> None:
         launcher = (REPOSITORY_ROOT / "run_analytics_web.bat").read_text(encoding="utf-8")
+        network_config = (REPOSITORY_ROOT / "config" / "network.json").read_text(encoding="utf-8")
 
         self.assertIn("analytics_web.py", launcher)
         self.assertIn("--server.address 0.0.0.0", launcher)
-        self.assertIn("SMAI_ANALYTICS_PORT=8502", launcher)
+        self.assertIn("-m smai_analytics.network --emit-batch", launcher)
+        self.assertNotIn("SMAI_ANALYTICS_LAN_IP", launcher)
+        self.assertIn('"tailscale_hostname": "desktop-bqrpr4c"', network_config)
+        self.assertIn('"port": 8502', network_config)
         self.assertIn("--server.enableXsrfProtection true", launcher)
         self.assertNotIn("dashboard.py", launcher.casefold())
 
@@ -35,6 +39,7 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("analytics_web.py", script)
         self.assertIn("run_analytics_web.bat", script)
         self.assertIn("-WindowStyle Hidden", script)
+        self.assertIn("Get-Process -Id $process.Id -ErrorAction SilentlyContinue", script)
         self.assertIn("restart_analytics_web.ps1", launcher)
         self.assertNotIn("dashboard.py", script.casefold())
 

@@ -8,9 +8,11 @@ a separate port so it never competes with SMAI's primary Streamlit application.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
+import re
 import subprocess
 import sys
 from base64 import b64encode
@@ -20,6 +22,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Mapping
 
+from .. import network
 from ..monitoring import connection_watch, task_monitor, telemetry
 from ..operations import incident_automation
 
@@ -119,6 +122,19 @@ RESULT_FILTER_KEYS = {
     "エラー": "error",
     "重大": "critical",
 }
+_SENSITIVE_LOG_VALUE_PATTERN = re.compile(
+    r"""(?ix)
+    \b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passwd|
+    authorization|cookie|set-cookie|credential)\b
+    \s*(?:=|:\s*(?:bearer\s+)?)\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)
+    """
+)
+_EMAIL_PATTERN = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+_WINDOWS_PATH_PATTERN = re.compile(r"(?i)(?:[a-z]:\\|\\\\)[^\s\"'<>]+")
+_INTERNAL_IP_PATTERN = re.compile(
+    r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2})\b"
+)
+_URL_QUERY_PATTERN = re.compile(r"https?://[^\s?#]+(?:/[^\s?#]*)?\?[^\s]+", re.IGNORECASE)
 
 
 def expected_task_root(task: str) -> Path:
@@ -188,6 +204,27 @@ def compact_id(value: object, limit: int = 18) -> str:
     return text if len(text) <= limit else f"{text[:8]}…{text[-6:]}"
 
 
+def anonymized_identifier(value: object, *, prefix: str) -> str:
+    """Return a stable display identifier without exposing an account or session value."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return "—"
+    return f"{prefix}-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:10]}"
+
+
+def sanitize_log_line(value: object) -> str:
+    """Remove common secret, identity, address, and path forms from browser-visible logs."""
+
+    text = str(value or "").replace("\x00", "")
+    text = _SENSITIVE_LOG_VALUE_PATTERN.sub("[redacted-secret]", text)
+    text = _URL_QUERY_PATTERN.sub("[redacted-url-query]", text)
+    text = _EMAIL_PATTERN.sub("[redacted-email]", text)
+    text = _WINDOWS_PATH_PATTERN.sub("[redacted-path]", text)
+    text = _INTERNAL_IP_PATTERN.sub("[redacted-ip]", text)
+    return text[:1000]
+
+
 def format_bytes(value: object) -> str:
     try:
         size = max(0, int(value))
@@ -217,8 +254,7 @@ def session_details(session_id: object, value: object) -> dict[str, str]:
         return {
             "session_id": str(session_id),
             "last_seen_at": str(value.get("last_seen_at") or ""),
-            "user_id": str(value.get("user_id") or ""),
-            "profile_name": str(value.get("profile_name") or ""),
+            "display_user_id": anonymized_identifier(value.get("user_id") or session_id, prefix="利用者"),
             "device_id": str(value.get("device_id") or ""),
             "client_type": client_type(raw_client_type),
             "connection_state": str(value.get("connection_state") or "unknown"),
@@ -226,8 +262,7 @@ def session_details(session_id: object, value: object) -> dict[str, str]:
     return {
         "session_id": str(session_id),
         "last_seen_at": str(value or ""),
-        "user_id": "",
-        "profile_name": "",
+        "display_user_id": anonymized_identifier(session_id, prefix="利用者"),
         "device_id": "",
         "client_type": "unknown",
         "connection_state": "unknown",
@@ -298,7 +333,15 @@ def recent_logs() -> list[str]:
     lines: list[str] = []
     for path in files[:5]:
         try:
-            lines.extend([f"[{path.name}]", *path.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]])
+            lines.extend(
+                [
+                    f"[{sanitize_log_line(path.name)}]",
+                    *(
+                        sanitize_log_line(line)
+                        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]
+                    ),
+                ]
+            )
         except OSError:
             continue
     return lines[-100:] or ["直近ログはありません"]
@@ -482,6 +525,11 @@ def _render_styles() -> None:
           .panel-kicker { color: #60A5FA; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 2px; }
           .panel-title { color: #F8FBFF; font-size: 1.06rem; font-weight: 800; margin: 0 0 4px; }
           .panel-caption, .section-note { color: #AAB8C8; font-size: 0.88rem; margin: 0 0 12px; }
+          .access-guidance { background: linear-gradient(135deg, rgba(14, 31, 53, 0.92), rgba(11, 20, 35, 0.96)); border: 1px solid #2B6387; border-left: 4px solid #22D3EE; border-radius: 12px; margin: 12px 0 18px; padding: 14px 17px; }
+          .access-guidance h2 { color: #F8FBFF; font-size: 1rem; margin: 0 0 6px; }
+          .access-guidance p { color: #B9C7D8; margin: 5px 0; }
+          .access-guidance code { color: #67E8F9; font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
+          .access-guidance small { color: #AAB8C8; display: block; line-height: 1.55; margin-top: 8px; }
           .topology-node { min-height: 164px; padding: 12px; text-align: center; }
           .topology-image { display: block; height: 60px; margin: 0 auto 4px; object-fit: contain; width: 76px; }
           .topology-node strong { color: #F8FBFF; display: block; margin-top: 3px; }
@@ -1076,6 +1124,30 @@ def _render_metrics(data: Mapping[str, object]) -> None:
     columns[3].caption(format_timestamp(data["checked_at"]))
 
 
+def _render_access_guidance() -> None:
+    """Show one MagicDNS URL without falling back to LAN or Tailscale IP addresses."""
+
+    assert st is not None
+    try:
+        urls = network.resolve_network_urls()
+    except network.NetworkConfigurationError:
+        st.warning("Server Analyticsの接続設定を確認できません。通常URLは表示していません。")
+        return
+    st.markdown(
+        "<section class=\"access-guidance\">"
+        "<p class=\"panel-kicker\">SERVER ANALYTICS ACCESS</p>"
+        "<h2>Server Analytics接続URL</h2>"
+        f"<code>{html.escape(urls.server_analytics_url)}</code>"
+        "<p>LAN内でも外出先でも共通のURLです。接続する端末でTailscaleを起動してください。</p>"
+        "<small>MagicDNSはサーバーPCをIPアドレスではなく端末名で接続する仕組みです。"
+        "Main ApplicationとServer Analyticsは同じサーバー名、異なるポート番号で区別します。"
+        "この画面はサーバー運用者向けです。接続できない場合は、Tailscale、サーバーPC、"
+        "Server Analyticsの起動状態、URLとポート番号を順に確認してください。</small>"
+        "</section>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_topology_node(column: object, *, label: str, detail: str, status: str, image: bytes | str | None = None) -> None:
     assert st is not None
     with column:
@@ -1128,7 +1200,8 @@ def _render_readonly_table(rows: list[Mapping[str, object]]) -> None:
         cells: list[str] = []
         for column in columns:
             label = str(column)
-            value = str(row.get(column) if row.get(column) not in (None, "") else "—")
+            raw_value = row.get(column) if row.get(column) not in (None, "") else "—"
+            value = sanitize_log_line(raw_value)
             classes = "responsive-table-value"
             if label in {"状態", "鮮度", "結果", "重要度"}:
                 classes += f" responsive-table-status responsive-table-status-{_table_status_class(value)}"
@@ -1621,12 +1694,9 @@ def _render_connections(data: Mapping[str, object]) -> None:
         rows = []
         for session in sessions:
             communication = session_connection_status(session)
-            user = session["profile_name"] or session["user_id"] or compact_id(session["session_id"])
-            if session["profile_name"] and session["user_id"]:
-                user = f"{session['profile_name']} / {compact_id(session['user_id'])}"
             rows.append(
                 {
-                    "ユーザー / プロフィール": user,
+                    "利用者": session["display_user_id"],
                     "端末種別": CLIENT_TYPE_LABELS.get(session["client_type"], "種別不明"),
                     "最終通信": f"{relative_time(session['last_seen_at'])} / {format_timestamp(session['last_seen_at'])}",
                     "端末擬似ID": compact_id(session["device_id"]) if session["device_id"] else "—",
@@ -1647,7 +1717,7 @@ def _render_connections(data: Mapping[str, object]) -> None:
             "端末種別": CLIENT_TYPE_LABELS.get(str(item.get("client_type") or "unknown"), "種別不明"),
             "観測結果": str(item.get("event") or "—"),
             "状態": status_label(item.get("status")),
-            "セッション": compact_id(item.get("session_id")),
+            "セッション": anonymized_identifier(item.get("session_id"), prefix="セッション"),
         }
         for item in reversed(raw_events)
         if isinstance(item, dict)
@@ -1660,14 +1730,14 @@ def _render_connections(data: Mapping[str, object]) -> None:
 
 def _render_activity_history(data: Mapping[str, object]) -> None:
     assert st is not None
-    _panel_heading("操作履歴", "監査イベントを期間・結果・ユーザーID・操作名で絞り込みます。", kicker="ACTIVITY HISTORY")
+    _panel_heading("操作履歴", "監査イベントを期間・結果・匿名利用者ID・操作名で絞り込みます。", kicker="ACTIVITY HISTORY")
     period, result, user, action = st.columns((2, 2, 3, 3))
     with period:
         selected_window = st.selectbox("期間", tuple(TIME_WINDOW_OPTIONS), key="activity_window")
     with result:
         selected_result = st.selectbox("結果", HISTORY_RESULT_OPTIONS, key="activity_result")
     with user:
-        user_query = st.text_input("ユーザーID", key="activity_user").strip().casefold()
+        user_query = st.text_input("匿名利用者ID", key="activity_user").strip().casefold()
     with action:
         action_query = st.text_input("操作名", key="activity_action").strip().casefold()
     result_key = filter_key(selected_result)
@@ -1677,7 +1747,10 @@ def _render_activity_history(data: Mapping[str, object]) -> None:
         for event in events
         if event_within_window(event.get("timestamp"), selected_window)
         and (result_key == "all" or str(event.get("result") or "").casefold() == result_key)
-        and (not user_query or user_query in str(event.get("user_id") or "").casefold())
+        and (
+            not user_query
+            or user_query in anonymized_identifier(event.get("user_id"), prefix="利用者").casefold()
+        )
         and (not action_query or action_query in str(event.get("action") or "").casefold())
     ]
     successes = sum(1 for event in matched if str(event.get("result") or "").casefold() == "ok")
@@ -1690,11 +1763,11 @@ def _render_activity_history(data: Mapping[str, object]) -> None:
     rows = [
         {
             "時刻": format_timestamp(event.get("timestamp")),
-            "ユーザー": compact_id(event.get("user_id")),
+            "ユーザー": anonymized_identifier(event.get("user_id"), prefix="利用者"),
             "操作": str(event.get("action") or "—"),
             "対象": str(event.get("target") or "—"),
             "結果": status_label(event.get("result")),
-            "端末": compact_id(event.get("device_id")),
+            "端末": anonymized_identifier(event.get("device_id"), prefix="端末"),
             "所要時間": f"{event.get('duration_ms')} ms" if event.get("duration_ms") not in {None, ""} else "—",
         }
         for event in matched
@@ -1782,7 +1855,11 @@ def _render_reports(data: Mapping[str, object]) -> None:
         "credential_unavailable": "要確認",
     }.get(notification_state, "不明")
     metrics = st.columns(4)
-    metrics[0].metric("復元検証", status_label(smoke.get("status")), str(smoke.get("detail") or "記録なし"))
+    metrics[0].metric(
+        "復元検証",
+        status_label(smoke.get("status")),
+        sanitize_log_line(smoke.get("detail") or "記録なし"),
+    )
     metrics[1].metric("最小空き率", "—" if headroom is None else f"{headroom:.1f}%", "SMAI data / Runtime")
     metrics[2].metric(
         "履歴カバレッジ",
@@ -1792,10 +1869,10 @@ def _render_reports(data: Mapping[str, object]) -> None:
     metrics[3].metric(
         "Gmail通知",
         notification_label,
-        f"最終配送: {str(notification.get('last_delivery') or '記録なし')}",
+        f"最終配送: {sanitize_log_line(notification.get('last_delivery') or '記録なし')}",
     )
     with metrics[3]:
-        st.caption(str(notification.get("detail") or "状態を確認できません"))
+        st.caption(sanitize_log_line(notification.get("detail") or "状態を確認できません"))
     st.caption("復元の実行結果と期限はタスク、容量・healthの時系列は推移タブで詳しく確認できます。")
 
     _panel_heading(
@@ -1849,7 +1926,7 @@ def _render_tasks(data: Mapping[str, object]) -> None:
 def _render_logs(data: Mapping[str, object]) -> None:
     assert st is not None
     _panel_heading("ログ一覧", "直近の監視・運用ログを最大100行まで表示します。", kicker="LOGS")
-    lines = [str(item) for item in data.get("logs", [])] if isinstance(data.get("logs"), list) else []
+    lines = [sanitize_log_line(item) for item in data.get("logs", [])] if isinstance(data.get("logs"), list) else []
     errors = sum(any(token in line.casefold() for token in ("error", "failed", "critical")) for line in lines)
     warnings = sum("warn" in line.casefold() for line in lines)
     sources = sum(1 for line in lines if line.startswith("["))
@@ -1865,6 +1942,7 @@ def render_dashboard() -> None:
     assert st is not None
     data = cached_operations_snapshot()
     _render_header(data)
+    _render_access_guidance()
     _render_metrics(data)
     if data["health_note"]:
         st.warning(str(data["health_note"]))
