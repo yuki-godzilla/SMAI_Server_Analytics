@@ -661,6 +661,28 @@ def _queue_recovery_notifications(*, now: datetime) -> int:
     return recovered
 
 
+def _record_codex_approval(*, request_id: str, report_path: Path, approved_at: str) -> None:
+    """Expose an administrator approval as a separate read-only report timeline event."""
+
+    existing = _load_jsonl(REPORT_INDEX_PATH)
+    if any(
+        _safe_text(row.get("request_id"), limit=120) == request_id and _safe_text(row.get("status"), limit=40) == "codex_approved"
+        for row in existing
+    ):
+        return
+    _append_jsonl(
+        REPORT_INDEX_PATH,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "request_id": request_id,
+            "status": "codex_approved",
+            "reported_at": approved_at,
+            "report_path": str(report_path),
+            "summary": "Administrator approved the Codex repair request.",
+        },
+    )
+
+
 def approve_codex_request(*, request_id: str, now: datetime | None = None) -> Path:
     """Create the only Codex-ready work order, after local administrator approval."""
 
@@ -673,6 +695,7 @@ def approve_codex_request(*, request_id: str, now: datetime | None = None) -> Pa
     APPROVALS_DIR.mkdir(parents=True, exist_ok=True)
     approval_path = APPROVALS_DIR / f"{normalized_id}.md"
     if approval_path.is_file():
+        _record_codex_approval(request_id=normalized_id, report_path=report_path, approved_at=approved_at)
         return approval_path
     approval_path.write_text(
         "\n".join(
@@ -699,6 +722,7 @@ def approve_codex_request(*, request_id: str, now: datetime | None = None) -> Pa
     )
     with report_path.open("a", encoding="utf-8") as stream:
         stream.write(f"\n## Administrator approval ({approved_at})\n\n- Status: `codex_approved`\n")
+    _record_codex_approval(request_id=normalized_id, report_path=report_path, approved_at=approved_at)
     request = _request_record(normalized_id)
     queue_administrator_notification(
         {"request_id": normalized_id, "severity": _safe_text(request.get("severity") or "critical", limit=20)},

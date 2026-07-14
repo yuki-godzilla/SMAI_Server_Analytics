@@ -181,6 +181,7 @@ class IncidentAutomationTests(unittest.TestCase):
         self.assertTrue(approval.is_file())
         self.assertIn("Approved Codex repair request", approval.read_text(encoding="utf-8"))
         self.assertIn("codex_approved", (incident_automation.REPORTS_DIR / f"{request['request_id']}.md").read_text(encoding="utf-8"))
+        self.assertIn("codex_approved", [str(row.get("status")) for row in incident_automation.report_rows()])
 
     def test_unresolved_critical_is_reminded_once_and_healthy_recovery_is_recorded_once(self) -> None:
         incident = {
