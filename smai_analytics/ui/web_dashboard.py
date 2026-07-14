@@ -369,6 +369,10 @@ def collect_operations_snapshot() -> dict[str, object]:
     except (OSError, ValueError, TypeError):
         reports = []
     try:
+        notification = incident_automation.notification_status()
+    except (OSError, ValueError, TypeError):
+        notification = {"status": "unknown", "detail": "通知設定の状態を確認できません"}
+    try:
         rollups = telemetry.read_health_rollups(RUNTIME_ROOT, window=timedelta(days=30))
     except (OSError, ValueError, TypeError):
         rollups = []
@@ -392,6 +396,7 @@ def collect_operations_snapshot() -> dict[str, object]:
         "tasks": task_rows(),
         "events": events,
         "reports": reports,
+        "notification": notification,
         "logs": recent_logs(),
         "rollups": rollups,
         "connection_history": connection_history,
@@ -1768,7 +1773,15 @@ def _render_reports(data: Mapping[str, object]) -> None:
         default=None,
     )
     summary = telemetry.window_summary(_rollups_for_window(data, "過去24時間"), window=timedelta(hours=24))
-    metrics = st.columns(3)
+    notification = data.get("notification") if isinstance(data.get("notification"), dict) else {}
+    notification_state = str(notification.get("status") or "unknown")
+    notification_label = {
+        "ready": "設定済み",
+        "legacy_ready": "設定済み",
+        "unconfigured": "未設定",
+        "credential_unavailable": "要確認",
+    }.get(notification_state, "不明")
+    metrics = st.columns(4)
     metrics[0].metric("復元検証", status_label(smoke.get("status")), str(smoke.get("detail") or "記録なし"))
     metrics[1].metric("最小空き率", "—" if headroom is None else f"{headroom:.1f}%", "SMAI data / Runtime")
     metrics[2].metric(
@@ -1776,9 +1789,20 @@ def _render_reports(data: Mapping[str, object]) -> None:
         f"{summary['coverage_percent']}%",
         f"{summary['available_buckets']} / {summary['expected_buckets']} 枠",
     )
+    metrics[3].metric(
+        "Gmail通知",
+        notification_label,
+        f"最終配送: {str(notification.get('last_delivery') or '記録なし')}",
+    )
+    with metrics[3]:
+        st.caption(str(notification.get("detail") or "状態を確認できません"))
     st.caption("復元の実行結果と期限はタスク、容量・healthの時系列は推移タブで詳しく確認できます。")
 
-    _panel_heading("改善レポート", "重大な障害の調査結果を確認します。メール送信は別途SMTP設定がある場合だけです。", kicker="REPORTS")
+    _panel_heading(
+        "改善レポート",
+        "重大な障害の調査結果と、固定Gmail通知の安全な配送状態を確認します。",
+        kicker="REPORTS",
+    )
     reports = data.get("reports")
     rows = [
         {

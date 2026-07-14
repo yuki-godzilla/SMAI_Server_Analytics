@@ -43,6 +43,22 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\unregister_smai_analytics_autostart_task.ps1
 ```
 
+## 固定Gmail障害通知
+
+critical障害の固定Gmail通知は初期状態で無効です。Googleアカウントで2段階認証と`SMAI Analytics Alerts`用のアプリパスワードを作成した後、対話中のWindowsユーザーで次を一度だけ実行します。
+
+```powershell
+.\scripts\configure_gmail_notifications.ps1
+```
+
+GmailアドレスはRuntimeのGit管理外設定、アプリパスワードはWindows Credential Managerだけへ保存されます。設定後、明示操作で最小のテスト通知を送れます。
+
+```powershell
+.\scripts\test_gmail_notifications.ps1
+```
+
+Analytics画面は読み取り専用のまま、Gmail通知の設定状態と最終配送結果だけを表示します。詳細な手順は[`Documents/08_Incident_Automation_Operations.md`](Documents/08_Incident_Automation_Operations.md)を参照してください。
+
 ## セットアップと確認
 
 依存関係は`setup/`に分離しています。Analytics専用環境は次で作成・更新します。

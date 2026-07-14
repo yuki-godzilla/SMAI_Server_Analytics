@@ -23,6 +23,8 @@ class IncidentAutomationTests(unittest.TestCase):
             "REQUEST_INDEX_PATH": incident_automation.REQUEST_INDEX_PATH,
             "REPORT_INDEX_PATH": incident_automation.REPORT_INDEX_PATH,
             "OUTBOX_INDEX_PATH": incident_automation.OUTBOX_INDEX_PATH,
+            "GMAIL_CONFIG_PATH": incident_automation.GMAIL_CONFIG_PATH,
+            "APPROVALS_DIR": incident_automation.APPROVALS_DIR,
         }
         incident_automation.INCIDENT_ROOT = root
         incident_automation.REQUESTS_DIR = root / "codex_requests"
@@ -32,6 +34,8 @@ class IncidentAutomationTests(unittest.TestCase):
         incident_automation.REQUEST_INDEX_PATH = root / "codex_requests.jsonl"
         incident_automation.REPORT_INDEX_PATH = root / "improvement_reports.jsonl"
         incident_automation.OUTBOX_INDEX_PATH = root / "admin_notifications.jsonl"
+        incident_automation.GMAIL_CONFIG_PATH = root / "gmail_notification.json"
+        incident_automation.APPROVALS_DIR = root / "codex_approvals"
 
     def tearDown(self) -> None:
         for name, value in self.paths.items():
@@ -89,6 +93,132 @@ class IncidentAutomationTests(unittest.TestCase):
     @patch.dict("os.environ", {}, clear=True)
     def test_delivery_is_disabled_without_explicit_smtp_configuration(self) -> None:
         self.assertEqual(incident_automation.deliver_queued_notifications(), 0)
+
+    def test_fixed_gmail_configuration_keeps_the_app_password_out_of_runtime(self) -> None:
+        stored: dict[str, str] = {}
+
+        def write_secret(*, target: str, username: str, secret: str) -> None:
+            stored.update(target=target, username=username, secret=secret)
+
+        with patch.object(incident_automation.windows_credentials, "write_generic_secret", side_effect=write_secret), patch.object(
+            incident_automation, "_read_gmail_secret", return_value=("admin@example.com", "app-password")
+        ):
+            status = incident_automation.configure_fixed_gmail(
+                sender="admin@example.com",
+                recipient="notify@example.com",
+                app_password="app-password",
+            )
+
+        persisted = json.loads(incident_automation.GMAIL_CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual("SMAI-Analytics-Gmail-SMTP", stored["target"])
+        self.assertEqual("app-password", stored["secret"])
+        self.assertNotIn("app-password", incident_automation.GMAIL_CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual("ready", status["status"])
+        self.assertNotIn("notify@example.com", json.dumps(status, ensure_ascii=False))
+
+    def test_gmail_delivery_uses_protected_configuration_and_records_success(self) -> None:
+        incident = {
+            "severity": "critical",
+            "source": "health",
+            "fingerprint": "critical-health-mail",
+            "title": "Test",
+            "evidence": ["TCP 8501"],
+        }
+        request = incident_automation.create_codex_request(incident, now=datetime(2026, 7, 12, tzinfo=UTC))
+        configuration = {
+            "provider": "gmail_smtp",
+            "recipient": "notify@example.com",
+            "sender": "admin@example.com",
+            "host": "smtp.gmail.com",
+            "port": 587,
+            "username": "admin@example.com",
+            "password": "app-password",
+        }
+        with patch.object(incident_automation, "_delivery_configuration", return_value=configuration), patch.object(
+            incident_automation, "_send_message"
+        ) as send:
+            delivered = incident_automation.deliver_queued_notifications(now=datetime(2026, 7, 12, 0, 1, tzinfo=UTC))
+
+        payload = json.loads(next(incident_automation.OUTBOX_DIR.glob("mail-*.json")).read_text(encoding="utf-8"))
+        self.assertEqual(1, delivered)
+        self.assertEqual("delivered", payload["status"])
+        self.assertEqual(str(request["request_id"]), payload["request_id"])
+        self.assertNotIn("app-password", json.dumps(payload, ensure_ascii=False))
+        send.assert_called_once()
+
+    def test_administrator_approval_creates_a_separate_codex_ready_work_order(self) -> None:
+        incident = {
+            "severity": "critical",
+            "source": "health",
+            "fingerprint": "critical-health-approval",
+            "title": "Test",
+            "evidence": ["TCP 8501"],
+        }
+        request = incident_automation.create_codex_request(incident, now=datetime(2026, 7, 12, tzinfo=UTC))
+
+        approval = incident_automation.approve_codex_request(
+            request_id=str(request["request_id"]), now=datetime(2026, 7, 12, 0, 2, tzinfo=UTC)
+        )
+
+        self.assertTrue(approval.is_file())
+        self.assertIn("Approved Codex repair request", approval.read_text(encoding="utf-8"))
+        self.assertIn("codex_approved", (incident_automation.REPORTS_DIR / f"{request['request_id']}.md").read_text(encoding="utf-8"))
+
+    def test_unresolved_critical_is_reminded_once_and_healthy_recovery_is_recorded_once(self) -> None:
+        incident = {
+            "severity": "critical",
+            "source": "health",
+            "fingerprint": "critical-health-reminder",
+            "title": "Test",
+            "evidence": ["TCP 8501"],
+        }
+        started = datetime(2026, 7, 12, tzinfo=UTC)
+        request = incident_automation.create_codex_request(incident, now=started)
+
+        self.assertTrue(incident_automation._queue_repeat_notification(incident, now=started + timedelta(minutes=15)))
+        self.assertFalse(incident_automation._queue_repeat_notification(incident, now=started + timedelta(minutes=16)))
+        self.assertEqual(1, incident_automation._queue_recovery_notifications(now=started + timedelta(minutes=20)))
+        self.assertEqual(0, incident_automation._queue_recovery_notifications(now=started + timedelta(minutes=21)))
+
+        kinds = [
+            json.loads(path.read_text(encoding="utf-8"))["kind"]
+            for path in incident_automation.OUTBOX_DIR.glob("mail-*.json")
+        ]
+        self.assertEqual(1, kinds.count("repeat"))
+        self.assertEqual(1, kinds.count("recovery"))
+        report = (incident_automation.REPORTS_DIR / f"{request['request_id']}.md").read_text(encoding="utf-8")
+        self.assertIn("Monitor recovery", report)
+
+    def test_delivery_failure_is_retried_then_marked_failed(self) -> None:
+        incident = {
+            "severity": "critical",
+            "source": "health",
+            "fingerprint": "critical-health-retry",
+            "title": "Test",
+            "evidence": ["TCP 8501"],
+        }
+        started = datetime(2026, 7, 12, tzinfo=UTC)
+        incident_automation.create_codex_request(incident, now=started)
+        configuration = {
+            "provider": "gmail_smtp",
+            "recipient": "notify@example.com",
+            "sender": "admin@example.com",
+            "host": "smtp.gmail.com",
+            "port": 587,
+            "username": "admin@example.com",
+            "password": "app-password",
+        }
+        with patch.object(incident_automation, "_delivery_configuration", return_value=configuration), patch.object(
+            incident_automation, "_send_message", side_effect=OSError("network unavailable")
+        ) as send:
+            for attempt, minute in enumerate((0, 5, 20), start=1):
+                self.assertEqual(0, incident_automation.deliver_queued_notifications(now=started + timedelta(minutes=minute)))
+                payload = json.loads(next(incident_automation.OUTBOX_DIR.glob("mail-*.json")).read_text(encoding="utf-8"))
+                self.assertEqual(attempt, payload["attempt_count"])
+
+        self.assertEqual(3, send.call_count)
+        self.assertEqual("delivery_failed", payload["status"])
+        self.assertNotIn("retry_not_before", payload)
 
 
 if __name__ == "__main__":

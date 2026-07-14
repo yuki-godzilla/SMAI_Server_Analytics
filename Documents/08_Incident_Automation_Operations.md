@@ -11,12 +11,14 @@ SMAI Server Analytics が L1 を含む `critical` なヘルス警告を検知し
 ```text
 critical health
   -> 30分重複抑制
-  -> Runtime/codex_requests/<incident>.md
+  -> Runtime/codex_requests/<incident>.md (管理者承認待ちの下書き)
   -> Runtime/reports/<incident>.md (pending)
+  -> Gmail設定済みなら管理者へ通知、未設定ならlocal outboxだけへ記録
+  -> 管理者が approve-codex を明示実行
+  -> Runtime/codex_approvals/<incident>.md (Codex作業依頼)
   -> Codex / 管理者が調査・修正
   -> incident_automation.py report
-  -> report index + admin outbox
-  -> SMTP明示設定時だけ deliver-email
+  -> report index + admin outbox + Gmail通知
 ```
 
 ## 保存先
@@ -29,6 +31,8 @@ critical health
 - `improvement_reports.jsonl`: Analytics Reportsタブが読むレポートインデックス
 - `admin_outbox/`: 管理者メール送信待ちのJSON
 - `admin_notifications.jsonl`: 通知状態の監査インデックス
+- `gmail_notification.json`: 固定Gmail宛先と再送設定。個人データを含むためGit管理しない
+- `codex_approvals/`: 管理者CLIで承認されたCodex向け作業依頼
 
 ## 定期監視の開始
 
@@ -67,33 +71,48 @@ python .\incident_automation.py report `
 
 `--status` は `investigated`、`resolved`、`blocked` を基本とします。未確認事項を成功として記録しません。
 
-## 管理者メール
+## 固定Gmail通知
 
-メール配送は初期状態で無効です。`SMAI_ADMIN_EMAIL_TO` が未設定ならOutboxへ `pending_configuration` として保存し、外部送信は行いません。
+メール配送は初期状態で無効です。固定Gmail設定がない場合はOutboxへ`pending_configuration`として保存し、外部送信はしません。既存の明示SMTP環境変数は移行互換のためだけに残しますが、新規設定はGmailを正とします。
 
-配送を有効にする場合だけ、OSの環境変数または既存のsecret管理で次を設定します。値をGit、Runtimeログ、レポート、UIへ記録してはいけません。
+Gmailアカウントでは先に2段階認証を有効化し、`SMAI Analytics Alerts`用のアプリパスワードを作成します。アプリパスワードをチャット、ソース、設定ファイル、環境変数、Runtimeログへ貼り付けてはいけません。
 
-```text
-SMAI_ADMIN_EMAIL_TO
-SMAI_ADMIN_EMAIL_FROM
-SMAI_ADMIN_SMTP_HOST
-SMAI_ADMIN_SMTP_PORT=587
-SMAI_ADMIN_SMTP_USERNAME       # 必要な場合のみ
-SMAI_ADMIN_SMTP_PASSWORD       # 必要な場合のみ
-```
-
-設定後も配送は明示操作です。
+初回設定は、対話中のWindowsユーザーで次を実行します。
 
 ```powershell
-python .\incident_automation.py deliver-email
+.\scripts\configure_gmail_notifications.ps1
 ```
 
-メールには対応する改善レポートMarkdownだけを添付します。秘密情報、ユーザー入力、raw provider response、LLM promptは添付・記録しません。
+このコマンドは送信元Gmailと固定通知先をRuntimeへ保存し、アプリパスワードだけをWindows Credential Managerの`SMAI-Analytics-Gmail-SMTP`へ保存します。画面・ログにはメールアドレスやパスワードを表示しません。Analytics画面は読み取り専用のまま、`設定済み`、`未設定`、`要確認`と最終配送結果だけを表示します。
+
+設定後は、実障害と無関係な最小のテストメールを明示実行して確認します。
+
+```powershell
+.\scripts\test_gmail_notifications.ps1
+```
+
+`SMAI-Incident-Automation`タスクが5分ごとに実行されると、critical検知、15分後の未復旧再通知、healthy復帰時の復旧通知を処理します。メール本文と添付レポートはboundedな運用証跡だけであり、secret、ユーザー入力、生ログ、raw provider response、LLM promptを含めません。配送失敗は最大3回まで遅延再試行し、成功として扱いません。
+
+状態だけを確認する場合は次を使います。
+
+```powershell
+python .\incident_automation.py notification-status
+```
+
+## Codex作業依頼の管理者承認
+
+critical検知時点では`codex_requests/`へ下書きだけを保存し、Codexの修正作業は開始しません。管理者が内容を確認した後、次を明示実行します。
+
+```powershell
+python .\incident_automation.py approve-codex --request-id <incident-id>
+```
+
+承認済み依頼は`codex_approvals/`へ別ファイルとして保存されます。依頼には影響調査、決定的テスト、`http://localhost:8502`の実画面確認、管理者への修正報告を必須として記載します。メール返信やAnalytics画面の操作を承認として解釈しません。
 
 ## 安全ガード
 
-- `critical` 以外のヘルス状態は自動でCodex依頼にしません。
-- 同一fingerprintは30分以内に重複発行しません。
+- `critical` 以外のヘルス状態はCodex下書きを自動生成しません。
+- 同一fingerprintは30分以内に重複した下書きを発行しません。未復旧のcriticalだけは15分ごとに同じIncident IDで再通知します。
 - AnalyticsはSMAIを自動修正、再起動、commit、pushしません。
-- Codexが修正する場合もSMAI側AGENTS.mdの検証・commit・push規約に従います。
+- Codex作業は管理者承認済みの依頼だけで開始し、SMAI側AGENTS.mdの検証・commit・push規約に従います。
 - SMTP未設定、添付不在、配送失敗は成功扱いせず、Outboxの状態に残します。
