@@ -116,6 +116,24 @@ class IncidentAutomationTests(unittest.TestCase):
         self.assertEqual("ready", status["status"])
         self.assertNotIn("notify@example.com", json.dumps(status, ensure_ascii=False))
 
+    def test_gmail_app_password_is_normalized_when_google_displays_it_in_groups(self) -> None:
+        incident_automation._write_json_atomic(
+            incident_automation.GMAIL_CONFIG_PATH,
+            {
+                "provider": "gmail_smtp",
+                "sender": "admin@example.com",
+                "recipient": "notify@example.com",
+                "host": "smtp.gmail.com",
+                "port": 587,
+                "credential_target": "test-target",
+            },
+        )
+        with patch.object(incident_automation, "_read_gmail_secret", return_value=("admin@example.com", "abcd efgh ijkl mnop")):
+            configuration = incident_automation._gmail_delivery_configuration()
+
+        self.assertIsNotNone(configuration)
+        self.assertEqual("abcdefghijklmnop", configuration["password"])
+
     def test_gmail_delivery_uses_protected_configuration_and_records_success(self) -> None:
         incident = {
             "severity": "critical",

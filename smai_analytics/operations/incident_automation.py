@@ -123,6 +123,12 @@ def _valid_email(value: object) -> str:
     return candidate
 
 
+def _normalized_gmail_app_password(value: object) -> str:
+    """Accept Google's visually grouped app password without persisting its spaces."""
+
+    return "".join(str(value or "").split())
+
+
 def _read_gmail_secret(target: str) -> tuple[str, str] | None:
     """Read the app password only at delivery time; callers must not log it."""
 
@@ -134,12 +140,13 @@ def configure_fixed_gmail(*, sender: str, recipient: str, app_password: str) -> 
 
     normalized_sender = _valid_email(sender)
     normalized_recipient = _valid_email(recipient)
-    if not app_password.strip():
+    normalized_password = _normalized_gmail_app_password(app_password)
+    if not normalized_password:
         raise ValueError("A Gmail app password is required.")
     windows_credentials.write_generic_secret(
         target=GMAIL_CREDENTIAL_TARGET,
         username=normalized_sender,
-        secret=app_password.strip(),
+        secret=normalized_password,
     )
     _write_json_atomic(
         GMAIL_CONFIG_PATH,
@@ -174,6 +181,7 @@ def _gmail_delivery_configuration() -> dict[str, object] | None:
     if credential is None:
         return None
     username, password = credential
+    password = _normalized_gmail_app_password(password)
     if not password:
         return None
     return {
