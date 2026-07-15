@@ -42,6 +42,12 @@ BACKUP_SMOKE_STATE = RUNTIME_ROOT / "backup_restore_smoke.json"
 CONNECTION_WATCH_STATE = RUNTIME_ROOT / "connections/watch_state.json"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
 ASSET_ROOT = REPOSITORY_ROOT / "assets"
+# Keep the expensive local probe independent from visual refreshes.  The two
+# UI periods are intentionally co-prime, so a single browser does not redraw
+# its summary and active detail pane at the same cadence.
+SNAPSHOT_REFRESH_INTERVAL_SECONDS = 15
+SUMMARY_REFRESH_INTERVAL_SECONDS = 5
+ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS = 7
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_MASCOT_HEADER = ASSET_ROOT / "smai-analytics-mascot-header.png"
@@ -454,7 +460,7 @@ def collect_operations_snapshot() -> dict[str, object]:
 
 if st is not None:
 
-    @st.cache_data(ttl=5, show_spinner=False)
+    @st.cache_data(ttl=SNAPSHOT_REFRESH_INTERVAL_SECONDS, show_spinner=False)
     def cached_operations_snapshot() -> dict[str, object]:
         return collect_operations_snapshot()
 
@@ -561,6 +567,17 @@ def _render_styles() -> None:
           [data-baseweb="tab-list"] { gap: 5px; }
           [data-baseweb="tab"] { color: #AAB8C8; font-weight: 750; padding-left: 16px; padding-right: 16px; }
           [aria-selected="true"][data-baseweb="tab"] { color: #22D3EE; }
+          /* The live screen selector is a radio widget so Streamlit does not
+             render every hidden surface.  It remains visually and
+             operationally equivalent to the previous tab strip. */
+          .st-key-operations_view { margin: 8px 0 16px; }
+          .st-key-operations_view [role="radiogroup"] { border-bottom: 1px solid #26384f; display: flex; gap: 0; }
+          .st-key-operations_view label[data-baseweb="radio"] { align-items: stretch; border-bottom: 2px solid transparent; color: #AAB8C8; cursor: pointer; display: flex; font-weight: 750; margin: 0; min-height: 44px; padding: 0 15px; }
+          .st-key-operations_view label[data-baseweb="radio"] > div:first-child { height: 1px; margin: -1px; opacity: 0; overflow: hidden; pointer-events: none; position: absolute; width: 1px; }
+          .st-key-operations_view label[data-baseweb="radio"] > div:last-child { align-items: center; display: flex; }
+          .st-key-operations_view label[data-baseweb="radio"] p { color: inherit; margin: 0; white-space: nowrap; }
+          .st-key-operations_view label[data-baseweb="radio"]:has(input:checked) { border-bottom-color: #22D3EE; color: #22D3EE; }
+          .st-key-operations_view label[data-baseweb="radio"]:focus-within { outline: 2px solid #60A5FA; outline-offset: -2px; }
           .responsive-table-wrap { border: 1px solid #26384F; border-radius: 12px; margin: 4px 0 20px; overflow: hidden; }
           .responsive-data-table { border-collapse: collapse; table-layout: fixed; width: 100%; }
           .responsive-data-table th { background: #101C2F; color: #9CC7FF; font-size: 0.73rem; font-weight: 800; letter-spacing: 0.07em; padding: 11px 13px; text-align: left; }
@@ -806,6 +823,9 @@ def _render_styles() -> None:
             [data-testid="stButton"] > button { font-size: 0.96rem; min-height: 44px; }
             [data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
             [data-baseweb="tab"] { flex: 0 0 auto; font-size: 0.82rem; min-height: 44px; padding: 10px 12px 8px; }
+            .st-key-operations_view { margin: 4px 0 14px; }
+            .st-key-operations_view [role="radiogroup"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+            .st-key-operations_view label[data-baseweb="radio"] { flex: 0 0 auto; font-size: 0.82rem; min-height: 44px; padding: 0 12px; }
             .overview-command { gap: 14px; grid-template-columns: 1fr; margin: 10px 0 18px; padding: 14px 0; }
             .overview-score { font-size: 1.35rem; height: 76px; min-width: 76px; }
             .overview-score::before { height: 60px; width: 60px; }
@@ -1110,7 +1130,7 @@ def _render_header(data: Mapping[str, object]) -> None:
         st.markdown('<div class="header-control-spacer header-refresh-anchor"></div>', unsafe_allow_html=True)
         if st.button("更新", key="refresh_now", use_container_width=True):
             cached_operations_snapshot.clear()
-            st.rerun()
+            st.rerun(scope="fragment")
 
 
 def _render_metrics(data: Mapping[str, object]) -> None:
@@ -1943,7 +1963,9 @@ def _render_logs(data: Mapping[str, object]) -> None:
     st.code("\n".join(lines[-limit:]) if lines else "ログを読み取れません", language="text")
 
 
-def render_dashboard() -> None:
+def _render_live_header() -> None:
+    """Refresh only the header and its current operational summary."""
+
     assert st is not None
     data = cached_operations_snapshot()
     _render_header(data)
@@ -1951,24 +1973,146 @@ def render_dashboard() -> None:
     _render_metrics(data)
     if data["health_note"]:
         st.warning(str(data["health_note"]))
-    overview, trends, sessions, activity, incidents, reports, tasks, logs = st.tabs(WEB_TAB_LABELS)
-    with overview:
-        _render_overview(data)
-    with trends:
-        _render_trends(data)
-    with sessions:
-        _render_connections(data)
-    with activity:
-        _render_activity_history(data)
-    with incidents:
-        _render_incidents(data)
-    with reports:
-        _render_reports(data)
-    with tasks:
-        _render_tasks(data)
-    with logs:
-        _render_logs(data)
-    st.caption(f"5秒ごとに更新 / 最終表示 {datetime.now().astimezone().strftime('%H:%M:%S')} / この画面は閲覧専用です")
+    st.caption(
+        f"サマリーは{SUMMARY_REFRESH_INTERVAL_SECONDS}秒ごと、表示中の画面は"
+        f"{ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS}秒ごとに部分更新 / 最終表示 "
+        f"{datetime.now().astimezone().strftime('%H:%M:%S')} / この画面は閲覧専用です"
+    )
+
+
+def _render_live_overview() -> None:
+    assert st is not None
+    _render_overview(cached_operations_snapshot())
+
+
+def _render_live_trends() -> None:
+    assert st is not None
+    _render_trends(cached_operations_snapshot())
+
+
+def _render_live_connections() -> None:
+    assert st is not None
+    _render_connections(cached_operations_snapshot())
+
+
+def _render_live_activity_history() -> None:
+    assert st is not None
+    _render_activity_history(cached_operations_snapshot())
+
+
+def _render_live_incidents() -> None:
+    assert st is not None
+    _render_incidents(cached_operations_snapshot())
+
+
+def _render_live_reports() -> None:
+    assert st is not None
+    _render_reports(cached_operations_snapshot())
+
+
+def _render_live_tasks() -> None:
+    assert st is not None
+    _render_tasks(cached_operations_snapshot())
+
+
+def _render_live_logs() -> None:
+    assert st is not None
+    _render_logs(cached_operations_snapshot())
+
+
+if st is not None:
+
+    @st.fragment(run_every=SUMMARY_REFRESH_INTERVAL_SECONDS)
+    def _live_header_fragment() -> None:
+        _render_live_header()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_overview_fragment() -> None:
+        _render_live_overview()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_trends_fragment() -> None:
+        _render_live_trends()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_connections_fragment() -> None:
+        _render_live_connections()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_activity_history_fragment() -> None:
+        _render_live_activity_history()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_incidents_fragment() -> None:
+        _render_live_incidents()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_reports_fragment() -> None:
+        _render_live_reports()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_tasks_fragment() -> None:
+        _render_live_tasks()
+
+
+    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+    def _live_logs_fragment() -> None:
+        _render_live_logs()
+
+else:
+    # Keep pure helper tests importable when the optional Streamlit runtime is absent.
+    _live_header_fragment = _render_live_header
+    _live_overview_fragment = _render_live_overview
+    _live_trends_fragment = _render_live_trends
+    _live_connections_fragment = _render_live_connections
+    _live_activity_history_fragment = _render_live_activity_history
+    _live_incidents_fragment = _render_live_incidents
+    _live_reports_fragment = _render_live_reports
+    _live_tasks_fragment = _render_live_tasks
+    _live_logs_fragment = _render_live_logs
+
+
+def render_dashboard() -> None:
+    """Render the static shell and refresh only the displayed live region.
+
+    A tab's content is rendered by Streamlit even when the tab is hidden.  The
+    screen selector avoids scheduling eight hidden fragments: only the selected
+    operations surface has a live fragment, while the navigation itself remains
+    static between user actions.
+    """
+
+    assert st is not None
+    _live_header_fragment()
+    selected_view = st.radio(
+        "表示画面",
+        WEB_TAB_LABELS,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="operations_view",
+    )
+    if selected_view == "DashBoard":
+        _live_overview_fragment()
+    elif selected_view == "推移":
+        _live_trends_fragment()
+    elif selected_view == "セッション":
+        _live_connections_fragment()
+    elif selected_view == "操作履歴":
+        _live_activity_history_fragment()
+    elif selected_view == "障害":
+        _live_incidents_fragment()
+    elif selected_view == "改善レポート":
+        _live_reports_fragment()
+    elif selected_view == "タスク":
+        _live_tasks_fragment()
+    elif selected_view == "ログ":
+        _live_logs_fragment()
 
 
 def main() -> None:
@@ -1977,12 +2121,7 @@ def main() -> None:
     st.set_page_config(page_title="SMAI Analytics | Operations Console", page_icon=_browser_app_icon(), layout="wide", initial_sidebar_state="collapsed")
     _render_web_app_metadata()
     _render_styles()
-
-    @st.fragment(run_every=5)
-    def live_dashboard() -> None:
-        render_dashboard()
-
-    live_dashboard()
+    render_dashboard()
 
 
 if __name__ == "__main__":

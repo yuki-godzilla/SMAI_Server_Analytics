@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TABS = ["DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"]
+EXPECTED_VIEWS = ["DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"]
 
 
 def _snapshot(now: datetime, status: str) -> dict[str, object]:
@@ -90,15 +90,23 @@ def _run_render(case: str, status: str, *, event_count: int) -> None:
         environment["SMAI_PROJECT_ROOT"] = str(project_root)
         environment["SMAI_RUNTIME_ROOT"] = str(runtime_root)
         environment["SMAI_ANALYTICS_TEST_SKIP_HEALTH_PROBE"] = "1"
-        code = (
-            "from streamlit.testing.v1 import AppTest; "
-            "app = AppTest.from_file('analytics_web.py'); app.run(timeout=30); "
-            f"expected = {EXPECTED_TABS!r}; "
-            "assert not app.exception, app.exception; "
-            "assert [tab.label for tab in app.tabs] == expected; "
-            "assert len(app.metric) >= 20, len(app.metric); "
-            "assert len(app.markdown) >= 25, len(app.markdown); "
-            f"print('WEB_RENDER_{case}=OK')"
+        code = "\n".join(
+            [
+                "from streamlit.testing.v1 import AppTest",
+                "app = AppTest.from_file('analytics_web.py')",
+                "app.run(timeout=30)",
+                f"expected = {EXPECTED_VIEWS!r}",
+                "assert not app.exception, app.exception",
+                "assert len(app.radio) == 1, app.radio",
+                "assert app.radio[0].options == expected, app.radio[0].options",
+                "for view in expected:",
+                "    app.radio[0].set_value(view)",
+                "    app.run(timeout=30)",
+                "    assert not app.exception, (view, app.exception)",
+                "    assert app.radio[0].value == view, (view, app.radio[0].value)",
+                "    assert len(app.markdown) >= 3, (view, len(app.markdown))",
+                f"print('WEB_RENDER_{case}=OK')",
+            ]
         )
         result = subprocess.run([sys.executable, "-c", code], cwd=REPOSITORY_ROOT, env=environment, text=True, capture_output=True, check=False)
         if result.returncode != 0:

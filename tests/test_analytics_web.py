@@ -138,6 +138,48 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
             ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
         )
 
+    def test_dashboard_schedules_only_the_selected_operations_surface(self) -> None:
+        class DashboardShell:
+            @staticmethod
+            def radio(*_: object, **__: object) -> str:
+                return "障害"
+
+        fragment_names = (
+            "_live_header_fragment",
+            "_live_overview_fragment",
+            "_live_trends_fragment",
+            "_live_connections_fragment",
+            "_live_activity_history_fragment",
+            "_live_incidents_fragment",
+            "_live_reports_fragment",
+            "_live_tasks_fragment",
+            "_live_logs_fragment",
+        )
+        original_streamlit = analytics_web.st
+        original_fragments = {name: getattr(analytics_web, name) for name in fragment_names}
+        rendered: list[str] = []
+        try:
+            analytics_web.st = DashboardShell
+            for name in fragment_names:
+                label = name.removeprefix("_live_").removesuffix("_fragment")
+                setattr(analytics_web, name, lambda label=label: rendered.append(label))
+            analytics_web.render_dashboard()
+        finally:
+            analytics_web.st = original_streamlit
+            for name, fragment in original_fragments.items():
+                setattr(analytics_web, name, fragment)
+
+        self.assertEqual(["header", "incidents"], rendered)
+
+    def test_dashboard_refresh_contract_staggers_view_rendering_from_collection(self) -> None:
+        self.assertEqual(15, analytics_web.SNAPSHOT_REFRESH_INTERVAL_SECONDS)
+        self.assertEqual(5, analytics_web.SUMMARY_REFRESH_INTERVAL_SECONDS)
+        self.assertEqual(7, analytics_web.ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
+        self.assertNotEqual(
+            analytics_web.SUMMARY_REFRESH_INTERVAL_SECONDS,
+            analytics_web.ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS,
+        )
+
     def test_overview_next_check_keeps_unknown_and_critical_fail_closed(self) -> None:
         self.assertEqual(analytics_web._next_check({"overall": "unknown"})[0], "推移")
         self.assertEqual(analytics_web._next_check({"overall": "critical"})[0], "障害")
@@ -289,6 +331,8 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn('@media (max-width: 767px)', MarkdownRecorder.rendered)
         self.assertIn('min-height: 44px', MarkdownRecorder.rendered)
         self.assertIn('overflow-x: auto', MarkdownRecorder.rendered)
+        self.assertIn('.st-key-operations_view [role="radiogroup"]', MarkdownRecorder.rendered)
+        self.assertIn('label[data-baseweb="radio"]:has(input:checked)', MarkdownRecorder.rendered)
         self.assertIn('.health-visual-surface { height: 460px; min-height: 460px; }', MarkdownRecorder.rendered)
         self.assertIn('#B9C7D8 !important', MarkdownRecorder.rendered)
 

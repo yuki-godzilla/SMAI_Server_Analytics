@@ -113,6 +113,41 @@ python .\incident_automation.py approve-codex --request-id <incident-id>
 
 承認済み依頼は`codex_approvals/`へ別ファイルとして保存されます。依頼には影響調査、決定的テスト、`http://localhost:8502`の実画面確認、管理者への修正報告を必須として記載します。メール返信やAnalytics画面の操作を承認として解釈しません。
 
+## 管理者通知後のCodex修復指示フロー（仕様）
+
+この節は、現行の管理者承認を「Codexへ自動実行させる仕組み」へ拡張しないための運用仕様です。現行実装は、承認済みのローカル作業依頼を作成するところまでです。Codexの起動、コード変更、commit、push、外部送信は、どれも別途の明示操作とします。
+
+| 状態 | 根拠となる保存物 | 実行できる主体 | 次の遷移 |
+| --- | --- | --- | --- |
+| `pending_investigation` | `codex_requests/<incident-id>.md`、改善レポート | 管理者 | 調査、却下、または承認 |
+| `admin_notified` | Outboxの`incident`または`repeat`記録 | 管理者 | 通知内容とローカル証跡を照合する。メール受信・返信だけでは承認しない |
+| `codex_approved` | `codex_approvals/<incident-id>.md`、改善レポートの承認行 | 管理者 | Codexセッションへ作業依頼を手渡す |
+| `codex_acknowledged`（提案） | 改善レポートの結果行 | Codex | 再現・影響調査を開始する |
+| `fix_proposed` / `verified`（提案） | 修正内容、決定的テスト、実画面確認を含む結果行 | Codex、管理者 | 管理者が結果を確認し、`resolved`または追加調査へ進める |
+| `resolved` / `not_reproducible` / `out_of_scope`（提案） | 最終改善レポート | 管理者 | Incidentを閉じる。監視上のhealthy観測とは区別する |
+
+### 通知から承認まで
+
+1. Schedulerはcriticalを検知すると、重複を抑止したローカル下書きと改善レポートを作成し、設定済みの場合だけ固定Gmail宛先へ通知します。
+2. 管理者は通知の時刻・Incident ID・severityをローカルの`codex_requests/`と改善レポートに照合します。メール本文、添付、返信、リンクのクリックを承認入力として扱いません。
+3. 管理者は、原因候補・影響範囲・直近の本体操作・復旧済みかどうかを確認します。復旧済みでも原因調査が必要な場合だけ承認できます。
+4. 修復調査を許可する場合だけ、管理者がサーバー上で対象IDを明示して`approve-codex`を実行します。これは再実行しても同一の承認作業依頼を返す冪等操作です。
+
+### Codexへの手渡しと必須指示
+
+管理者は、承認済みファイルのパスまたは内容を、**管理者が開始したCodexセッション**へ明示的に渡します。通知メールは管理者への知らせであり、Codexの起動トリガーではありません。承認済み依頼を受け取ったCodexは、少なくとも次を確認します。
+
+1. Incident IDが承認済みファイル、下書き、改善レポートの三者で一致すること。
+2. 対象がAnalyticsの責務内かを`AGENTS.md`、SMAI本体側の契約、影響範囲から確認すること。本体の投資計算、ランキング、Forecast、ユーザー体験の変更は別承認とすること。
+3. criticalの根拠をhealth、audit、対象Runtimeログ、関連テストで再確認すること。再現不能なら変更せず`not_reproducible`を記録すること。
+4. 修正は最小範囲とし、Runtime・secret・token・個人データをcommit、画面、外部送信へ含めないこと。
+5. 変更前に対象テストと復旧判定を定め、変更後に決定的テスト、Analyticsだけの再起動、`http://localhost:8502`の実画面確認を行うこと。
+6. 結果を`incident_automation.py report`で、Incident ID、状態、修正要約、検証根拠として記録すること。commit/pushは各リポジトリの`AGENTS.md`の条件を満たし、管理者の通常の承認範囲内にある場合だけ行うこと。
+
+### 承認の有効性と中止（次の実装候補）
+
+承認済みファイルには現在、管理者・時刻・Incident IDが残ります。運用をさらに厳格にする次段階では、`approve-codex`に24時間の有効期限、`cancel-codex`による取消、Codexが着手したことを示す`codex_acknowledged`記録を追加します。有効期限切れ、取消済み、別Incident ID、または本体側の責務へ広がる依頼では、Codexは変更を開始せず、管理者へ再承認を求めます。この提案はまだ自動実行機能ではありません。
+
 ## 安全ガード
 
 - `critical` 以外のヘルス状態はCodex下書きを自動生成しません。

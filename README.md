@@ -20,8 +20,8 @@ Server Analytics:    http://smai-server:8502
 
 LAN内でも外出先でも、管理端末でTailscaleを起動して`http://smai-server:8502`を開いてください。起動時表示と画面上の案内もこのURLだけを通常案内とし、LAN IP・Tailscale IPは障害調査時を除き表示しません。URL設定は非秘匿の[`config/network.json`](config/network.json)へ集約しており、端末名を変更する場合は本体の`config/server.yaml`と同じ値へ更新します。明示的な環境変数`SMAI_TAILSCALE_HOSTNAME`、`SMAI_ANALYTICS_PORT`、`SMAI_ANALYTICS_SCHEME`も使用できます。
 
-- Overview、推移、セッション、操作履歴、障害、改善レポート、タスク、ログを5秒ごとに更新します。
-- Overviewにはhealth score、サービス構成、health timeline、L1〜L3 check matrix、Recovery Readinessを表示します。
+- サマリーは5秒ごと、現在表示している画面だけは7秒ごとに部分更新します。データ収集とローカルhealth probeは15秒の共有キャッシュを使うため、非表示の画面を含む一斉再描画や接続端末ごとの重複したprobeは行いません。
+- Overviewにはhealth score、現在状態、サービス概要、次に確認すべき画面への導線を表示します。詳細なhealth timelineとL1〜L3 check matrixは`推移`、Recovery Readinessは`改善レポート`で確認します。
 - 異常、欠損、読み取り不能は正常扱いにせず、`degraded`、`critical`、`unknown`として表示します。
 - SMAIの計算、ランキング、Forecast、ユーザーデータ、タスク設定を変更しません。
 - TCP 8502をインターネットへ公開しません。ルーターのポート開放、Tailscale Funnel、UPnPは使用しません。Firewallの変更は自動化せず、必要な場合だけAnalyticsポートをMainポートと別ルールにし、パブリックネットワークを許可しないことを確認してください。
