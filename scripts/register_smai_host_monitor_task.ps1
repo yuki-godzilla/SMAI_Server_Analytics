@@ -6,12 +6,14 @@ param(
 $ErrorActionPreference = "Stop"
 $taskName = "SMAI-Host-Monitor"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$analyticsPython = Join-Path $projectRoot "venv_SMAI_Analytics\Scripts\python.exe"
-$compatibilityPython = "C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI\venv_SMAI\Scripts\python.exe"
-$python = if (Test-Path -LiteralPath $analyticsPython) { $analyticsPython } elseif (Test-Path -LiteralPath $compatibilityPython) { $compatibilityPython } else { throw "Analytics Python was not found." }
-$script = Join-Path $projectRoot "health.py"
+$script = Join-Path $PSScriptRoot "run_smai_host_monitor.ps1"
+$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 
-$taskCommand = ('"{0}" "{1}"' -f $python, $script)
+if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
+    throw "Host monitor launcher was not found: $script"
+}
+
+$taskCommand = ('"{0}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}"' -f $powershell, $script)
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

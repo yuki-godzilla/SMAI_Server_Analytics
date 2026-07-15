@@ -58,6 +58,15 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("--server.enableXsrfProtection true", launcher)
         self.assertNotIn("cmd.exe", launcher.casefold())
 
+    def test_host_monitor_uses_a_hidden_powershell_launcher(self) -> None:
+        registration = self.read("register_smai_host_monitor_task.ps1")
+        runner = self.read("run_smai_host_monitor.ps1")
+
+        self.assertIn("run_smai_host_monitor.ps1", registration)
+        self.assertIn("-WindowStyle Hidden", registration)
+        self.assertIn("health.py", runner)
+        self.assertNotIn("cmd.exe", runner.casefold())
+
     def test_dashboard_does_not_require_a_nonexistent_workspace_scheduler_task(self) -> None:
         self.assertNotIn("SMAI-Operations-Workspace", web_dashboard.TASKS)
         self.assertNotIn("SMAI-Analytics-Startup-User", web_dashboard.TASKS)
