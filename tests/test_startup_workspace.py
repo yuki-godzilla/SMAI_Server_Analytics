@@ -23,7 +23,7 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("SMAI Analytics Autostart.cmd", registration)
         self.assertIn("-StartupDelaySeconds 45", registration)
 
-    def test_workspace_opens_prompts_and_pages_without_starting_servers(self) -> None:
+    def test_workspace_opens_main_prompt_and_pages_without_starting_servers(self) -> None:
         prompt = self.read("show_smai_service_prompt.ps1")
         pages = self.read("open_smai_service_pages.ps1")
         workspace = self.read("start_smai_operations_workspace.ps1")
@@ -34,7 +34,8 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8501/_stcore/health", pages)
         self.assertIn("http://127.0.0.1:8502/_stcore/health", pages)
         self.assertIn("Start-Process $target.page", pages)
-        self.assertIn('foreach ($service in @(\"Main\", \"Analytics\"))', workspace)
+        self.assertIn('foreach ($service in @(\"Main\"))', workspace)
+        self.assertNotIn('foreach ($service in @(\"Main\", \"Analytics\"))', workspace)
         self.assertIn("SMAI Operations Workspace.cmd", registration)
 
     def test_dashboard_does_not_require_a_nonexistent_workspace_scheduler_task(self) -> None:

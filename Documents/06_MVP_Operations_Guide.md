@@ -126,7 +126,7 @@ python .\backup.py smoke
 
 SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。AnalyticsはTCP 8502のhealth endpointを先に確認し、すでに正常であれば二重起動せず終了します。ログオン時の起動と表示は、管理者権限が不要な現在のユーザーのWindows Startupフォルダーへ登録します。Analyticsは45秒待機してから同じ確認を行うため、既存の`SMAI-Server-Analytics`が残っていても二重起動しません。
 
-`SMAI-Operations-Workspace`はログオン時に、Main Application用とAnalytics用のPowerShellプロンプトをそれぞれ開きます。各プロンプトは30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。両サービスが応答できた時点で、既定ブラウザーに`http://localhost:8501`と`http://localhost:8502`を開きます。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
+`SMAI-Operations-Workspace`はログオン時に、Main Application用のPowerShellプロンプトだけを開きます。このプロンプトは30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。Analyticsの状態確認は、重複したPowerShellプロンプトではなく、読み取り専用のWeb Operations ConsoleとStreamlitサーバーコンソールへ集約します。両サービスが応答した時点で、既定ブラウザーに`http://localhost:8501`と`http://localhost:8502`を開きます。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
 
 ```powershell
 .\scripts\register_smai_analytics_autostart_task.ps1

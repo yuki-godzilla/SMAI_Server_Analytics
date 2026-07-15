@@ -11,7 +11,10 @@ foreach ($path in @($promptScript, $browserScript)) {
 }
 
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-foreach ($service in @("Main", "Analytics")) {
+# Analytics already has its read-only Web Operations Console and Streamlit
+# server console. A second PowerShell health monitor only duplicates the
+# Analytics window, so retain the lightweight terminal monitor for Main only.
+foreach ($service in @("Main")) {
     $arguments = @(
         "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$promptScript`"",
         "-Service", $service, "-Watch"
