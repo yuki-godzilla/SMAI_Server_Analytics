@@ -118,21 +118,25 @@ Analytics画面は読み取り専用のまま、Gmail通知の設定状態と最
 
 ## 承認制Codex Autofix
 
-critical Incidentは通知だけでCodexを起動しません。管理者がIncident IDを指定して第1承認した場合だけ、専用workerが隔離Git worktreeでAnalyticsのallowlist内を修復・検証し、local commitを作成します。修復レポートを管理者へ再通知した後、管理者がその40桁commit hashを第2承認した場合だけ、cleanなAnalytics checkoutへfast-forwardマージします。自動再起動・自動pushは行いません。
+critical Incidentは通知だけでCodexを起動しません。第1承認後に隔離worktreeで修復commitを作り、第2承認後にcleanなAnalytics checkoutへfast-forwardします。マージレポートを管理者へ通知し、同じ40桁commit hashへの第3承認がある場合だけ、別の配備executorが利用状況・health・Git・backupを検証してAnalyticsだけを再起動します。health確認に失敗するとexact `git revert`でrollback commitを作り、Analyticsを再起動して復旧確認します。自動pushは行いません。
 
 ```powershell
 python .\incident_automation.py approve-autofix --request-id <incident-id>
 python .\incident_automation.py autofix-status --request-id <incident-id>
 python .\incident_automation.py approve-autofix-merge --request-id <incident-id> --commit <40桁commit-hash>
+python .\incident_automation.py approve-autofix-deploy --request-id <incident-id> --commit <40桁commit-hash>
 python .\incident_automation.py cancel-autofix --request-id <incident-id> --reason "管理者判断"
 ```
 
-既定設定は[`config/codex_autofix.json`](config/codex_autofix.json)の`enabled=false` / `mode=dry_run`です。専用標準Windowsアカウント、最小ACL、専用Codexログイン、dry-runドリルを確認してから、workerタスクを登録して明示的に有効化します。
+既定設定は[`config/codex_autofix.json`](config/codex_autofix.json)の`enabled=false` / `mode=dry_run` / `deployment_enabled=false`です。Codex workerは専用標準Windowsアカウント、配備executorはAnalytics所有者の対話limited tokenへ分離します。両方のdry-runとrollbackドリルを確認してから段階的に有効化します。
 
 ```powershell
 python .\incident_automation.py autofix-worker --dry-run
 .\scripts\register_smai_codex_autofix_worker_task.ps1 -UserId <専用Windowsユーザー> -DryRun
 .\scripts\register_smai_codex_autofix_worker_task.ps1 -UserId <専用Windowsユーザー>
+python .\incident_automation.py autofix-deploy-worker --dry-run
+.\scripts\register_smai_codex_autofix_deploy_task.ps1 -DryRun
+.\scripts\register_smai_codex_autofix_deploy_task.ps1
 ```
 
 詳しい状態遷移と有効化ゲートは[`Documents/10_Codex_Autofix_Design.md`](Documents/10_Codex_Autofix_Design.md)を参照してください。

@@ -70,6 +70,12 @@ TASKS = (
     ("SMAI-Codex-Autofix-Worker",)
     if AUTOFIX_CONFIG["enabled"] and AUTOFIX_CONFIG["mode"] == "active"
     else ()
+) + (
+    ("SMAI-Codex-Autofix-Deploy",)
+    if AUTOFIX_CONFIG["enabled"]
+    and AUTOFIX_CONFIG["mode"] == "active"
+    and AUTOFIX_CONFIG["deployment_enabled"]
+    else ()
 )
 CLIENT_TYPE_LABELS = {
     "desktop": "PC",
@@ -81,14 +87,32 @@ STATUS_PRIORITY = {
     "critical": 5,
     "error": 5,
     "failed": 5,
+    "auto_validation_failed": 5,
+    "auto_merge_blocked": 5,
+    "auto_failed": 5,
+    "auto_blocked": 5,
+    "auto_merged_validation_failed": 5,
+    "auto_deploy_blocked": 5,
+    "auto_rollback_failed": 5,
     "degraded": 4,
     "stale": 4,
+    "pending_investigation": 4,
+    "codex_approved": 4,
+    "autofix_approved": 4,
+    "autofix_running": 4,
+    "auto_patch_ready": 4,
+    "autofix_merge_approved": 4,
+    "auto_merged_pending_deploy": 4,
+    "autofix_deploy_approved": 4,
+    "autofix_deploying": 4,
+    "auto_rolled_back": 4,
     "unknown": 3,
     "healthy": 1,
     "ok": 1,
     "active": 1,
     "running": 1,
     "ready": 1,
+    "auto_applied": 1,
 }
 STATUS_LABELS = {
     "healthy": "正常",
@@ -113,6 +137,12 @@ STATUS_LABELS = {
     "auto_failed": "Autofix失敗",
     "auto_blocked": "Autofix停止",
     "auto_merged_validation_failed": "マージ済み・検証失敗",
+    "autofix_deploy_approved": "配備承認済み",
+    "autofix_deploying": "Analytics配備中",
+    "auto_deploy_blocked": "自動配備停止",
+    "auto_applied": "自動配備・health確認済み",
+    "auto_rolled_back": "自動ロールバック済み",
+    "auto_rollback_failed": "ロールバック失敗",
     "auto_cancelled": "Autofix取消",
     "unknown": "不明",
 }
@@ -123,12 +153,16 @@ STATUS_COLORS = {
     "running": "#34D399",
     "ready": "#34D399",
     "autofix_running": "#38BDF8",
+    "autofix_deploying": "#38BDF8",
     "degraded": "#FBBF24",
     "stale": "#FBBF24",
     "autofix_approved": "#FBBF24",
     "auto_patch_ready": "#FBBF24",
     "autofix_merge_approved": "#FBBF24",
     "auto_merged_pending_deploy": "#FBBF24",
+    "autofix_deploy_approved": "#FBBF24",
+    "auto_rolled_back": "#FBBF24",
+    "auto_applied": "#34D399",
     "critical": "#F87171",
     "failed": "#F87171",
     "error": "#F87171",
@@ -137,6 +171,8 @@ STATUS_COLORS = {
     "auto_failed": "#F87171",
     "auto_blocked": "#F87171",
     "auto_merged_validation_failed": "#F87171",
+    "auto_deploy_blocked": "#F87171",
+    "auto_rollback_failed": "#F87171",
     "auto_cancelled": "#AAB8C8",
     "unknown": "#AAB8C8",
 }
@@ -183,6 +219,7 @@ def expected_task_root(task: str) -> Path:
             "SMAI-Host-Maintenance",
             "SMAI-Incident-Automation",
             "SMAI-Codex-Autofix-Worker",
+            "SMAI-Codex-Autofix-Deploy",
         }
         else PROJECT_ROOT
     )

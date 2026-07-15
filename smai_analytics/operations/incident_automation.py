@@ -528,6 +528,10 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
         "autofix_ready": "AUTOFIX READY",
         "autofix_merge_approval": "AUTOFIX MERGE APPROVED",
         "autofix_merged": "AUTOFIX MERGED",
+        "autofix_deploy_approval": "AUTOFIX DEPLOY APPROVED",
+        "autofix_applied": "AUTOFIX APPLIED",
+        "autofix_rolled_back": "AUTOFIX ROLLED BACK",
+        "autofix_rollback_failed": "AUTOFIX ROLLBACK FAILED",
         "autofix_failed": "AUTOFIX STOPPED",
         "autofix_cancelled": "AUTOFIX CANCELLED",
     }.get(kind, severity)
@@ -548,7 +552,27 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
     elif kind == "autofix_merged":
         message.set_content(
             "The approved Autofix commit was fast-forwarded into the local Analytics checkout. "
-            "Restart, visual review, and push remain manual operations."
+            "A separate deployment approval is required before Analytics restart."
+        )
+    elif kind == "autofix_deploy_approval":
+        message.set_content(
+            "A local administrator granted a 30-minute Analytics-only deployment lease. "
+            "Preflight, backup, restart, and health checks remain fail-closed."
+        )
+    elif kind == "autofix_applied":
+        message.set_content(
+            "Analytics restarted on the approved Autofix commit and automated health checks passed. "
+            "Browser visual review and Git push remain manual operations."
+        )
+    elif kind == "autofix_rolled_back":
+        message.set_content(
+            "Deployment verification failed, so the exact Autofix commit was reverted and "
+            "Analytics health recovered. Review before any further deployment or push."
+        )
+    elif kind == "autofix_rollback_failed":
+        message.set_content(
+            "Analytics deployment and automatic rollback both failed. Do not push; immediate "
+            "administrator recovery is required."
         )
     elif kind in {"autofix_failed", "autofix_cancelled"}:
         message.set_content(
@@ -896,6 +920,9 @@ def main(argv: list[str] | None = None) -> int:
     merge_parser = subparsers.add_parser("approve-autofix-merge", help="Approve one exact verified Autofix commit for merge.")
     merge_parser.add_argument("--request-id", required=True)
     merge_parser.add_argument("--commit", required=True)
+    deploy_parser = subparsers.add_parser("approve-autofix-deploy", help="Approve deployment of one exact merged Autofix commit.")
+    deploy_parser.add_argument("--request-id", required=True)
+    deploy_parser.add_argument("--commit", required=True)
     cancel_parser = subparsers.add_parser("cancel-autofix", help="Cancel an Autofix or merge lease.")
     cancel_parser.add_argument("--request-id", required=True)
     cancel_parser.add_argument("--reason", required=True)
@@ -903,6 +930,8 @@ def main(argv: list[str] | None = None) -> int:
     status_parser.add_argument("--request-id", required=True)
     worker_parser = subparsers.add_parser("autofix-worker", help="Process at most one approved Autofix workflow.")
     worker_parser.add_argument("--dry-run", action="store_true")
+    deploy_worker_parser = subparsers.add_parser("autofix-deploy-worker", help="Process at most one approved Analytics deployment.")
+    deploy_worker_parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "once":
         print(json.dumps(run_once(), ensure_ascii=False))
@@ -950,6 +979,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "approve-autofix-deploy":
+        print(
+            json.dumps(
+                codex_autofix.approve_autofix_deploy(request_id=args.request_id, commit=args.commit),
+                ensure_ascii=False,
+            )
+        )
+        return 0
     if args.command == "cancel-autofix":
         print(
             json.dumps(
@@ -960,6 +997,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "autofix-status":
         print(json.dumps(codex_autofix.autofix_status(request_id=args.request_id), ensure_ascii=False))
+        return 0
+    if args.command == "autofix-deploy-worker":
+        print(json.dumps(codex_autofix.run_deploy_worker_once(dry_run=args.dry_run), ensure_ascii=False))
         return 0
     print(json.dumps(codex_autofix.run_worker_once(dry_run=args.dry_run), ensure_ascii=False))
     return 0

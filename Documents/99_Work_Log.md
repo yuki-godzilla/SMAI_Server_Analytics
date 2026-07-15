@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-07-16
+
+- 承認制Codex Autofix v2（実装）
+  - 変更: `auto_merged_pending_deploy`後に同じ40桁commit hashを指定する30分の第3承認を追加した。配備承認はマージ承認と別リースであり、通知メールや画面閲覧を承認として扱わない。
+  - 変更: Analytics所有者のInteractive limited tokenで動く別配備executorを追加した。target branch／HEAD／parent／clean、利用中セッション、実行中処理、fresh healthy snapshot、決定的テスト、新規backup manifestを検証し、成功時だけAnalyticsを再起動する。
+  - 変更: 再起動後90秒以内のhealth endpointとページ到達確認に失敗した場合、exact repair commitを`git revert`するrollback commitを作成し、Analyticsだけを再起動して復旧を確認する。成功は`auto_rolled_back`、失敗は`auto_rollback_failed`として最優先通知する。
+  - 変更: `SMAI-Codex-Autofix-Deploy`の1分周期・`IgnoreNew`・15分上限Task登録／解除スクリプト、状態表示、鮮度監視、Gmail通知、運用手順を追加した。Incident、Codex worker、配備executorの反復triggerは日をまたいで継続するDaily＋日内repetitionへ統一した。`deployment_enabled=false`を既定とした。
+  - 検証: 隔離した実Gitリポジトリで、第3承認hash照合、正常配備、利用中preflight停止、health失敗からのrevert commitと復旧、rollback失敗、deploy worker dry-runを確認した。
+  - 未実施: live task登録、実プロセス再起動ドリル、実Gmail配送、`deployment_enabled=true`は実機権限・外部送信を伴うため実施していない。
+
 ## 2026-07-15
 
 - 承認制Codex Autofix v1（実装）

@@ -126,7 +126,12 @@ critical通知
   -> 管理者の第2承認（40桁commit hash）
   -> cleanかつ基準HEAD一致の場合だけfast-forward
   -> AUTOFIX MERGEDレポートを通知
-  -> 管理者が再起動・実画面確認・通常のpushを別途実施
+  -> 管理者の第3承認（同じ40桁commit hash）
+  -> 利用状況・health・Git・backupのfail-closed preflight
+  -> Analyticsだけを再起動してhealth・ページ到達確認
+  -> 失敗時はexact git revert + Analytics再起動 + 復旧確認
+  -> APPLIEDまたはROLLED BACKレポートを通知
+  -> 管理者がブラウザ実画面確認・通常のpushを別途実施
 ```
 
 ### 第1承認・状態確認・取消
@@ -151,9 +156,23 @@ python .\incident_automation.py approve-autofix-merge `
 
 第2承認は1時間、一回限りです。targetがdirty、HEAD変更、branch／commit／parent不一致、未許可パス、期限切れのどれかを検出すると`auto_merge_blocked`で停止します。条件を直した後も同じcommitを取り込む場合は、commit hashを再確認して新しい第2承認を発行します。マージ後検証が失敗した場合は`auto_merged_validation_failed`となり、既にマージ済みであるため再起動・pushを行わず管理者が調査します。
 
+### マージレポートと第3承認
+
+`auto_merged_pending_deploy`通知のIncident IDとcommit hashを、Runtime状態とtarget HEADで再確認します。Analytics再起動を許可する場合だけ、同じhashを指定します。
+
+```powershell
+python .\incident_automation.py approve-autofix-deploy `
+  --request-id <incident-id> `
+  --commit <40桁commit-hash>
+```
+
+第3承認は30分、一回限りです。配備executorはtarget branch／HEAD／parentとclean状態、15分以内のSMAIセッション、実行中処理、10分以内のhealth snapshot、決定的テスト、新規backup manifestを確認します。一つでも不明・不一致なら`auto_deploy_blocked`となり、Analyticsを停止しません。
+
+preflight成功後だけAnalyticsを再起動し、90秒以内に`http://127.0.0.1:8502/_stcore/health`の`ok`とページHTTP成功を確認します。成功は`auto_applied`です。再起動または確認に失敗した場合は、承認commitがcleanなHEADであることを再確認し、`git revert`でrollback commitを作ってAnalyticsを再起動します。回復は`auto_rolled_back`、revert・再起動・health確認の失敗は`auto_rollback_failed`です。reset、force、stash、自動push、SMAI本体再起動は行いません。
+
 ### Workerの準備と有効化
 
-既定の[`config/codex_autofix.json`](../config/codex_autofix.json)は`enabled=false` / `mode=dry_run`です。まず専用Windows標準アカウントへ、Analyticsリポジトリの必要最小限のGit書き込み、Autofix Runtime、既存Incidentレポート／Outboxだけの権限と、専用Codexログインを用意します。SMAI本体のソース、ユーザーデータ、Credential Managerの不要な資格情報、管理者権限を与えません。
+既定の[`config/codex_autofix.json`](../config/codex_autofix.json)は`enabled=false` / `mode=dry_run` / `deployment_enabled=false`です。まず専用Windows標準アカウントへ、Analyticsリポジトリの必要最小限のGit書き込み、Autofix Runtime、既存Incidentレポート／Outboxだけの権限と、専用Codexログインを用意します。SMAI本体のソース、ユーザーデータ、Credential Managerの不要な資格情報、管理者権限を与えません。
 
 タスクを変更せず内容だけ確認します。
 
@@ -176,12 +195,26 @@ python .\incident_automation.py autofix-worker --dry-run
 .\scripts\unregister_smai_codex_autofix_worker_task.ps1
 ```
 
+配備executorはAnalyticsを起動している対話ユーザーでdry-runし、同じユーザーのInteractive・limited taskとして登録します。Codex認証情報は使いません。
+
+```powershell
+python .\incident_automation.py autofix-deploy-worker --dry-run
+.\scripts\register_smai_codex_autofix_deploy_task.ps1 -DryRun
+.\scripts\register_smai_codex_autofix_deploy_task.ps1
+```
+
+taskの実行ユーザー、1分間隔、`IgnoreNew`、15分上限、Analyticsだけを対象にする再起動スクリプトを確認します。成功・preflight拒否・rollback成功・rollback失敗のドリル後だけ`deployment_enabled=true`へ変更します。解除は次です。
+
+```powershell
+.\scripts\unregister_smai_codex_autofix_deploy_task.ps1
+```
+
 詳しい状態契約と禁止事項は[Codex自動起動・自動修復 設計仕様](10_Codex_Autofix_Design.md)を参照してください。
 
 ## 安全ガード
 
 - `critical` 以外のヘルス状態はCodex下書きを自動生成しません。
 - 同一fingerprintは30分以内に重複した下書きを発行しません。未復旧のcriticalだけは15分ごとに同じIncident IDで再通知します。
-- AnalyticsはSMAI本体を自動修正しません。Autofixは第1承認後の隔離branchへのlocal commitと、第2承認後のAnalyticsへのfast-forwardだけを許可し、再起動・pushは行いません。
+- AnalyticsはSMAI本体を自動修正しません。Autofixは第1承認後の隔離commit、第2承認後のfast-forward、第3承認後のAnalytics単独再起動、失敗時のexact revertだけを許可します。pushは行いません。
 - Codex作業は管理者承認済みの依頼だけで開始し、Analyticsの`AGENTS.md`、allowlist、決定的検証をすべて満たさない限りマージ候補にしません。
 - SMTP未設定、添付不在、配送失敗は成功扱いせず、Outboxの状態に残します。

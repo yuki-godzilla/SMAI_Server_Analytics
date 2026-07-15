@@ -273,6 +273,10 @@ class IncidentAutomationTests(unittest.TestCase):
             "autofix_ready": "[SMAI AUTOFIX READY]",
             "autofix_merge_approval": "[SMAI AUTOFIX MERGE APPROVED]",
             "autofix_merged": "[SMAI AUTOFIX MERGED]",
+            "autofix_deploy_approval": "[SMAI AUTOFIX DEPLOY APPROVED]",
+            "autofix_applied": "[SMAI AUTOFIX APPLIED]",
+            "autofix_rolled_back": "[SMAI AUTOFIX ROLLED BACK]",
+            "autofix_rollback_failed": "[SMAI AUTOFIX ROLLBACK FAILED]",
             "autofix_failed": "[SMAI AUTOFIX STOPPED]",
         }
         for kind, prefix in expected_prefixes.items():

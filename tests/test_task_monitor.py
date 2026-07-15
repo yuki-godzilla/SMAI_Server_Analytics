@@ -38,6 +38,15 @@ class TaskMonitorTests(unittest.TestCase):
         self.assertEqual(task_monitor.classify_task("SMAI-Incident-Automation", degraded, path_ok=True, now=now)[0], "degraded")
         self.assertEqual(task_monitor.classify_task("SMAI-Incident-Automation", critical, path_ok=True, now=now)[0], "critical")
 
+    def test_autofix_deploy_executor_has_a_short_freshness_window(self) -> None:
+        now = datetime(2026, 7, 12, 12, tzinfo=UTC)
+        recent = {"last_result": "0", "last_run_time": (now - timedelta(minutes=2)).isoformat()}
+        degraded = {"last_result": "0", "last_run_time": (now - timedelta(minutes=4)).isoformat()}
+        critical = {"last_result": "0", "last_run_time": (now - timedelta(minutes=6)).isoformat()}
+        self.assertEqual(task_monitor.classify_task("SMAI-Codex-Autofix-Deploy", recent, path_ok=True, now=now)[0], "healthy")
+        self.assertEqual(task_monitor.classify_task("SMAI-Codex-Autofix-Deploy", degraded, path_ok=True, now=now)[0], "degraded")
+        self.assertEqual(task_monitor.classify_task("SMAI-Codex-Autofix-Deploy", critical, path_ok=True, now=now)[0], "critical")
+
     def test_nonzero_result_and_path_mismatch_are_not_ready(self) -> None:
         now = datetime(2026, 7, 12, 12, tzinfo=UTC)
         values = {"last_result": "1", "last_run_time": now.isoformat()}

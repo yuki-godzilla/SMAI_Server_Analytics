@@ -71,8 +71,33 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("-RunLevel Limited", register)
         self.assertIn("-MultipleInstances IgnoreNew", register)
         self.assertIn("-Minutes 45", register)
+        self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
         self.assertIn('"enabled": false', config)
         self.assertIn('"mode": "dry_run"', config)
+        self.assertIn('"deployment_enabled": false', config)
+
+    def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
+        register = (
+            REPOSITORY_ROOT / "scripts" / "register_smai_codex_autofix_deploy_task.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("autofix-deploy-worker", register)
+        self.assertIn("-LogonType Interactive", register)
+        self.assertIn("-RunLevel Limited", register)
+        self.assertIn("-MultipleInstances IgnoreNew", register)
+        self.assertIn('Interval = "PT1M"', register)
+        self.assertIn("-Minutes 15", register)
+        self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
+        self.assertNotIn("-LogonType Password", register)
+
+    def test_incident_automation_repeats_across_calendar_days(self) -> None:
+        register = (
+            REPOSITORY_ROOT / "scripts" / "register_incident_automation_task.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
+        self.assertIn('Interval = "PT5M"', register)
+        self.assertIn('Duration = "P1D"', register)
 
 
 if __name__ == "__main__":

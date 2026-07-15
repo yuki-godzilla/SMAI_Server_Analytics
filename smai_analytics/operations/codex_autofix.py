@@ -14,6 +14,8 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -37,11 +39,15 @@ AUTOFIX_INDEX_PATH = AUTOFIX_ROOT / "events.jsonl"
 AUTOFIX_LOCK_PATH = AUTOFIX_ROOT / "worker.lock"
 AUTOFIX_CONFIG_PATH = REPOSITORY_ROOT / "config" / "codex_autofix.json"
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 APPROVAL_LIFETIME = timedelta(hours=24)
 MERGE_APPROVAL_LIFETIME = timedelta(hours=1)
+DEPLOY_APPROVAL_LIFETIME = timedelta(minutes=30)
 RUN_LIFETIME = timedelta(minutes=45)
 CODEX_TIMEOUT_SECONDS = 45 * 60
+ANALYTICS_HEALTH_URL = "http://127.0.0.1:8502/_stcore/health"
+ANALYTICS_PAGE_URL = "http://127.0.0.1:8502"
+ANALYTICS_RESTART_SCRIPT = REPOSITORY_ROOT / "scripts" / "restart_analytics_web.ps1"
 
 _SENSITIVE_DIFF_PATTERNS = (
     re.compile(r"(?i)authorization\s*:\s*bearer\s+\S+"),
@@ -129,6 +135,7 @@ def _public_state(state: Mapping[str, object]) -> dict[str, object]:
         "status",
         "attempt",
         "base_commit",
+        "target_branch",
         "branch",
         "approved_at",
         "approval_expires_at",
@@ -139,7 +146,15 @@ def _public_state(state: Mapping[str, object]) -> dict[str, object]:
         "merge_approved_at",
         "merge_expires_at",
         "merged_at",
+        "deploy_approved_at",
+        "deploy_expires_at",
+        "deploy_started_at",
+        "deployed_at",
+        "rolled_back_at",
+        "backup_id",
+        "rollback_commit",
         "failure_category",
+        "notification_failure_category",
         "needs_operator_visual_review",
         "updated_at",
     )
@@ -168,8 +183,11 @@ def load_config() -> dict[str, object]:
     return {
         "enabled": enabled,
         "mode": mode,
+        "deployment_enabled": config.get("deployment_enabled") is True,
         "worker_interval_minutes": 5,
         "execution_limit_minutes": 45,
+        "deployment_interval_minutes": 1,
+        "deployment_limit_minutes": 15,
     }
 
 
@@ -227,6 +245,17 @@ def _head_commit(repository: Path = REPOSITORY_ROOT) -> str:
     if not re.fullmatch(r"[0-9a-fA-F]{40}", value):
         raise AutofixError("git_head_unavailable", "The Analytics HEAD commit is unavailable.")
     return value.lower()
+
+
+def _current_branch(repository: Path = REPOSITORY_ROOT) -> str:
+    value = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repository)
+    if (
+        not value
+        or value == "HEAD"
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,239}", value)
+    ):
+        raise AutofixError("git_branch_unavailable", "The Analytics target branch is unavailable.")
+    return value
 
 
 def path_is_allowed(value: object) -> bool:
@@ -292,13 +321,30 @@ def _append_report_event(
 ) -> None:
     from . import incident_automation
 
-    incident_automation.record_improvement_report(
-        request_id=str(state["request_id"]),
-        status=status,
-        summary=summary,
-        verification=verification,
-        notification_kind=notification_kind,
-    )
+    try:
+        incident_automation.record_improvement_report(
+            request_id=str(state["request_id"]),
+            status=status,
+            summary=summary,
+            verification=verification,
+            notification_kind=notification_kind,
+        )
+        if isinstance(state, dict) and state.pop("notification_failure_category", None):
+            try:
+                _write_json_atomic(_state_path(str(state["request_id"])), state)
+            except OSError:
+                state["notification_failure_category"] = "administrator_report_state_update_failed"
+    except Exception:
+        failure_state = state if isinstance(state, dict) else dict(state)
+        failure_state["notification_failure_category"] = "administrator_report_failed"
+        failure_state["updated_at"] = _timestamp()
+        try:
+            _write_json_atomic(_state_path(str(state["request_id"])), failure_state)
+            row = _public_state(failure_state)
+            row["event"] = f"{status}_notification_failed"
+            _append_jsonl(AUTOFIX_INDEX_PATH, row)
+        except OSError:
+            pass
 
 
 def approve_autofix(
@@ -326,6 +372,11 @@ def approve_autofix(
         "auto_patch_ready",
         "autofix_merge_approved",
         "auto_merged_pending_deploy",
+        "autofix_deploy_approved",
+        "autofix_deploying",
+        "auto_deploy_blocked",
+        "auto_applied",
+        "auto_rollback_failed",
     }:
         raise AutofixError("invalid_transition", "This incident already has a prepared repair.")
     attempt = int(existing.get("attempt") or 0) + 1
@@ -335,6 +386,7 @@ def approve_autofix(
         "status": "autofix_approved",
         "attempt": attempt,
         "base_commit": base_commit,
+        "target_branch": _current_branch(repository),
         "branch": f"autofix/{normalized}-{attempt}",
         "approved_at": _timestamp(current),
         "approval_expires_at": _timestamp(current + APPROVAL_LIFETIME),
@@ -361,8 +413,15 @@ def cancel_autofix(
     state = _load_json(_state_path(normalized))
     if not state:
         raise FileNotFoundError(f"unknown Autofix request: {normalized}")
-    if state.get("status") == "auto_merged_pending_deploy":
-        raise AutofixError("invalid_transition", "A merged repair cannot be cancelled.")
+    if state.get("status") in {
+        "autofix_deploying",
+        "auto_applied",
+        "auto_rolled_back",
+        "auto_rollback_failed",
+    }:
+        raise AutofixError(
+            "invalid_transition", "An active or completed deployment outcome cannot be cancelled."
+        )
     if state.get("status") == "auto_cancelled":
         return _public_state(state)
     state["status"] = "auto_cancelled"
@@ -401,6 +460,11 @@ def autofix_status(*, request_id: str, now: datetime | None = None) -> dict[str,
         if expiry is None or expiry <= current:
             result["status"] = "auto_merge_blocked"
             result["failure_category"] = "merge_approval_expired"
+    if result.get("status") == "autofix_deploy_approved":
+        expiry = _parse_timestamp(result.get("deploy_expires_at"))
+        if expiry is None or expiry <= current:
+            result["status"] = "auto_deploy_blocked"
+            result["failure_category"] = "deploy_approval_expired"
     return result
 
 
@@ -910,6 +974,315 @@ def execute_merge(
         return _public_state(state)
 
 
+def approve_autofix_deploy(
+    *,
+    request_id: str,
+    commit: str,
+    now: datetime | None = None,
+    repository: Path | None = None,
+) -> dict[str, object]:
+    """Grant a 30-minute lease to restart and verify one exact merged commit."""
+
+    normalized = _safe_request_id(request_id)
+    state = _load_json(_state_path(normalized))
+    expected = str(state.get("repair_commit") or "").lower()
+    supplied = _safe_text(commit, limit=40).lower()
+    current = now or utc_now()
+    if state.get("status") == "autofix_deploy_approved" and supplied == expected:
+        expiry = _parse_timestamp(state.get("deploy_expires_at"))
+        if expiry is not None and expiry > current:
+            return _public_state(state)
+    if state.get("status") not in {"auto_merged_pending_deploy", "auto_deploy_blocked"}:
+        raise AutofixError(
+            "invalid_transition", "No merged Autofix commit is ready for deployment."
+        )
+    if not re.fullmatch(r"[0-9a-f]{40}", supplied) or supplied != expected:
+        raise AutofixError(
+            "commit_mismatch", "The administrator-approved deployment commit does not match."
+        )
+    target = repository or REPOSITORY_ROOT
+    if _git(["status", "--porcelain=v1", "--untracked-files=all"], cwd=target):
+        raise AutofixError("deploy_target_dirty", "The Analytics checkout is not clean.")
+    if _head_commit(target) != supplied:
+        raise AutofixError(
+            "deploy_head_changed", "The merged Analytics HEAD changed before approval."
+        )
+    current_branch = _current_branch(target)
+    recorded_branch = str(state.get("target_branch") or "")
+    if recorded_branch and recorded_branch != current_branch:
+        raise AutofixError("deploy_branch_changed", "The Analytics target branch changed.")
+    state["target_branch"] = current_branch
+    state["status"] = "autofix_deploy_approved"
+    state["deploy_approved_at"] = _timestamp(current)
+    state["deploy_expires_at"] = _timestamp(current + DEPLOY_APPROVAL_LIFETIME)
+    state["deploy_approval_source"] = "local_administrator_cli"
+    _save_state(state, event="autofix_deploy_approved")
+    _append_report_event(
+        state,
+        status="autofix_deploy_approved",
+        summary=f"Administrator approved deployment of merged commit {supplied[:12]}.",
+        verification="The one-time Analytics-only deployment lease expires in 30 minutes.",
+        notification_kind="autofix_deploy_approval",
+    )
+    return _public_state(state)
+
+
+PreflightChecker = Callable[[datetime], Sequence[str]]
+BackupRunner = Callable[[], str]
+RestartRunner = Callable[[], None]
+HealthVerifier = Callable[[], Sequence[str]]
+
+
+def _default_deploy_preflight(current: datetime) -> Sequence[str]:
+    from . import host_maintenance
+
+    result = host_maintenance.evaluate_preflight(
+        host_maintenance.read_json(host_maintenance.ACTIVITY_PATH),
+        host_maintenance.read_json(host_maintenance.HEALTH_PATH),
+        now=current,
+    )
+    return result.blockers
+
+
+def _default_backup_runner() -> str:
+    from . import backup
+
+    path = backup.create()
+    if not backup.verify(path):
+        raise AutofixError("backup_verification_failed", "The pre-deployment backup is invalid.")
+    return path.name
+
+
+def _default_restart_runner() -> None:
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    if not ANALYTICS_RESTART_SCRIPT.is_file():
+        raise AutofixError("restart_script_missing", "The Analytics restart script is unavailable.")
+    _run_process(
+        [
+            str(powershell),
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ANALYTICS_RESTART_SCRIPT),
+        ],
+        cwd=REPOSITORY_ROOT,
+        timeout=120,
+    )
+
+
+def _http_ok(url: str, *, expected_body: bytes | None = None) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=4) as response:
+            body = response.read(4096)
+            status = int(response.status)
+    except (OSError, ValueError, urllib.error.URLError):
+        return False
+    return 200 <= status < 400 and (expected_body is None or expected_body in body.lower())
+
+
+def _default_health_verifier() -> Sequence[str]:
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        if _http_ok(ANALYTICS_HEALTH_URL, expected_body=b"ok") and _http_ok(ANALYTICS_PAGE_URL):
+            return ("Analytics health endpoint returned ok", "Analytics page returned HTTP success")
+        time.sleep(2)
+    raise AutofixError(
+        "analytics_health_timeout", "Analytics did not become healthy after restart."
+    )
+
+
+def _record_deploy_blocked(state: dict[str, object], error: AutofixError) -> dict[str, object]:
+    state["status"] = "auto_deploy_blocked"
+    state["failure_category"] = error.category
+    _save_state(state, event="auto_deploy_blocked")
+    _append_report_event(
+        state,
+        status="auto_deploy_blocked",
+        summary="The approved Analytics deployment was blocked before restart.",
+        verification=error.category,
+        notification_kind="autofix_failed",
+    )
+    return _public_state(state)
+
+
+def _rollback_deployment(
+    state: dict[str, object],
+    *,
+    repository: Path,
+    current: datetime,
+    restart_runner: RestartRunner,
+    health_verifier: HealthVerifier,
+    original_error: AutofixError,
+) -> dict[str, object]:
+    repair_commit = str(state.get("repair_commit") or "").lower()
+    try:
+        if _head_commit(repository) != repair_commit:
+            raise AutofixError(
+                "rollback_head_changed", "The deployment HEAD changed before rollback."
+            )
+        if _git(["status", "--porcelain=v1", "--untracked-files=all"], cwd=repository):
+            raise AutofixError("rollback_target_dirty", "The deployment checkout became dirty.")
+        _git(
+            [
+                "-c",
+                "user.name=SMAI Autofix Rollback",
+                "-c",
+                "user.email=smai-autofix@localhost.invalid",
+                "revert",
+                "--no-edit",
+                repair_commit,
+            ],
+            cwd=repository,
+        )
+        state["rollback_commit"] = _head_commit(repository)
+        restart_runner()
+        health_verifier()
+        state["status"] = "auto_rolled_back"
+        state["rolled_back_at"] = _timestamp(current)
+        state["failure_category"] = original_error.category
+        _save_state(state, event="auto_rolled_back")
+        _append_report_event(
+            state,
+            status="auto_rolled_back",
+            summary="Analytics deployment verification failed and the exact repair was reverted.",
+            verification=(
+                f"Failure {original_error.category}; rollback commit "
+                f"{str(state['rollback_commit'])[:12]}; Analytics health recovered."
+            ),
+            notification_kind="autofix_rolled_back",
+        )
+    except Exception as rollback_error:
+        failure = (
+            rollback_error
+            if isinstance(rollback_error, AutofixError)
+            else AutofixError("rollback_failed", "Automatic rollback did not complete.")
+        )
+        state["status"] = "auto_rollback_failed"
+        state["failure_category"] = failure.category
+        _save_state(state, event="auto_rollback_failed")
+        _append_report_event(
+            state,
+            status="auto_rollback_failed",
+            summary="Analytics deployment failed and automatic rollback also failed.",
+            verification=f"Deployment failure {original_error.category}; rollback failure {failure.category}.",
+            notification_kind="autofix_rollback_failed",
+        )
+    return _public_state(state)
+
+
+def execute_deployment(
+    state: dict[str, object],
+    *,
+    repository: Path = REPOSITORY_ROOT,
+    now: datetime | None = None,
+    preflight_checker: PreflightChecker = _default_deploy_preflight,
+    backup_runner: BackupRunner = _default_backup_runner,
+    validator: Validator = _default_validator,
+    restart_runner: RestartRunner = _default_restart_runner,
+    health_verifier: HealthVerifier = _default_health_verifier,
+) -> dict[str, object]:
+    """Deploy one exact merged repair and rollback by revert commit on verification failure."""
+
+    current = now or utc_now()
+    restart_attempted = False
+    try:
+        expiry = _parse_timestamp(state.get("deploy_expires_at"))
+        if state.get("status") != "autofix_deploy_approved" or expiry is None or expiry <= current:
+            raise AutofixError(
+                "deploy_approval_expired", "The deployment approval is missing or expired."
+            )
+        repair_commit = str(state.get("repair_commit") or "").lower()
+        if _git(["status", "--porcelain=v1", "--untracked-files=all"], cwd=repository):
+            raise AutofixError("deploy_target_dirty", "The Analytics checkout is not clean.")
+        if _head_commit(repository) != repair_commit:
+            raise AutofixError(
+                "deploy_head_changed", "The merged Analytics HEAD changed before deployment."
+            )
+        if _current_branch(repository) != str(state.get("target_branch") or ""):
+            raise AutofixError("deploy_branch_changed", "The Analytics target branch changed.")
+        parent = _git(["rev-parse", f"{repair_commit}^"], cwd=repository).lower()
+        if parent != str(state.get("base_commit") or "").lower():
+            raise AutofixError("deploy_parent_mismatch", "The merged repair parent changed.")
+        try:
+            blockers = tuple(str(item) for item in preflight_checker(current) if str(item))
+        except AutofixError:
+            raise
+        except Exception as error:
+            raise AutofixError(
+                "deployment_preflight_failed", "Deployment preflight failed."
+            ) from error
+        if blockers:
+            blocker = re.sub(r"[^a-z0-9_]+", "_", blockers[0].casefold()).strip("_")
+            category = f"preflight_{blocker}" if blocker else "deployment_preflight_blocked"
+            raise AutofixError(category, blockers[0])
+        try:
+            list(validator(repository, str(state["base_commit"])))
+        except AutofixError:
+            raise
+        except Exception as error:
+            raise AutofixError(
+                "deploy_validation_failed", "Deployment validation failed."
+            ) from error
+        try:
+            backup_id = _safe_text(backup_runner(), limit=160)
+        except AutofixError:
+            raise
+        except Exception as error:
+            raise AutofixError("backup_failed", "The pre-deployment backup failed.") from error
+        if not backup_id or "/" in backup_id or "\\" in backup_id:
+            raise AutofixError("backup_id_invalid", "The backup result was invalid.")
+        state["status"] = "autofix_deploying"
+        state["deploy_started_at"] = _timestamp(current)
+        state["backup_id"] = backup_id
+        _save_state(state, event="autofix_deploying")
+        restart_attempted = True
+        try:
+            restart_runner()
+        except AutofixError:
+            raise
+        except Exception as error:
+            raise AutofixError("analytics_restart_failed", "Analytics restart failed.") from error
+        try:
+            verification = list(health_verifier())
+        except AutofixError:
+            raise
+        except Exception as error:
+            raise AutofixError(
+                "analytics_health_failed", "Analytics health verification failed."
+            ) from error
+        state["status"] = "auto_applied"
+        state["deployed_at"] = _timestamp(current)
+        state["deployment_verification"] = verification
+        state.pop("failure_category", None)
+        _save_state(state, event="auto_applied")
+        _append_report_event(
+            state,
+            status="auto_applied",
+            summary=f"Analytics is running the approved Autofix commit {repair_commit[:12]}.",
+            verification=(
+                f"Backup {backup_id}; Analytics health and page checks passed; "
+                "browser visual review and Git push remain manual."
+            ),
+            notification_kind="autofix_applied",
+        )
+        return _public_state(state)
+    except AutofixError as error:
+        if restart_attempted:
+            return _rollback_deployment(
+                state,
+                repository=repository,
+                current=current,
+                restart_runner=restart_runner,
+                health_verifier=health_verifier,
+                original_error=error,
+            )
+        return _record_deploy_blocked(state, error)
+
+
 @contextmanager
 def _worker_lock() -> Iterator[None]:
     AUTOFIX_ROOT.mkdir(parents=True, exist_ok=True)
@@ -975,3 +1348,46 @@ def run_worker_once(*, dry_run: bool = False) -> dict[str, object]:
         "processed": True,
         "request_id": result.get("request_id", ""),
     }
+
+
+def run_deploy_worker_once(*, dry_run: bool = False) -> dict[str, object]:
+    """Process at most one deployment lease under the Analytics owner identity."""
+
+    config = load_config()
+    candidates = [
+        state
+        for state in _pending_states_for_status("autofix_deploy_approved")
+        if state.get("request_id")
+    ]
+    if not candidates:
+        return {"status": "idle", "processed": False}
+    state = candidates[0]
+    active = config["enabled"] and config["mode"] == "active" and config["deployment_enabled"]
+    if dry_run or not active:
+        return {
+            "status": "dry_run" if dry_run or config["mode"] == "dry_run" else "disabled",
+            "processed": False,
+            "request_id": state.get("request_id", ""),
+            "would_process": state.get("status", "unknown"),
+        }
+    try:
+        with _worker_lock():
+            latest = _load_json(_state_path(str(state["request_id"])))
+            result = execute_deployment(latest)
+    except AutofixError as error:
+        return {"status": "blocked", "processed": False, "failure_category": error.category}
+    return {
+        "status": result.get("status", "unknown"),
+        "processed": True,
+        "request_id": result.get("request_id", ""),
+    }
+
+
+def _pending_states_for_status(status: str) -> list[dict[str, object]]:
+    try:
+        paths = sorted(AUTOFIX_STATE_DIR.glob("*.json"), key=lambda path: path.stat().st_mtime)
+    except OSError:
+        return []
+    return [
+        state for state in (_load_json(path) for path in paths) if state.get("status") == status
+    ]

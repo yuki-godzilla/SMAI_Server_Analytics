@@ -58,8 +58,10 @@ class CodexAutofixTests(unittest.TestCase):
         codex_autofix.AUTOFIX_INDEX_PATH = codex_autofix.AUTOFIX_ROOT / "events.jsonl"
         codex_autofix.AUTOFIX_LOCK_PATH = codex_autofix.AUTOFIX_ROOT / "worker.lock"
         codex_autofix.AUTOFIX_CONFIG_PATH = self.root / "codex_autofix.json"
-        self.report_patch = patch.object(codex_autofix, "_append_report_event")
-        self.report_patch.start()
+        self.report_patch = patch(
+            "smai_analytics.operations.incident_automation.record_improvement_report"
+        )
+        self.report_mock = self.report_patch.start()
 
     def tearDown(self) -> None:
         self.report_patch.stop()
@@ -133,6 +135,24 @@ class CodexAutofixTests(unittest.TestCase):
         self.assertEqual("auto_patch_ready", repaired["status"], repaired)
         return started, repaired
 
+    def _prepare_merged_patch(
+        self,
+    ) -> tuple[datetime, dict[str, object], dict[str, object]]:
+        started, repaired = self._prepare_ready_patch()
+        codex_autofix.approve_autofix_merge(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=2),
+        )
+        merged = codex_autofix.execute_merge(
+            codex_autofix._load_json(codex_autofix._state_path("incident-test")),
+            repository=self.repository,
+            now=started + timedelta(minutes=3),
+            validator=lambda _path, _base: ["post-merge validator passed"],
+        )
+        self.assertEqual("auto_merged_pending_deploy", merged["status"], merged)
+        return started, repaired, merged
+
     def test_path_allowlist_is_fail_closed(self) -> None:
         for allowed in (
             "analytics_web.py",
@@ -182,16 +202,199 @@ class CodexAutofixTests(unittest.TestCase):
         self.assertEqual("external_url_diff", context.exception.category)
         codex_autofix.validate_diff_text('+ Probe "http://localhost:8502"')
 
+    def test_administrator_report_failure_does_not_change_a_completed_outcome(self) -> None:
+        state: dict[str, object] = {
+            "request_id": "incident-test",
+            "status": "auto_applied",
+        }
+        codex_autofix._save_state(state, event="auto_applied")
+        self.report_mock.side_effect = OSError("synthetic report failure")
+        codex_autofix._append_report_event(
+            state,
+            status="auto_applied",
+            summary="applied",
+            verification="health passed",
+            notification_kind="autofix_applied",
+        )
+        persisted = codex_autofix._load_json(codex_autofix._state_path("incident-test"))
+        self.assertEqual("auto_applied", persisted["status"])
+        self.assertEqual("administrator_report_failed", persisted["notification_failure_category"])
+
     def test_configuration_defaults_to_disabled_dry_run(self) -> None:
         self.assertEqual(
             {"enabled": False, "mode": "dry_run"},
             {key: codex_autofix.load_config()[key] for key in ("enabled", "mode")},
         )
+        self.assertFalse(codex_autofix.load_config()["deployment_enabled"])
         codex_autofix.AUTOFIX_CONFIG_PATH.write_text(
             json.dumps({"enabled": True, "mode": "active"}),
             encoding="utf-8",
         )
         self.assertTrue(codex_autofix.load_config()["enabled"])
+
+    def test_third_approval_requires_the_exact_merged_commit(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        with self.assertRaises(codex_autofix.AutofixError) as context:
+            codex_autofix.approve_autofix_deploy(
+                request_id="incident-test",
+                commit="f" * 40,
+                now=started + timedelta(minutes=4),
+            )
+        self.assertEqual("commit_mismatch", context.exception.category)
+        approved = codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+        self.assertEqual("autofix_deploy_approved", approved["status"])
+
+    def test_deployment_applies_after_preflight_backup_restart_and_health(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+        restarts: list[str] = []
+        result = codex_autofix.execute_deployment(
+            codex_autofix._load_json(codex_autofix._state_path("incident-test")),
+            repository=self.repository,
+            now=started + timedelta(minutes=5),
+            preflight_checker=lambda _now: [],
+            backup_runner=lambda: "smai_test_backup",
+            validator=lambda _path, _base: ["deploy validator passed"],
+            restart_runner=lambda: restarts.append("restart"),
+            health_verifier=lambda: ["health ok", "page ok"],
+        )
+        self.assertEqual("auto_applied", result["status"], result)
+        self.assertEqual("smai_test_backup", result["backup_id"])
+        self.assertEqual(["restart"], restarts)
+        self.assertEqual(repaired["repair_commit"], self._git("rev-parse", "HEAD"))
+
+    def test_deployment_preflight_blocks_active_sessions_before_restart(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+        restarts: list[str] = []
+        result = codex_autofix.execute_deployment(
+            codex_autofix._load_json(codex_autofix._state_path("incident-test")),
+            repository=self.repository,
+            now=started + timedelta(minutes=5),
+            preflight_checker=lambda _now: ["active_sessions"],
+            backup_runner=lambda: "must_not_run",
+            validator=lambda _path, _base: ["must not run"],
+            restart_runner=lambda: restarts.append("restart"),
+            health_verifier=lambda: ["must not run"],
+        )
+        self.assertEqual("auto_deploy_blocked", result["status"])
+        self.assertEqual("preflight_active_sessions", result["failure_category"])
+        self.assertEqual([], restarts)
+
+    def test_failed_health_verification_creates_revert_commit_and_recovers(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+        health_attempts = 0
+        restarts: list[str] = []
+
+        def verify_health() -> list[str]:
+            nonlocal health_attempts
+            health_attempts += 1
+            if health_attempts == 1:
+                raise codex_autofix.AutofixError("synthetic_health_failure", "failed")
+            return ["rollback health recovered"]
+
+        result = codex_autofix.execute_deployment(
+            codex_autofix._load_json(codex_autofix._state_path("incident-test")),
+            repository=self.repository,
+            now=started + timedelta(minutes=5),
+            preflight_checker=lambda _now: [],
+            backup_runner=lambda: "smai_test_backup",
+            validator=lambda _path, _base: ["deploy validator passed"],
+            restart_runner=lambda: restarts.append("restart"),
+            health_verifier=verify_health,
+        )
+        self.assertEqual("auto_rolled_back", result["status"], result)
+        self.assertRegex(str(result["rollback_commit"]), r"^[0-9a-f]{40}$")
+        self.assertEqual(2, len(restarts))
+        self.assertNotEqual(repaired["repair_commit"], self._git("rev-parse", "HEAD"))
+        self.assertNotIn(
+            "Autofix verified repair",
+            (self.repository / "README.md").read_text(encoding="utf-8"),
+        )
+
+    def test_rollback_failure_is_reported_as_critical_manual_recovery(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+
+        def failed_restart() -> None:
+            raise codex_autofix.AutofixError("synthetic_restart_failure", "failed")
+
+        result = codex_autofix.execute_deployment(
+            codex_autofix._load_json(codex_autofix._state_path("incident-test")),
+            repository=self.repository,
+            now=started + timedelta(minutes=5),
+            preflight_checker=lambda _now: [],
+            backup_runner=lambda: "smai_test_backup",
+            validator=lambda _path, _base: ["deploy validator passed"],
+            restart_runner=failed_restart,
+            health_verifier=lambda: ["must not run"],
+        )
+        self.assertEqual("auto_rollback_failed", result["status"], result)
+        self.assertEqual("synthetic_restart_failure", result["failure_category"])
+
+    def test_deployment_worker_dry_run_does_not_restart(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+        result = codex_autofix.run_deploy_worker_once(dry_run=True)
+        self.assertEqual("dry_run", result["status"])
+        self.assertFalse(result["processed"])
+        self.assertEqual("autofix_deploy_approved", result["would_process"])
+
+    def test_expired_deployment_approval_is_persisted_without_restart(self) -> None:
+        started, repaired, _merged = self._prepare_merged_patch()
+        codex_autofix.approve_autofix_deploy(
+            request_id="incident-test",
+            commit=str(repaired["repair_commit"]),
+            now=started + timedelta(minutes=4),
+        )
+        restarts: list[str] = []
+        result = codex_autofix.execute_deployment(
+            codex_autofix._load_json(codex_autofix._state_path("incident-test")),
+            repository=self.repository,
+            now=started + timedelta(minutes=35),
+            restart_runner=lambda: restarts.append("restart"),
+        )
+        self.assertEqual("auto_deploy_blocked", result["status"])
+        self.assertEqual("deploy_approval_expired", result["failure_category"])
+        self.assertEqual([], restarts)
+
+    def test_active_deployment_cannot_be_cancelled_mid_restart(self) -> None:
+        self._request()
+        codex_autofix._save_state(
+            {"request_id": "incident-test", "status": "autofix_deploying"},
+            event="autofix_deploying",
+        )
+        with self.assertRaises(codex_autofix.AutofixError) as context:
+            codex_autofix.cancel_autofix(
+                request_id="incident-test",
+                reason="unsafe interruption",
+            )
+        self.assertEqual("invalid_transition", context.exception.category)
 
     def test_approval_expires_fail_closed_and_cancel_is_idempotent(self) -> None:
         self._request()

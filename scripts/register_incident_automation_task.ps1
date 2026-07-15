@@ -13,9 +13,12 @@ if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(1)
-$trigger.Repetition.Interval = "PT5M"
-$trigger.Repetition.Duration = "P1D"
+$trigger = New-ScheduledTaskTrigger -Daily -At "00:00"
+$repetition = New-CimInstance -ClassName MSFT_TaskRepetitionPattern `
+    -Namespace Root\Microsoft\Windows\TaskScheduler `
+    -ClientOnly `
+    -Property @{ Interval = "PT5M"; Duration = "P1D"; StopAtDurationEnd = $false }
+$trigger.Repetition = $repetition
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 4) -StartWhenAvailable
 $action = New-ScheduledTaskAction -Execute $python -Argument ('"{0}" once' -f $script) -WorkingDirectory $projectRoot
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Detect SMAI critical health alerts, create approval-gated local Codex drafts, and deliver configured Gmail notifications."

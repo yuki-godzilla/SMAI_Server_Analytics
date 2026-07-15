@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
 }
 
 $action = New-ScheduledTaskAction -Execute $python -Argument ('"{0}" autofix-worker' -f $script) -WorkingDirectory $projectRoot
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(1)
+$trigger = New-ScheduledTaskTrigger -Daily -At "00:00"
 $repetition = New-CimInstance -ClassName MSFT_TaskRepetitionPattern `
     -Namespace Root\Microsoft\Windows\TaskScheduler `
     -ClientOnly `

@@ -20,6 +20,7 @@ STATE_NAME = "task_monitor_state.json"
 FRESHNESS_POLICIES: dict[str, tuple[timedelta | None, timedelta | None]] = {
     "SMAI-Incident-Automation": (timedelta(minutes=10), timedelta(minutes=20)),
     "SMAI-Codex-Autofix-Worker": (timedelta(minutes=10), timedelta(minutes=20)),
+    "SMAI-Codex-Autofix-Deploy": (timedelta(minutes=3), timedelta(minutes=5)),
     "SMAI-Host-Monitor": (timedelta(minutes=10), timedelta(minutes=20)),
     "Backup Restore Smoke": (timedelta(days=31), timedelta(days=35)),
 }
