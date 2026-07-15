@@ -98,6 +98,18 @@
   - 変更: 全ての読み取り専用表を、PCでは罫線付きの運用表、767px以下では項目名を左・値を右に保つ44px以上の縦長証跡カードへ統一した。推移は白い標準チャートを廃止し、暗色のAltair時系列、4本程度の時刻tick、タップtooltip、状態に対応する系列色へ変更した。Streamlitテーマも同じネイビー基調へ明示し、選択欄・チャートの背景をアプリ全体と統一した。
   - 再確認: healthy/degraded/critical/high-volume/recoveryの合成5状態で全8タブをレンダリングし、Chrome実画面で証跡表、4つの暗色時系列、ページ横スクロールなし、0px高のPWA metadataコンポーネントを確認した。実機のスマホ・タブレットでの最終受け入れは、更新後に同じ画面を開いて確認する。
 
+## 2026-07-16
+
+- Phase A（定期監視・復元確認）を実運用へ移行
+  - `SMAI-Incident-Automation`を現在の対話ユーザー・Limited・5分間隔・`IgnoreNew`で登録し、OS既定PythonではなくAnalytics起動と同じ仮想環境を固定した。手動起動はexit 0で完了した。
+  - `SMAI-Backup-Restore-Smoke`を現在の対話ユーザー・Limited・毎月1日02:00で登録した。日曜04:00の保守枠と重なりにくい時刻とし、手動起動はexit 0で完了した。
+  - 隔離復元スモークは、バックアップ作成、manifest検証、隔離先復元、復元物のSHA-256照合、Runtimeへの結果記録まで成功した。本体データへの復元・上書きは行っていない。
+  - 現在のhealthは`healthy`。Main ApplicationのWatchログも直近連続正常であり、Mainの再起動・設定変更は行っていない。
+  - 過去のテスト用criticalがhealthyへ戻ったため、既存Incidentに紐づく復旧通知が1通配送された。新規障害の生成、Autofix、Main Applicationへの変更は行っていない。
+- Phase B（受け入れ検証）の合成状態をhealthy/degraded/critical/**unknown**/high-volume/recoveryの6状態へ拡張した。`unknown`はL1根拠も`unknown`として渡し、全8タブで欠損を正常扱いしないことをレンダラーで確認する。
+- 実画面受け入れでは、`http://localhost:8502`を390px、768px、1440pxで確認した。390pxでは推移のCheck Matrixが項目名と値を対にした縦長証跡カードとして表示され、横スクロールは発生しなかった。768pxでは横長ロゴが切れることを検出し、補助コンテキストより完全な製品名を優先するtablet規則を追加して再確認した。3幅すべてでdocumentの横スクロール幅は表示幅と一致した。
+- Main側の既存`SmartMarketAI-Server-Autostart`／`SmartMarketAI-Server-Watch`は、Analyticsが正とする`SMAI_Projects\\Smart_Market_AI`とは別の`workspace\\Smart_Market_AI`を参照していることを読み取りで検出した。AnalyticsはMain側タスクを変更しない。Task Schedulerの`0x41301`（実行中）は失敗から除外し、`0x41303`（登録済み・未実行）は`unknown`とするよう監視判定を補正した。Watchのexit 1とワークスペース不一致は要確認として残す。
+
 ## 2026-07-13
 
 - Overviewを「現在の安全性と次の確認先」に絞り、時系列・検査表・復元準備・端末別詳細を推移、改善レポート、セッションへ分散

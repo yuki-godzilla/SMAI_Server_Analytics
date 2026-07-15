@@ -1,4 +1,4 @@
-"""Render all Web Operations Console surfaces against five safe synthetic states.
+"""Render all Web Operations Console surfaces against six safe synthetic states.
 
 Run this with the Streamlit-enabled Analytics virtual environment. This is a
 deterministic rendering contract check; live LAN and browser visual validation
@@ -22,11 +22,12 @@ EXPECTED_VIEWS = ["DashBoard", "推移", "セッション", "操作履歴", "障
 def _snapshot(now: datetime, status: str) -> dict[str, object]:
     failed = status == "critical"
     degraded = status == "degraded"
+    unknown = status == "unknown"
     return {
         "checked_at": now.isoformat(),
         "overall": status,
         "checks": [
-            {"name": "TCP 8501", "level": "L1", "status": "failed" if failed else "ok", "detail": "synthetic", "latency_ms": 33},
+            {"name": "TCP 8501", "level": "L1", "status": "failed" if failed else "unknown" if unknown else "ok", "detail": "synthetic", "latency_ms": 33},
             {"name": "Streamlit health", "level": "L1", "status": "ok" if not failed else "failed", "detail": "synthetic", "latency_ms": 48},
             {"name": "Streamlit page", "level": "L2", "status": "failed" if degraded else "ok", "detail": "synthetic", "latency_ms": 72},
             {"name": "user data", "level": "L3", "status": "ok", "detail": "synthetic", "latency_ms": 3},
@@ -119,8 +120,9 @@ def main() -> None:
         ("PASS_1_HEALTHY", "healthy", 3),
         ("PASS_2_DEGRADED", "degraded", 4),
         ("PASS_3_CRITICAL", "critical", 5),
-        ("PASS_4_HIGH_VOLUME", "healthy", 100),
-        ("PASS_5_RECOVERY", "healthy", 1),
+        ("PASS_4_UNKNOWN", "unknown", 2),
+        ("PASS_5_HIGH_VOLUME", "healthy", 100),
+        ("PASS_6_RECOVERY", "healthy", 1),
     )
     for case, status, event_count in cases:
         _run_render(case, status, event_count=event_count)

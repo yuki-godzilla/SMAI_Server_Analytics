@@ -1,11 +1,19 @@
 import json
 import unittest
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import analytics_web
 
 
 class AnalyticsWebFormattingTests(unittest.TestCase):
+    def test_tablet_header_prioritizes_the_complete_product_name(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
+
+        self.assertIn("@media (min-width: 768px) and (max-width: 900px)", source)
+        self.assertIn(".app-context { display: none; }", source)
+        self.assertIn(".app-wordmark { height: 64px; max-width: min(50vw, 390px); }", source)
+
     def test_current_check_summary_marks_failures_and_unknowns_for_attention(self) -> None:
         level, message = analytics_web._check_attention_summary(
             {"checks": [{"status": "failed"}, {"status": "unknown"}, {"status": "ok"}]}

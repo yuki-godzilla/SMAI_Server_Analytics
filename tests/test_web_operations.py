@@ -98,6 +98,26 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
         self.assertIn('Interval = "PT5M"', register)
         self.assertIn('Duration = "P1D"', register)
+        self.assertIn("venv_SMAI_Analytics", register)
+        self.assertNotIn("Get-Command python.exe", register)
+
+    def test_backup_restore_smoke_is_monthly_and_uses_an_isolated_runner(self) -> None:
+        register = (
+            REPOSITORY_ROOT / "scripts" / "register_backup_restore_smoke_task.ps1"
+        ).read_text(encoding="utf-8")
+        runner = (
+            REPOSITORY_ROOT / "scripts" / "run_backup_restore_smoke.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"SMAI-Backup-Restore-Smoke"', register)
+        self.assertIn('"MONTHLY"', register)
+        self.assertIn('"02:00"', register)
+        self.assertIn('"/IT"', register)
+        self.assertIn('"/RL", "LIMITED"', register)
+        self.assertIn("run_backup_restore_smoke.cmd", register)
+        self.assertIn("backup.py", runner)
+        self.assertIn(" smoke", runner)
+        self.assertIn("venv_SMAI_Analytics", runner)
 
 
 if __name__ == "__main__":

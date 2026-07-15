@@ -43,7 +43,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\register_incident_automation_task.ps1
 ```
 
-登録後は、タスクの実行パス、作業ディレクトリ、実行ユーザーを確認してください。登録自体はWindowsのlive operationなので、通常テストとは分離します。
+登録後は、タスクの実行パス、作業ディレクトリ、実行ユーザーを確認してください。登録スクリプトはAnalytics専用仮想環境を優先し、存在しない既存環境では互換のSMAI仮想環境を明示的に選択します。OS既定の`python.exe`へは依存しません。登録自体はWindowsのlive operationなので、通常テストとは分離します。
 
 解除:
 

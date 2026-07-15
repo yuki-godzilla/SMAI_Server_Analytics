@@ -869,6 +869,9 @@ def _render_styles() -> None:
           }
           @media (min-width: 768px) and (max-width: 900px) {
             [data-testid="stHorizontalBlock"]:has(.visual-surface) > [data-testid="column"] { flex: 1 1 100% !important; min-width: 100% !important; width: 100% !important; }
+            /* Preserve the complete product name before secondary context at the narrow tablet breakpoint. */
+            .app-context { display: none; }
+            .app-wordmark { height: 64px; max-width: min(50vw, 390px); }
             .health-visual-surface { min-height: 560px; }
           }
           @media (max-width: 767px) {

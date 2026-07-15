@@ -56,6 +56,22 @@ class TaskMonitorTests(unittest.TestCase):
         self.assertIn("実行パス", detail)
         self.assertEqual(task_monitor.classify_task("SmartMarketAI-Server-Watch", {"last_result": "0"}, path_ok=False, now=now)[0], "degraded")
 
+    def test_scheduler_informational_states_are_not_process_failures(self) -> None:
+        now = datetime(2026, 7, 12, 12, tzinfo=UTC)
+
+        self.assertEqual(
+            task_monitor.classify_task("SmartMarketAI-Server-Autostart", {"last_result": str(0x41301)}, path_ok=True, now=now),
+            ("healthy", "タスクは実行中です"),
+        )
+        self.assertEqual(
+            task_monitor.classify_task("SMAI-Host-Maintenance", {"last_result": str(0x41303)}, path_ok=True, now=now),
+            ("unknown", "タスクは登録済みですが、まだ実行履歴がありません"),
+        )
+        self.assertEqual(
+            task_monitor.classify_task("SmartMarketAI-Server-Autostart", {"last_result": str(0x41301)}, path_ok=False, now=now)[0],
+            "degraded",
+        )
+
     def test_backup_smoke_age_and_missing_state_fail_closed(self) -> None:
         now = datetime(2026, 7, 12, 12, tzinfo=UTC)
         self.assertEqual(task_monitor.backup_row({}, now=now)["status"], "unknown")

@@ -25,6 +25,12 @@ FRESHNESS_POLICIES: dict[str, tuple[timedelta | None, timedelta | None]] = {
     "Backup Restore Smoke": (timedelta(days=31), timedelta(days=35)),
 }
 
+# Task Scheduler returns these non-zero informational states in ``Last Result``.
+# They are not process failures: 0x41301 means the task is currently running and
+# 0x41303 means its first scheduled execution has not happened yet.
+SCHED_S_TASK_RUNNING = 0x41301
+SCHED_S_TASK_HAS_NOT_RUN = 0x41303
+
 
 def parse_timestamp(value: object) -> datetime | None:
     text = str(value or "").strip()
@@ -108,6 +114,14 @@ def classify_task(
 
     current = (now or datetime.now(UTC)).astimezone(UTC)
     code = result_code(values.get("last_result"))
+    if code == SCHED_S_TASK_RUNNING:
+        if not path_ok:
+            return "degraded", "タスクは実行中ですが、実行パスが現在のワークスペースと一致しません"
+        return "healthy", "タスクは実行中です"
+    if code == SCHED_S_TASK_HAS_NOT_RUN:
+        if not path_ok:
+            return "degraded", "タスクは未実行で、実行パスが現在のワークスペースと一致しません"
+        return "unknown", "タスクは登録済みですが、まだ実行履歴がありません"
     if code is not None and code != 0:
         detail = f"最終結果が失敗です（exit {code}）"
         if not path_ok:
