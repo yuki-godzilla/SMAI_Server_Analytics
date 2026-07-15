@@ -112,7 +112,7 @@ class IncidentAutomationTests(unittest.TestCase):
         persisted = json.loads(incident_automation.GMAIL_CONFIG_PATH.read_text(encoding="utf-8"))
         self.assertEqual("SMAI-Analytics-Gmail-SMTP", stored["target"])
         self.assertEqual("app-password", stored["secret"])
-        self.assertNotIn("app-password", incident_automation.GMAIL_CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertNotIn("app-password", json.dumps(persisted, ensure_ascii=False))
         self.assertEqual("ready", status["status"])
         self.assertNotIn("notify@example.com", json.dumps(status, ensure_ascii=False))
 
@@ -270,6 +270,10 @@ class IncidentAutomationTests(unittest.TestCase):
             "approval": "[SMAI CODEX APPROVED]",
             "report": "[SMAI REPORT]",
             "recovery": "[SMAI RECOVERED]",
+            "autofix_ready": "[SMAI AUTOFIX READY]",
+            "autofix_merge_approval": "[SMAI AUTOFIX MERGE APPROVED]",
+            "autofix_merged": "[SMAI AUTOFIX MERGED]",
+            "autofix_failed": "[SMAI AUTOFIX STOPPED]",
         }
         for kind, prefix in expected_prefixes.items():
             message = incident_automation._build_notification_message(

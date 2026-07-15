@@ -59,6 +59,21 @@ class WebOperationsContractTests(unittest.TestCase):
 
         self.assertTrue(all(not path.exists() for path in legacy_paths))
 
+    def test_codex_autofix_worker_requires_a_dedicated_user_and_starts_fail_closed(self) -> None:
+        register = (
+            REPOSITORY_ROOT / "scripts" / "register_smai_codex_autofix_worker_task.ps1"
+        ).read_text(encoding="utf-8")
+        config = (REPOSITORY_ROOT / "config" / "codex_autofix.json").read_text(encoding="utf-8")
+
+        self.assertIn("[Parameter(Mandatory)]", register)
+        self.assertIn("[string]$UserId", register)
+        self.assertIn("-LogonType Password", register)
+        self.assertIn("-RunLevel Limited", register)
+        self.assertIn("-MultipleInstances IgnoreNew", register)
+        self.assertIn("-Minutes 45", register)
+        self.assertIn('"enabled": false', config)
+        self.assertIn('"mode": "dry_run"', config)
+
 
 if __name__ == "__main__":
     unittest.main()

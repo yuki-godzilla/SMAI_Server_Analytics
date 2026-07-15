@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-07-15
+
+- 承認制Codex Autofix v1（実装）
+  - 変更: critical Incidentに対する24時間の第1承認、隔離Git worktreeでの`codex exec --sandbox workspace-write`、allowlist／機微情報／構造化結果／決定的テスト検査、単一local修復commitを実装した。
+  - 変更: 修復準備完了レポートの管理者通知後、40桁commit hashを指定する1時間の第2承認、clean target・基準HEAD・branch HEAD・commit parentを再検証するfast-forward限定マージを実装した。再起動とpushは自動化していない。
+  - 変更: 承認、取消、実行、commit、マージ、失敗をRuntimeの状態JSONとappend-only JSONL、既存改善レポート、固定Gmail Outboxへ記録する。期限切れ、未許可パス、Schema不一致、機微情報、dirty target、hash差替えはfail-closedで停止する。
+  - 変更: 専用標準Windowsアカウント向けの5分周期・`IgnoreNew`・45分上限Task登録／解除スクリプトを追加した。設定は`enabled=false` / `mode=dry_run`を既定とした。
+  - 検証: 隔離した実Gitリポジトリで、修復commit、第2承認、fast-forward、期限切れ、取消、並行worker、commit不一致、dirty target、target HEAD変更、再承認、マージ後検証失敗を確認した。
+  - 未実施: 専用WindowsアカウントとACL、Codexログイン、Task登録、実Gmail配送、実Codex dry-runドリル、active化はlive operationのため実施していない。
+
 ## 2026-07-14
 
 - 障害通知・管理者承認ワークフロー（実装）

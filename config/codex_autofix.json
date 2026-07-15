@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "mode": "dry_run",
+  "worker_interval_minutes": 5,
+  "execution_limit_minutes": 45
+}

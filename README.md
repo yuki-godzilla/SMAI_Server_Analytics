@@ -116,6 +116,27 @@ GmailアドレスはRuntimeのGit管理外設定、アプリパスワードはWi
 
 Analytics画面は読み取り専用のまま、Gmail通知の設定状態と最終配送結果だけを表示します。詳細な手順は[`Documents/08_Incident_Automation_Operations.md`](Documents/08_Incident_Automation_Operations.md)を参照してください。
 
+## 承認制Codex Autofix
+
+critical Incidentは通知だけでCodexを起動しません。管理者がIncident IDを指定して第1承認した場合だけ、専用workerが隔離Git worktreeでAnalyticsのallowlist内を修復・検証し、local commitを作成します。修復レポートを管理者へ再通知した後、管理者がその40桁commit hashを第2承認した場合だけ、cleanなAnalytics checkoutへfast-forwardマージします。自動再起動・自動pushは行いません。
+
+```powershell
+python .\incident_automation.py approve-autofix --request-id <incident-id>
+python .\incident_automation.py autofix-status --request-id <incident-id>
+python .\incident_automation.py approve-autofix-merge --request-id <incident-id> --commit <40桁commit-hash>
+python .\incident_automation.py cancel-autofix --request-id <incident-id> --reason "管理者判断"
+```
+
+既定設定は[`config/codex_autofix.json`](config/codex_autofix.json)の`enabled=false` / `mode=dry_run`です。専用標準Windowsアカウント、最小ACL、専用Codexログイン、dry-runドリルを確認してから、workerタスクを登録して明示的に有効化します。
+
+```powershell
+python .\incident_automation.py autofix-worker --dry-run
+.\scripts\register_smai_codex_autofix_worker_task.ps1 -UserId <専用Windowsユーザー> -DryRun
+.\scripts\register_smai_codex_autofix_worker_task.ps1 -UserId <専用Windowsユーザー>
+```
+
+詳しい状態遷移と有効化ゲートは[`Documents/10_Codex_Autofix_Design.md`](Documents/10_Codex_Autofix_Design.md)を参照してください。
+
 ## セットアップと確認
 
 依存関係は`setup/`に分離しています。Analytics専用環境は次で作成・更新します。

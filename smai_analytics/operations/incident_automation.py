@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from ..monitoring import health
-from . import windows_credentials
+from . import codex_autofix, windows_credentials
 
 RUNTIME_ROOT = Path(
     os.environ.get(
@@ -444,7 +444,13 @@ def _write_initial_report(request: Mapping[str, object]) -> Path:
 
 
 def record_improvement_report(
-    *, request_id: str, status: str, summary: str, verification: str, now: datetime | None = None
+    *,
+    request_id: str,
+    status: str,
+    summary: str,
+    verification: str,
+    now: datetime | None = None,
+    notification_kind: str = "report",
 ) -> Path:
     """Append a bounded Codex/operator outcome to the durable incident report."""
 
@@ -475,7 +481,7 @@ def record_improvement_report(
         "summary": _safe_text(summary, limit=240),
     }
     _append_jsonl(REPORT_INDEX_PATH, entry)
-    queue_administrator_notification(entry, report_path=report_path, kind="report")
+    queue_administrator_notification(entry, report_path=report_path, kind=notification_kind)
     return report_path
 
 
@@ -518,12 +524,43 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
         "approval": "CODEX APPROVED",
         "report": "REPORT",
         "recovery": "RECOVERED",
+        "autofix_approval": "AUTOFIX APPROVED",
+        "autofix_ready": "AUTOFIX READY",
+        "autofix_merge_approval": "AUTOFIX MERGE APPROVED",
+        "autofix_merged": "AUTOFIX MERGED",
+        "autofix_failed": "AUTOFIX STOPPED",
+        "autofix_cancelled": "AUTOFIX CANCELLED",
     }.get(kind, severity)
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
     message["Subject"] = f"[SMAI {subject_prefix}] {request_id}"
-    if kind == "recovery":
+    if kind == "autofix_ready":
+        message.set_content(
+            "An isolated Codex Autofix commit passed deterministic validation. "
+            "Review the attached bounded report and local commit before granting merge approval."
+        )
+    elif kind == "autofix_merge_approval":
+        message.set_content(
+            "A local administrator granted a one-hour merge lease for the exact Autofix commit. "
+            "The merge remains fail-closed if the target or commit changes."
+        )
+    elif kind == "autofix_merged":
+        message.set_content(
+            "The approved Autofix commit was fast-forwarded into the local Analytics checkout. "
+            "Restart, visual review, and push remain manual operations."
+        )
+    elif kind in {"autofix_failed", "autofix_cancelled"}:
+        message.set_content(
+            "The Codex Autofix workflow stopped without reporting an automatic deployment. "
+            "Review the attached bounded local report."
+        )
+    elif kind == "autofix_approval":
+        message.set_content(
+            "A local administrator approved one isolated Codex Autofix run. "
+            "This approval does not authorize merge, restart, or push."
+        )
+    elif kind == "recovery":
         message.set_content(
             "SMAI Analytics observed a healthy recovery for this incident. "
             "The attached local report remains the audit record."
@@ -854,6 +891,18 @@ def main(argv: list[str] | None = None) -> int:
     test_parser.add_argument("--confirm", action="store_true", help="Required because this sends external email.")
     approval_parser = subparsers.add_parser("approve-codex", help="Create an administrator-approved local Codex work order.")
     approval_parser.add_argument("--request-id", required=True)
+    autofix_parser = subparsers.add_parser("approve-autofix", help="Approve one isolated Codex Autofix run for 24 hours.")
+    autofix_parser.add_argument("--request-id", required=True)
+    merge_parser = subparsers.add_parser("approve-autofix-merge", help="Approve one exact verified Autofix commit for merge.")
+    merge_parser.add_argument("--request-id", required=True)
+    merge_parser.add_argument("--commit", required=True)
+    cancel_parser = subparsers.add_parser("cancel-autofix", help="Cancel an Autofix or merge lease.")
+    cancel_parser.add_argument("--request-id", required=True)
+    cancel_parser.add_argument("--reason", required=True)
+    status_parser = subparsers.add_parser("autofix-status", help="Show one secret-free Autofix state.")
+    status_parser.add_argument("--request-id", required=True)
+    worker_parser = subparsers.add_parser("autofix-worker", help="Process at most one approved Autofix workflow.")
+    worker_parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "once":
         print(json.dumps(run_once(), ensure_ascii=False))
@@ -886,8 +935,33 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("test-gmail sends external email. Re-run with --confirm after reviewing the recipient.")
         print(json.dumps({"delivered": send_gmail_test_email()}, ensure_ascii=False))
         return 0
-    approval_path = approve_codex_request(request_id=args.request_id)
-    print(approval_path)
+    if args.command == "approve-codex":
+        approval_path = approve_codex_request(request_id=args.request_id)
+        print(approval_path)
+        return 0
+    if args.command == "approve-autofix":
+        print(json.dumps(codex_autofix.approve_autofix(request_id=args.request_id), ensure_ascii=False))
+        return 0
+    if args.command == "approve-autofix-merge":
+        print(
+            json.dumps(
+                codex_autofix.approve_autofix_merge(request_id=args.request_id, commit=args.commit),
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    if args.command == "cancel-autofix":
+        print(
+            json.dumps(
+                codex_autofix.cancel_autofix(request_id=args.request_id, reason=args.reason),
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    if args.command == "autofix-status":
+        print(json.dumps(codex_autofix.autofix_status(request_id=args.request_id), ensure_ascii=False))
+        return 0
+    print(json.dumps(codex_autofix.run_worker_once(dry_run=args.dry_run), ensure_ascii=False))
     return 0
 
 

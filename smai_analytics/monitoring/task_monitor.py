@@ -19,6 +19,7 @@ STATE_NAME = "task_monitor_state.json"
 # remains important, but an old last-run timestamp is not itself an incident.
 FRESHNESS_POLICIES: dict[str, tuple[timedelta | None, timedelta | None]] = {
     "SMAI-Incident-Automation": (timedelta(minutes=10), timedelta(minutes=20)),
+    "SMAI-Codex-Autofix-Worker": (timedelta(minutes=10), timedelta(minutes=20)),
     "SMAI-Host-Monitor": (timedelta(minutes=10), timedelta(minutes=20)),
     "Backup Restore Smoke": (timedelta(days=31), timedelta(days=35)),
 }

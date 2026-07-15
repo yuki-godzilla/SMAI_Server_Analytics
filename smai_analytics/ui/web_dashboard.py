@@ -24,7 +24,7 @@ from typing import Mapping
 
 from .. import network
 from ..monitoring import connection_watch, task_monitor, telemetry
-from ..operations import incident_automation
+from ..operations import codex_autofix, incident_automation
 
 try:  # Keep pure helper tests usable without the optional Web runtime.
     import streamlit as st
@@ -58,6 +58,7 @@ ANALYTICS_WORDMARK_LARGE_TEXT = ASSET_ROOT / "smai-analytics-wordmark-luminous-l
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
 TOPOLOGY_TABLET = ASSET_ROOT / "smai-topology-tablet-v1.png"
+AUTOFIX_CONFIG = codex_autofix.load_config()
 TASKS = (
     "SMAI-Host-Monitor",
     "SMAI-Host-Maintenance",
@@ -65,6 +66,10 @@ TASKS = (
     "SmartMarketAI-Server-Watch",
     "SmartMarketAI-Symbol-Maintenance-IfDue",
     "SMAI-Incident-Automation",
+) + (
+    ("SMAI-Codex-Autofix-Worker",)
+    if AUTOFIX_CONFIG["enabled"] and AUTOFIX_CONFIG["mode"] == "active"
+    else ()
 )
 CLIENT_TYPE_LABELS = {
     "desktop": "PC",
@@ -96,6 +101,19 @@ STATUS_LABELS = {
     "critical": "重大",
     "failed": "失敗",
     "error": "エラー",
+    "pending_investigation": "調査待ち",
+    "codex_approved": "Codex承認済み",
+    "autofix_approved": "Autofix承認済み",
+    "autofix_running": "Autofix実行中",
+    "auto_patch_ready": "修復確認待ち",
+    "autofix_merge_approved": "マージ承認済み",
+    "auto_merged_pending_deploy": "マージ済み・反映確認待ち",
+    "auto_validation_failed": "自動検証失敗",
+    "auto_merge_blocked": "自動マージ停止",
+    "auto_failed": "Autofix失敗",
+    "auto_blocked": "Autofix停止",
+    "auto_merged_validation_failed": "マージ済み・検証失敗",
+    "auto_cancelled": "Autofix取消",
     "unknown": "不明",
 }
 STATUS_COLORS = {
@@ -104,11 +122,22 @@ STATUS_COLORS = {
     "active": "#34D399",
     "running": "#34D399",
     "ready": "#34D399",
+    "autofix_running": "#38BDF8",
     "degraded": "#FBBF24",
     "stale": "#FBBF24",
+    "autofix_approved": "#FBBF24",
+    "auto_patch_ready": "#FBBF24",
+    "autofix_merge_approved": "#FBBF24",
+    "auto_merged_pending_deploy": "#FBBF24",
     "critical": "#F87171",
     "failed": "#F87171",
     "error": "#F87171",
+    "auto_validation_failed": "#F87171",
+    "auto_merge_blocked": "#F87171",
+    "auto_failed": "#F87171",
+    "auto_blocked": "#F87171",
+    "auto_merged_validation_failed": "#F87171",
+    "auto_cancelled": "#AAB8C8",
     "unknown": "#AAB8C8",
 }
 TIME_WINDOW_OPTIONS = {
@@ -147,7 +176,14 @@ _URL_QUERY_PATTERN = re.compile(r"https?://[^\s?#]+(?:/[^\s?#]*)?\?[^\s]+", re.I
 def expected_task_root(task: str) -> Path:
     return (
         REPOSITORY_ROOT
-        if task in {"SMAI-Server-Analytics", "SMAI-Host-Monitor", "SMAI-Host-Maintenance", "SMAI-Incident-Automation"}
+        if task
+        in {
+            "SMAI-Server-Analytics",
+            "SMAI-Host-Monitor",
+            "SMAI-Host-Maintenance",
+            "SMAI-Incident-Automation",
+            "SMAI-Codex-Autofix-Worker",
+        }
         else PROJECT_ROOT
     )
 
