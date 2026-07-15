@@ -18,16 +18,15 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("--server.enableXsrfProtection true", launcher)
         self.assertNotIn("dashboard.py", launcher.casefold())
 
-    def test_autostart_keeps_one_web_console_per_interactive_user(self) -> None:
+    def test_autostart_uses_the_current_users_startup_folder_and_avoids_duplicates(self) -> None:
         script = (
             REPOSITORY_ROOT / "scripts" / "register_smai_analytics_autostart_task.ps1"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("run_analytics_web.bat", script)
-        self.assertIn("SMAI-Server-Analytics", script)
-        self.assertIn("-MultipleInstances IgnoreNew", script)
-        self.assertIn("-LogonType Interactive", script)
-        self.assertIn("-RestartCount 3", script)
+        self.assertIn("start_smai_analytics_service.ps1", script)
+        self.assertIn("[Environment+SpecialFolder]::Startup", script)
+        self.assertIn("SMAI Analytics Autostart.cmd", script)
+        self.assertIn("-StartupDelaySeconds 45", script)
         self.assertNotIn("run_dashboard.bat", script)
 
     def test_restart_targets_only_the_web_console_process(self) -> None:

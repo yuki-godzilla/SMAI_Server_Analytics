@@ -54,6 +54,8 @@ TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
 TOPOLOGY_TABLET = ASSET_ROOT / "smai-topology-tablet-v1.png"
 TASKS = (
     "SMAI-Server-Analytics",
+    "SMAI-Host-Monitor",
+    "SMAI-Host-Maintenance",
     "SmartMarketAI-Server-Autostart",
     "SmartMarketAI-Server-Watch",
     "SmartMarketAI-Symbol-Maintenance-IfDue",
@@ -138,7 +140,11 @@ _URL_QUERY_PATTERN = re.compile(r"https?://[^\s?#]+(?:/[^\s?#]*)?\?[^\s]+", re.I
 
 
 def expected_task_root(task: str) -> Path:
-    return REPOSITORY_ROOT if task in {"SMAI-Server-Analytics", "SMAI-Incident-Automation"} else PROJECT_ROOT
+    return (
+        REPOSITORY_ROOT
+        if task in {"SMAI-Server-Analytics", "SMAI-Host-Monitor", "SMAI-Host-Maintenance", "SMAI-Incident-Automation"}
+        else PROJECT_ROOT
+    )
 
 
 def read_json(path: Path) -> dict[str, object]:

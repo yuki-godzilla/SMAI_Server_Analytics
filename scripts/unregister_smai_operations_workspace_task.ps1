@@ -1,9 +1,8 @@
 [CmdletBinding()]
 param()
 
-$ErrorActionPreference = "Stop"
 $startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup)
-$startupLauncher = Join-Path $startupDirectory "SMAI Analytics Autostart.cmd"
+$startupLauncher = Join-Path $startupDirectory "SMAI Operations Workspace.cmd"
 if (Test-Path -LiteralPath $startupLauncher) {
     Remove-Item -LiteralPath $startupLauncher -Force
     Write-Host "[OK] Removed user Startup launcher: $startupLauncher"

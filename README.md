@@ -52,6 +52,54 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\unregister_smai_analytics_autostart_task.ps1
 ```
 
+## PC常時運用と安全保守
+
+`SMAI-Host-Monitor`は5分ごとに、Main Application、Tailscale、物理ディスク、メモリ、CPU、過去24時間の異常停止を同じhealth snapshotへ記録します。異常の記録だけでWindows全体を再起動することはありません。
+
+最初に変更前の電源・更新・タスク設定をRuntimeへ保存します。
+
+```powershell
+.\scripts\capture_smai_host_baseline.ps1
+.\scripts\register_smai_host_monitor_task.ps1 -RunImmediately
+```
+
+週次の安全保守は、アクティブなSMAIセッション、実行中操作、古いhealth snapshot、health異常のいずれかを検知すると再起動を延期します。dry-runではバックアップ、保持期間削除、再起動を行いません。`WeeklyRestart`の置換は、二重実行を避けるため**管理者として開いたPowerShell**からだけ許可します。
+
+```powershell
+.\scripts\invoke_smai_host_maintenance.ps1 -DryRun
+.\scripts\register_smai_host_maintenance_task.ps1 -ReplaceLegacyWeeklyRestart
+```
+
+新タスクは日曜04:00に、事前バックアップとretentionを成功させた後だけ、`-Force`なしで120秒後のWindows再起動を要求します。必要なら、猶予時間内に`shutdown /a`で中止できます。旧`WeeklyRestart`は削除せず無効化するため、ロールバックできます。
+
+```powershell
+.\scripts\unregister_smai_host_maintenance_task.ps1 -RestoreLegacyWeeklyRestart
+.\scripts\unregister_smai_host_monitor_task.ps1
+.\scripts\restore_smai_server_power_profile.ps1
+```
+
+電源設定は新規機器なしで適用できます。既定のdry-runを確認してから、**管理者として開いたPowerShell**でAC時Hybrid SleepとFast Startupを無効にし、Windows UpdateのActive Hoursを08:00〜02:00に設定します。バランス電源プラン、AC時スリープ無効、NVMeのWindows最適化は維持します。
+
+```powershell
+.\scripts\set_smai_server_power_profile.ps1
+.\scripts\set_smai_server_power_profile.ps1 -Apply
+```
+
+## ログオン時の運用プロンプトとWeb画面
+
+SMAI Main Applicationは既存のWindows起動タスクで起動を維持し、Analyticsはログオン時に重複を検出して起動します。ログオン時の自動起動は、管理者権限を必要としない現在のユーザーのWindows Startupフォルダーへ登録します。Analyticsは45秒待機してから確認するため、既存タスクが残っていても二重起動しません。`SMAI-Operations-Workspace`は同じログオン時に、既存プロセスを二重起動せず、MainとAnalyticsそれぞれの状態確認用PowerShellプロンプトを表示します。両方のhealth endpointが応答した後、既定ブラウザーで`http://localhost:8501`と`http://localhost:8502`を開きます。
+
+```powershell
+.\scripts\register_smai_analytics_autostart_task.ps1
+.\scripts\register_smai_operations_workspace_task.ps1 -RunImmediately
+```
+
+プロンプトを閉じてもサーバープロセスは停止しません。Web画面を開き直すだけなら`open_smai_service_pages.ps1`を実行します。元に戻す場合は次を実行します。
+
+```powershell
+.\scripts\unregister_smai_operations_workspace_task.ps1
+```
+
 ## 固定Gmail障害通知
 
 critical障害の固定Gmail通知は初期状態で無効です。Googleアカウントで2段階認証と`SMAI Analytics Alerts`用のアプリパスワードを作成した後、対話中のWindowsユーザーで次を一度だけ実行します。
@@ -80,7 +128,7 @@ Analytics画面は読み取り専用のまま、Gmail通知の設定状態と最
 
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = "1"
-.\venv_SMAI_Analytics\Scripts\python.exe -m py_compile analytics_web.py health.py backup.py retention.py
+.\venv_SMAI_Analytics\Scripts\python.exe -m py_compile analytics_web.py health.py backup.py retention.py host_maintenance.py
 .\venv_SMAI_Analytics\Scripts\python.exe -m compileall -q smai_analytics
 .\venv_SMAI_Analytics\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 .\venv_SMAI_Analytics\Scripts\python.exe health.py
