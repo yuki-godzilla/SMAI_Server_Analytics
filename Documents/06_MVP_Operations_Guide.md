@@ -126,7 +126,9 @@ python .\backup.py smoke
 
 SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。AnalyticsはTCP 8502のhealth endpointを先に確認し、すでに正常であれば二重起動せず終了します。ログオン時の起動と表示は、管理者権限を必要としない現在のユーザーのWindows StartupフォルダーへPowerShellショートカットとして登録します。Analyticsは45秒待機してから同じ確認を行い、起動処理は非表示PowerShellで実行します。旧`SMAI-Server-Analytics`がCMDバッチを起動する構成を検出した場合は、重複とCMDポップアップを防ぐため無効化します。
 
-`SMAI-Operations-Workspace`はログオン時に、Main Application用とAnalytics用の2つのPowerShellプロンプトを開きます。両方とも30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。正常は緑、注意は黄、停止・到達不能は赤、URLはシアンで表示します。サーバー本体の起動処理は非表示PowerShellへ分離するため、CMDウィンドウは開きません。両サービスが応答した時点で、既定ブラウザーに`http://localhost:8501`と`http://localhost:8502`を開きます。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
+`SMAI-Operations-Workspace`はログオン時に、Main Application用とAnalytics用の2つのPowerShellプロンプトを開きます。両方とも30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。正常は緑、注意は黄、停止・到達不能は赤、URLはシアンで表示します。サーバー本体の起動処理は非表示PowerShellへ分離するため、CMDウィンドウは開きません。両サービスが応答した時点で、Google Chromeがある場合は`http://localhost:8501`と`http://localhost:8502`を別ウィンドウで開きます。Chromeがない場合だけ既定ブラウザーを使います。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
+
+2画面を接続している通常の運用端末では、ページを開いた後に`arrange_smai_operations_workspace.ps1`が次のように配置します。Main Applicationを左、Analyticsを右に統一し、VS Codeはメインディスプレイの最前面、状態確認用PowerShellは同じ位置の最背面、Web画面はサブディスプレイに置きます。VS CodeではCodex拡張機能を右側のセカンダリサイドバーで起動するユーザー設定を使用します。モニターが1台だけの場合や対象ウィンドウが起動しなかった場合は、配置だけをスキップして各サービスを停止させません。
 
 ```powershell
 .\scripts\register_smai_analytics_autostart_task.ps1

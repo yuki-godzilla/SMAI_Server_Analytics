@@ -15,6 +15,17 @@ $targets = @(
     @{ name = "SMAI Main Application"; health = "http://127.0.0.1:8501/_stcore/health"; page = "http://localhost:8501" },
     @{ name = "SMAI Analytics"; health = "http://127.0.0.1:8502/_stcore/health"; page = "http://localhost:8502" }
 )
+
+function Get-ChromeExecutable {
+    $candidates = @(
+        (Join-Path $env:ProgramFiles "Google\Chrome\Application\chrome.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
+        (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application\chrome.exe")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+    return $candidates | Select-Object -First 1
+}
+
+$chrome = Get-ChromeExecutable
 $deadline = (Get-Date).AddSeconds($WaitSeconds)
 $ready = @{}
 
@@ -34,7 +45,14 @@ do {
 
 foreach ($target in $targets) {
     if ($ready[$target.name]) {
-        Start-Process $target.page
+        if ($chrome) {
+            # A separate Chrome window is required so Main and Analytics can
+            # occupy their own half of the secondary display.
+            Start-Process -FilePath $chrome -ArgumentList @("--new-window", $target.page)
+        } else {
+            Write-Warning "Google Chrome was not found; opening $($target.name) in the default browser instead."
+            Start-Process $target.page
+        }
         Write-Host "[OK] Opened: $($target.name)"
     } else {
         Write-Warning "$($target.name) did not become healthy within $WaitSeconds seconds; no browser page was opened."
