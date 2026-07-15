@@ -148,6 +148,8 @@ python .\incident_automation.py approve-codex --request-id <incident-id>
 
 承認済みファイルには現在、管理者・時刻・Incident IDが残ります。運用をさらに厳格にする次段階では、`approve-codex`に24時間の有効期限、`cancel-codex`による取消、Codexが着手したことを示す`codex_acknowledged`記録を追加します。有効期限切れ、取消済み、別Incident ID、または本体側の責務へ広がる依頼では、Codexは変更を開始せず、管理者へ再承認を求めます。この提案はまだ自動実行機能ではありません。
 
+Codexの自動起動と隔離worktreeでの自動修正は、別設計の[Codex自動起動・自動修復 設計仕様](10_Codex_Autofix_Design.md)に従います。通知・手動Codex承認とAutofix承認は同じものとして扱いません。
+
 ## 安全ガード
 
 - `critical` 以外のヘルス状態はCodex下書きを自動生成しません。
