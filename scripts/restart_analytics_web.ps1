@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $webEntryPoint = Join-Path $projectRoot "analytics_web.py"
-$startScript = Join-Path $projectRoot "run_analytics_web.bat"
+$startScript = Join-Path $PSScriptRoot "run_analytics_web.ps1"
 
 if (-not (Test-Path -LiteralPath $webEntryPoint -PathType Leaf)) {
     throw "Analytics Web entry point was not found: $webEntryPoint"
@@ -31,5 +31,16 @@ foreach ($process in $processes) {
     }
 }
 
-Start-Process -FilePath $env:ComSpec -ArgumentList @("/d", "/c", "`"$startScript`"") -WorkingDirectory $projectRoot -WindowStyle Hidden
+$startParameters = @{
+    FilePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    ArgumentList = @(
+        "-NoProfile",
+        "-WindowStyle", "Hidden",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $startScript
+    )
+    WorkingDirectory = $projectRoot
+    WindowStyle = "Hidden"
+}
+Start-Process @startParameters
 Write-Host "[SMAI] Analytics Web restart requested."

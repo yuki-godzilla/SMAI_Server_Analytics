@@ -35,11 +35,20 @@ function Get-ServiceStatus {
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $target.health -TimeoutSec 3
         if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
-            return "healthy (HTTP $($response.StatusCode))"
+            return [pscustomobject]@{
+                label = "healthy (HTTP $($response.StatusCode))"
+                color = "Green"
+            }
         }
-        return "attention (HTTP $($response.StatusCode))"
+        return [pscustomobject]@{
+            label = "attention (HTTP $($response.StatusCode))"
+            color = "Yellow"
+        }
     } catch {
-        return "unavailable ($($_.Exception.GetType().Name))"
+        return [pscustomobject]@{
+            label = "unavailable ($($_.Exception.GetType().Name))"
+            color = "Red"
+        }
     }
 }
 
@@ -47,17 +56,20 @@ try {
     $Host.UI.RawUI.WindowTitle = $target.title
     do {
         try { Clear-Host } catch {}
-        Write-Host "=============================================="
-        Write-Host " $($target.title)"
-        Write-Host "=============================================="
-        Write-Host "Checked : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        Write-Host "Health  : $(Get-ServiceStatus)"
-        Write-Host "Local   : $($target.page)"
-        Write-Host "Port    : TCP $($target.port)"
+        $status = Get-ServiceStatus
+        Write-Host "================================================" -ForegroundColor DarkCyan
+        Write-Host " $($target.title)" -ForegroundColor Cyan
+        Write-Host "================================================" -ForegroundColor DarkCyan
+        Write-Host " Checked : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
+        Write-Host " Health  : " -NoNewline -ForegroundColor DarkGray
+        Write-Host $status.label -ForegroundColor $status.color
+        Write-Host " Local   : $($target.page)" -ForegroundColor Cyan
+        Write-Host " Port    : TCP $($target.port)" -ForegroundColor Magenta
         Write-Host ""
-        Write-Host "This prompt monitors the existing server process; it does not start a duplicate instance."
+        Write-Host " This prompt monitors the existing server process; it does not start a duplicate instance." -ForegroundColor DarkGray
         if ($Watch) {
-            Write-Host "Refresh : every $RefreshSeconds seconds (Ctrl+C stops updates)"
+            Write-Host " Refresh : every $RefreshSeconds seconds " -NoNewline -ForegroundColor DarkGray
+            Write-Host "(Ctrl+C stops updates)" -ForegroundColor Yellow
             Start-Sleep -Seconds $RefreshSeconds
         }
     } while ($Watch)

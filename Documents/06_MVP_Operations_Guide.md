@@ -4,11 +4,11 @@
 
 SMAI本体、Analytics画面、Runtimeデータを分離します。SMAI本体は `Smart_Market_AI`、監視画面と診断コードは `SMAI_Server_Analytics`、ログとバックアップは `SMAI_Server_Runtime` に置きます。
 
-画面はPC上で `run_analytics_web.bat` を起動します。SMAIが停止しても、最後に取得した状態と直近ログを確認できます。Web ConsoleはTCP 8502で待ち受け、Tailscale MagicDNSによりLAN内・外出先の管理端末から同じURLで確認できます。
+画面はPC上で `scripts\run_analytics_web.ps1` を起動します。SMAIが停止しても、最後に取得した状態と直近ログを確認できます。Web ConsoleはTCP 8502で待ち受け、Tailscale MagicDNSによりLAN内・外出先の管理端末から同じURLで確認できます。旧`run_analytics_web.bat`は互換入口として残しますが、通常運用では使用しません。
 
 ### MagicDNSによる管理端末からの閲覧
 
-PC、タブレット、スマートフォンから同じ運用状態を確認する場合は、Analyticsプロジェクトで`run_analytics_web.bat`を実行します。SMAI本体のStreamlitとは別のTCP 8502で、読み取り専用のOperations Consoleを起動します。管理端末ではTailscaleを起動し、LAN内でも外出先でも`http://smai-server:8502`を開いてください。Main Applicationは`http://smai-server:8501`であり、同じサーバー名と異なるポート番号で区別します。サーバーPC内の確認だけは`http://localhost:8502`を使用します。Web Consoleだけを再起動する場合は`restart_analytics_web.bat`を使用します。
+PC、タブレット、スマートフォンから同じ運用状態を確認する場合は、Analyticsプロジェクトで`scripts\run_analytics_web.ps1`を実行します。SMAI本体のStreamlitとは別のTCP 8502で、読み取り専用のOperations Consoleを起動します。管理端末ではTailscaleを起動し、LAN内でも外出先でも`http://smai-server:8502`を開いてください。Main Applicationは`http://smai-server:8501`であり、同じサーバー名と異なるポート番号で区別します。サーバーPC内の確認だけは`http://localhost:8502`を使用します。Web Consoleだけを再起動する場合は`restart_analytics_web.bat`を使用します。
 
 - ブラウザー画面は5秒ごとに状態を更新し、L1〜L3のhealth snapshot、セッション、タスク、障害、直近ログを表示します。
 - この画面はSMAI本体の計算、ランキング、スコア、Forecast、ユーザーデータ、タスク設定を変更しません。
@@ -124,9 +124,9 @@ python .\backup.py smoke
 
 ### ログオン時のプロンプトとWeb画面
 
-SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。AnalyticsはTCP 8502のhealth endpointを先に確認し、すでに正常であれば二重起動せず終了します。ログオン時の起動と表示は、管理者権限が不要な現在のユーザーのWindows Startupフォルダーへ登録します。Analyticsは45秒待機してから同じ確認を行うため、既存の`SMAI-Server-Analytics`が残っていても二重起動しません。
+SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。AnalyticsはTCP 8502のhealth endpointを先に確認し、すでに正常であれば二重起動せず終了します。ログオン時の起動と表示は、管理者権限を必要としない現在のユーザーのWindows StartupフォルダーへPowerShellショートカットとして登録します。Analyticsは45秒待機してから同じ確認を行い、起動処理は非表示PowerShellで実行します。旧`SMAI-Server-Analytics`がCMDバッチを起動する構成を検出した場合は、重複とCMDポップアップを防ぐため無効化します。
 
-`SMAI-Operations-Workspace`はログオン時に、Main Application用のPowerShellプロンプトだけを開きます。このプロンプトは30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。Analyticsの状態確認は、重複したPowerShellプロンプトではなく、読み取り専用のWeb Operations ConsoleとStreamlitサーバーコンソールへ集約します。両サービスが応答した時点で、既定ブラウザーに`http://localhost:8501`と`http://localhost:8502`を開きます。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
+`SMAI-Operations-Workspace`はログオン時に、Main Application用とAnalytics用の2つのPowerShellプロンプトを開きます。両方とも30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。正常は緑、注意は黄、停止・到達不能は赤、URLはシアンで表示します。サーバー本体の起動処理は非表示PowerShellへ分離するため、CMDウィンドウは開きません。両サービスが応答した時点で、既定ブラウザーに`http://localhost:8501`と`http://localhost:8502`を開きます。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
 
 ```powershell
 .\scripts\register_smai_analytics_autostart_task.ps1

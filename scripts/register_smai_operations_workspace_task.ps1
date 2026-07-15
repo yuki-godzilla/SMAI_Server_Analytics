@@ -11,14 +11,20 @@ if (-not (Test-Path -LiteralPath $workspaceScript -PathType Leaf)) {
 }
 
 $startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup)
-$startupLauncher = Join-Path $startupDirectory "SMAI Operations Workspace.cmd"
+$startupLauncher = Join-Path $startupDirectory "SMAI Operations Workspace.lnk"
+$legacyLauncher = Join-Path $startupDirectory "SMAI Operations Workspace.cmd"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$launcherContents = @"
-@echo off
-start "" /b "$powershell" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$workspaceScript"
-exit /b 0
-"@
-Set-Content -LiteralPath $startupLauncher -Value $launcherContents -Encoding ascii
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($startupLauncher)
+$shortcut.TargetPath = $powershell
+$shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$workspaceScript`""
+$shortcut.WorkingDirectory = $projectRoot
+$shortcut.WindowStyle = 7
+$shortcut.Save()
+if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyLauncher -Force
+    Write-Host "[SMAI] Replaced CMD Startup launcher with PowerShell shortcut."
+}
 if ($RunImmediately) {
     & $workspaceScript
     if (-not $?) { throw "Could not start the Operations Workspace." }

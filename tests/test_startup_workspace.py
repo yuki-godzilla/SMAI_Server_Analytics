@@ -19,11 +19,17 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("Test-AnalyticsHealth", service)
         self.assertIn("Get-NetTCPConnection", service)
         self.assertIn("StartupDelaySeconds", service)
+        self.assertIn("run_analytics_web.ps1", service)
+        self.assertIn("Local\\SMAI-Analytics-Service-Start", service)
+        self.assertIn("WindowStyle = \"Hidden\"", service)
         self.assertIn("[Environment+SpecialFolder]::Startup", registration)
-        self.assertIn("SMAI Analytics Autostart.cmd", registration)
+        self.assertIn("SMAI Analytics Autostart.lnk", registration)
+        self.assertIn("WScript.Shell", registration)
+        self.assertIn("SMAI-Server-Analytics", registration)
+        self.assertIn("Disabled legacy CMD task", registration)
         self.assertIn("-StartupDelaySeconds 45", registration)
 
-    def test_workspace_opens_main_prompt_and_pages_without_starting_servers(self) -> None:
+    def test_workspace_opens_colored_prompts_and_pages_without_starting_servers(self) -> None:
         prompt = self.read("show_smai_service_prompt.ps1")
         pages = self.read("open_smai_service_pages.ps1")
         workspace = self.read("start_smai_operations_workspace.ps1")
@@ -31,16 +37,31 @@ class StartupWorkspaceTests(unittest.TestCase):
 
         self.assertIn("Local\\SMAI-$Service-Operations-Prompt", prompt)
         self.assertIn("does not start a duplicate instance", prompt)
+        self.assertIn('-ForegroundColor $status.color', prompt)
+        self.assertIn('color = "Green"', prompt)
+        self.assertIn('color = "Yellow"', prompt)
+        self.assertIn('color = "Red"', prompt)
         self.assertIn("http://127.0.0.1:8501/_stcore/health", pages)
         self.assertIn("http://127.0.0.1:8502/_stcore/health", pages)
         self.assertIn("Start-Process $target.page", pages)
-        self.assertIn('foreach ($service in @(\"Main\"))', workspace)
-        self.assertNotIn('foreach ($service in @(\"Main\", \"Analytics\"))', workspace)
-        self.assertIn("SMAI Operations Workspace.cmd", registration)
+        self.assertIn('foreach ($service in @(\"Main\", \"Analytics\"))', workspace)
+        self.assertIn("SMAI Operations Workspace.lnk", registration)
+        self.assertIn("WScript.Shell", registration)
+
+    def test_powershell_web_launcher_keeps_the_server_runner_out_of_cmd(self) -> None:
+        launcher = self.read("run_analytics_web.ps1")
+
+        self.assertIn("venv_SMAI_Analytics\\Scripts\\python.exe", launcher)
+        self.assertIn("compatibilityPython", launcher)
+        self.assertIn("-m smai_analytics.network --emit-batch", launcher)
+        self.assertIn("--server.address 0.0.0.0", launcher)
+        self.assertIn("--server.enableXsrfProtection true", launcher)
+        self.assertNotIn("cmd.exe", launcher.casefold())
 
     def test_dashboard_does_not_require_a_nonexistent_workspace_scheduler_task(self) -> None:
         self.assertNotIn("SMAI-Operations-Workspace", web_dashboard.TASKS)
         self.assertNotIn("SMAI-Analytics-Startup-User", web_dashboard.TASKS)
+        self.assertNotIn("SMAI-Server-Analytics", web_dashboard.TASKS)
 
 
 if __name__ == "__main__":

@@ -25,7 +25,9 @@ class WebOperationsContractTests(unittest.TestCase):
 
         self.assertIn("start_smai_analytics_service.ps1", script)
         self.assertIn("[Environment+SpecialFolder]::Startup", script)
-        self.assertIn("SMAI Analytics Autostart.cmd", script)
+        self.assertIn("SMAI Analytics Autostart.lnk", script)
+        self.assertIn("WScript.Shell", script)
+        self.assertIn("Disabled legacy CMD task", script)
         self.assertIn("-StartupDelaySeconds 45", script)
         self.assertNotIn("run_dashboard.bat", script)
 
@@ -36,8 +38,10 @@ class WebOperationsContractTests(unittest.TestCase):
         launcher = (REPOSITORY_ROOT / "restart_analytics_web.bat").read_text(encoding="utf-8")
 
         self.assertIn("analytics_web.py", script)
-        self.assertIn("run_analytics_web.bat", script)
-        self.assertIn("-WindowStyle Hidden", script)
+        self.assertIn("run_analytics_web.ps1", script)
+        self.assertIn('"-WindowStyle", "Hidden"', script)
+        self.assertIn('WindowStyle = "Hidden"', script)
+        self.assertIn("WindowsPowerShell", script)
         self.assertIn("Get-Process -Id $process.Id -ErrorAction SilentlyContinue", script)
         self.assertIn("restart_analytics_web.ps1", launcher)
         self.assertNotIn("dashboard.py", script.casefold())

@@ -53,7 +53,6 @@ TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
 TOPOLOGY_TABLET = ASSET_ROOT / "smai-topology-tablet-v1.png"
 TASKS = (
-    "SMAI-Server-Analytics",
     "SMAI-Host-Monitor",
     "SMAI-Host-Maintenance",
     "SmartMarketAI-Server-Autostart",

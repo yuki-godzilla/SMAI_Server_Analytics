@@ -12,14 +12,30 @@ if (-not (Test-Path -LiteralPath $startScript -PathType Leaf)) {
 }
 
 $startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup)
-$startupLauncher = Join-Path $startupDirectory "SMAI Analytics Autostart.cmd"
+$startupLauncher = Join-Path $startupDirectory "SMAI Analytics Autostart.lnk"
+$legacyLauncher = Join-Path $startupDirectory "SMAI Analytics Autostart.cmd"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$launcherContents = @"
-@echo off
-start "" /b "$powershell" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$startScript" -StartupDelaySeconds 45
-exit /b 0
-"@
-Set-Content -LiteralPath $startupLauncher -Value $launcherContents -Encoding ascii
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($startupLauncher)
+$shortcut.TargetPath = $powershell
+$shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$startScript`" -StartupDelaySeconds 45"
+$shortcut.WorkingDirectory = $projectRoot
+$shortcut.WindowStyle = 7
+$shortcut.Save()
+if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyLauncher -Force
+    Write-Host "[SMAI] Replaced CMD Startup launcher with PowerShell shortcut."
+}
+
+$legacyTaskName = "SMAI-Server-Analytics"
+$legacyTask = Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+if ($null -ne $legacyTask) {
+    $legacyActions = ($legacyTask.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join " "
+    if ($legacyActions -match "(?i)run_analytics_web\.bat") {
+        Disable-ScheduledTask -TaskName $legacyTaskName | Out-Null
+        Write-Host "[SMAI] Disabled legacy CMD task: $legacyTaskName"
+    }
+}
 if ($RunImmediately) {
     & $startScript -StartupDelaySeconds 0
     if (-not $?) { throw "Could not start the Analytics launcher." }
