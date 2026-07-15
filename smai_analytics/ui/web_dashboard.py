@@ -13,8 +13,6 @@ import html
 import json
 import os
 import re
-import subprocess
-import sys
 from base64 import b64encode
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -42,12 +40,12 @@ BACKUP_SMOKE_STATE = RUNTIME_ROOT / "backup_restore_smoke.json"
 CONNECTION_WATCH_STATE = RUNTIME_ROOT / "connections/watch_state.json"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
 ASSET_ROOT = REPOSITORY_ROOT / "assets"
-# Keep the expensive local probe independent from visual refreshes.  The two
-# UI periods are intentionally co-prime, so a single browser does not redraw
-# its summary and active detail pane at the same cadence.
+# Browser sessions only read monitor evidence.  The timed fragment redraws the
+# compact summary; detailed evidence is fetched on navigation or explicit refresh.
 SNAPSHOT_REFRESH_INTERVAL_SECONDS = 15
-SUMMARY_REFRESH_INTERVAL_SECONDS = 5
-ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS = 7
+SUMMARY_REFRESH_INTERVAL_SECONDS = 15
+DETAIL_SNAPSHOT_TTL_SECONDS = 60
+HEALTH_SNAPSHOT_STALE_AFTER = timedelta(minutes=10)
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_MASCOT_HEADER = ASSET_ROOT / "smai-analytics-mascot-header.png"
@@ -453,27 +451,26 @@ def task_rows() -> list[dict[str, str]]:
         ]
 
 
-def run_health_check() -> str:
-    """Run the existing local probe without exposing subprocess output to browsers."""
+def health_snapshot_note(snapshot: Mapping[str, object], *, now: datetime | None = None) -> str:
+    """Return a bounded warning for absent or stale monitor evidence.
 
-    if os.environ.get("SMAI_ANALYTICS_TEST_SKIP_HEALTH_PROBE") == "1":
-        return ""
-    try:
-        result = subprocess.run(
-            [sys.executable, str(REPOSITORY_ROOT / "health.py")],
-            timeout=4,
-            check=False,
-            capture_output=True,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return "health.py を起動できないため、直近スナップショットを表示しています"
-    return "" if result.returncode == 0 else "health.py が失敗したため、直近スナップショットを表示しています"
+    The browser is deliberately read-only: periodic health probing belongs to
+    ``SMAI-Host-Monitor``, not to every connected dashboard session.
+    """
+
+    checked_at = parse_timestamp(snapshot.get("checked_at"))
+    if checked_at is None:
+        return "health snapshotの時刻を確認できないため、現在状態を正常と判断できません"
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    age = current - checked_at.astimezone(UTC)
+    if age > HEALTH_SNAPSHOT_STALE_AFTER:
+        return f"health snapshotが{int(age.total_seconds() // 60)}分更新されていません。監視タスクを確認してください"
+    return ""
 
 
-def collect_operations_snapshot() -> dict[str, object]:
-    """Collect bounded, fail-closed operational data for one web refresh."""
+def collect_summary_snapshot() -> dict[str, object]:
+    """Read only the compact state required by the periodically refreshed header."""
 
-    health_note = run_health_check()
     snapshot = read_json(SNAPSHOT)
     overall = str(snapshot.get("overall") or "unknown").casefold()
     raw_checks = snapshot.get("checks")
@@ -490,6 +487,26 @@ def collect_operations_snapshot() -> dict[str, object]:
     activity_available = ACTIVITY.is_file() and isinstance(raw_sessions, dict) and isinstance(raw_operations, dict)
     sessions = [session_details(session_id, value) for session_id, value in raw_sessions.items()] if activity_available else []
     active_session_count = sum(session_connection_status(session) == "ok" for session in sessions) if activity_available else None
+
+    return {
+        "health_note": health_snapshot_note(snapshot),
+        "overall": overall,
+        "checked_at": snapshot.get("checked_at"),
+        "checks": checks,
+        "check_statuses": check_statuses,
+        "storage": storage,
+        "activity_available": activity_available,
+        "session_count": len(raw_sessions) if activity_available else None,
+        "active_session_count": active_session_count,
+        "operation_count": len(raw_operations) if activity_available else None,
+        "sessions": sessions,
+    }
+
+
+def collect_operations_snapshot() -> dict[str, object]:
+    """Collect bounded detail only when the user opens or explicitly refreshes it."""
+
+    result = collect_summary_snapshot()
     events = read_events()
     try:
         reports = incident_automation.report_rows()
@@ -508,18 +525,7 @@ def collect_operations_snapshot() -> dict[str, object]:
         task_history = task_monitor.read_observations(RUNTIME_ROOT, window=timedelta(days=30))
     except (OSError, ValueError, TypeError):
         task_history = []
-    return {
-        "health_note": health_note,
-        "overall": overall,
-        "checked_at": snapshot.get("checked_at"),
-        "checks": checks,
-        "check_statuses": check_statuses,
-        "storage": storage,
-        "activity_available": activity_available,
-        "session_count": len(raw_sessions) if activity_available else None,
-        "active_session_count": active_session_count,
-        "operation_count": len(raw_operations) if activity_available else None,
-        "sessions": sessions,
+    result.update({
         "tasks": task_rows(),
         "events": events,
         "reports": reports,
@@ -528,16 +534,25 @@ def collect_operations_snapshot() -> dict[str, object]:
         "rollups": rollups,
         "connection_history": connection_history,
         "task_history": task_history,
-    }
+    })
+    return result
 
 
 if st is not None:
 
     @st.cache_data(ttl=SNAPSHOT_REFRESH_INTERVAL_SECONDS, show_spinner=False)
+    def cached_summary_snapshot() -> dict[str, object]:
+        return collect_summary_snapshot()
+
+
+    @st.cache_data(ttl=DETAIL_SNAPSHOT_TTL_SECONDS, show_spinner=False)
     def cached_operations_snapshot() -> dict[str, object]:
         return collect_operations_snapshot()
 
 else:
+
+    def cached_summary_snapshot() -> dict[str, object]:
+        return collect_summary_snapshot()
 
     def cached_operations_snapshot() -> dict[str, object]:
         return collect_operations_snapshot()
@@ -1205,8 +1220,11 @@ def _render_header(data: Mapping[str, object]) -> None:
     with controls:
         st.markdown('<div class="header-control-spacer header-refresh-anchor"></div>', unsafe_allow_html=True)
         if st.button("更新", key="refresh_now", use_container_width=True):
+            cached_summary_snapshot.clear()
             cached_operations_snapshot.clear()
-            st.rerun(scope="fragment")
+            # A user explicitly requested fresh detail, so this one action may
+            # rerun the application. Timed refreshes never take this path.
+            st.rerun()
 
 
 def _render_metrics(data: Mapping[str, object]) -> None:
@@ -2040,60 +2058,19 @@ def _render_logs(data: Mapping[str, object]) -> None:
 
 
 def _render_live_header() -> None:
-    """Refresh only the header and its current operational summary."""
+    """Refresh only the compact header summary on the periodic timer."""
 
     assert st is not None
-    data = cached_operations_snapshot()
+    data = cached_summary_snapshot()
     _render_header(data)
     _render_access_guidance()
     _render_metrics(data)
     if data["health_note"]:
         st.warning(str(data["health_note"]))
     st.caption(
-        f"サマリーは{SUMMARY_REFRESH_INTERVAL_SECONDS}秒ごと、表示中の画面は"
-        f"{ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS}秒ごとに部分更新 / 最終表示 "
+        f"サマリーは{SUMMARY_REFRESH_INTERVAL_SECONDS}秒ごとに部分更新 / 詳細は画面切替または更新操作で最新化 / 最終表示 "
         f"{datetime.now().astimezone().strftime('%H:%M:%S')} / この画面は閲覧専用です"
     )
-
-
-def _render_live_overview() -> None:
-    assert st is not None
-    _render_overview(cached_operations_snapshot())
-
-
-def _render_live_trends() -> None:
-    assert st is not None
-    _render_trends(cached_operations_snapshot())
-
-
-def _render_live_connections() -> None:
-    assert st is not None
-    _render_connections(cached_operations_snapshot())
-
-
-def _render_live_activity_history() -> None:
-    assert st is not None
-    _render_activity_history(cached_operations_snapshot())
-
-
-def _render_live_incidents() -> None:
-    assert st is not None
-    _render_incidents(cached_operations_snapshot())
-
-
-def _render_live_reports() -> None:
-    assert st is not None
-    _render_reports(cached_operations_snapshot())
-
-
-def _render_live_tasks() -> None:
-    assert st is not None
-    _render_tasks(cached_operations_snapshot())
-
-
-def _render_live_logs() -> None:
-    assert st is not None
-    _render_logs(cached_operations_snapshot())
 
 
 if st is not None:
@@ -2102,67 +2079,13 @@ if st is not None:
     def _live_header_fragment() -> None:
         _render_live_header()
 
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_overview_fragment() -> None:
-        _render_live_overview()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_trends_fragment() -> None:
-        _render_live_trends()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_connections_fragment() -> None:
-        _render_live_connections()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_activity_history_fragment() -> None:
-        _render_live_activity_history()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_incidents_fragment() -> None:
-        _render_live_incidents()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_reports_fragment() -> None:
-        _render_live_reports()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_tasks_fragment() -> None:
-        _render_live_tasks()
-
-
-    @st.fragment(run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-    def _live_logs_fragment() -> None:
-        _render_live_logs()
-
 else:
-    # Keep pure helper tests importable when the optional Streamlit runtime is absent.
+    # Keep pure helper tests importable when the optional Web runtime is absent.
     _live_header_fragment = _render_live_header
-    _live_overview_fragment = _render_live_overview
-    _live_trends_fragment = _render_live_trends
-    _live_connections_fragment = _render_live_connections
-    _live_activity_history_fragment = _render_live_activity_history
-    _live_incidents_fragment = _render_live_incidents
-    _live_reports_fragment = _render_live_reports
-    _live_tasks_fragment = _render_live_tasks
-    _live_logs_fragment = _render_live_logs
 
 
 def render_dashboard() -> None:
-    """Render the static shell and refresh only the displayed live region.
-
-    A tab's content is rendered by Streamlit even when the tab is hidden.  The
-    screen selector avoids scheduling eight hidden fragments: only the selected
-    operations surface has a live fragment, while the navigation itself remains
-    static between user actions.
-    """
+    """Render static detail once; only the header fragment has a timed rerun."""
 
     assert st is not None
     _live_header_fragment()
@@ -2173,22 +2096,23 @@ def render_dashboard() -> None:
         label_visibility="collapsed",
         key="operations_view",
     )
+    data = cached_operations_snapshot()
     if selected_view == "DashBoard":
-        _live_overview_fragment()
+        _render_overview(data)
     elif selected_view == "推移":
-        _live_trends_fragment()
+        _render_trends(data)
     elif selected_view == "セッション":
-        _live_connections_fragment()
+        _render_connections(data)
     elif selected_view == "操作履歴":
-        _live_activity_history_fragment()
+        _render_activity_history(data)
     elif selected_view == "障害":
-        _live_incidents_fragment()
+        _render_incidents(data)
     elif selected_view == "改善レポート":
-        _live_reports_fragment()
+        _render_reports(data)
     elif selected_view == "タスク":
-        _live_tasks_fragment()
+        _render_tasks(data)
     elif selected_view == "ログ":
-        _live_logs_fragment()
+        _render_logs(data)
 
 
 def main() -> None:

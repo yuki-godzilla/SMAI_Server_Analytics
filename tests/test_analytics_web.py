@@ -146,47 +146,46 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
             ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
         )
 
-    def test_dashboard_schedules_only_the_selected_operations_surface(self) -> None:
+    def test_dashboard_renders_only_the_selected_static_operations_surface(self) -> None:
         class DashboardShell:
             @staticmethod
             def radio(*_: object, **__: object) -> str:
                 return "障害"
 
-        fragment_names = (
-            "_live_header_fragment",
-            "_live_overview_fragment",
-            "_live_trends_fragment",
-            "_live_connections_fragment",
-            "_live_activity_history_fragment",
-            "_live_incidents_fragment",
-            "_live_reports_fragment",
-            "_live_tasks_fragment",
-            "_live_logs_fragment",
-        )
         original_streamlit = analytics_web.st
-        original_fragments = {name: getattr(analytics_web, name) for name in fragment_names}
+        original_header = analytics_web._live_header_fragment
+        original_incidents = analytics_web._render_incidents
+        original_snapshot = analytics_web.cached_operations_snapshot
         rendered: list[str] = []
         try:
             analytics_web.st = DashboardShell
-            for name in fragment_names:
-                label = name.removeprefix("_live_").removesuffix("_fragment")
-                setattr(analytics_web, name, lambda label=label: rendered.append(label))
+            analytics_web._live_header_fragment = lambda: rendered.append("header")
+            analytics_web._render_incidents = lambda _data: rendered.append("incidents")
+            analytics_web.cached_operations_snapshot = lambda: {}
             analytics_web.render_dashboard()
         finally:
             analytics_web.st = original_streamlit
-            for name, fragment in original_fragments.items():
-                setattr(analytics_web, name, fragment)
+            analytics_web._live_header_fragment = original_header
+            analytics_web._render_incidents = original_incidents
+            analytics_web.cached_operations_snapshot = original_snapshot
 
         self.assertEqual(["header", "incidents"], rendered)
 
-    def test_dashboard_refresh_contract_staggers_view_rendering_from_collection(self) -> None:
+    def test_dashboard_refresh_contract_limits_timed_reruns_to_summary(self) -> None:
         self.assertEqual(15, analytics_web.SNAPSHOT_REFRESH_INTERVAL_SECONDS)
-        self.assertEqual(5, analytics_web.SUMMARY_REFRESH_INTERVAL_SECONDS)
-        self.assertEqual(7, analytics_web.ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS)
-        self.assertNotEqual(
-            analytics_web.SUMMARY_REFRESH_INTERVAL_SECONDS,
-            analytics_web.ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS,
-        )
+        self.assertEqual(15, analytics_web.SUMMARY_REFRESH_INTERVAL_SECONDS)
+        self.assertEqual(60, analytics_web.DETAIL_SNAPSHOT_TTL_SECONDS)
+        source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
+        self.assertNotIn("run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS", source)
+        self.assertIn("詳細は画面切替または更新操作で最新化", source)
+
+    def test_health_snapshot_note_fails_closed_without_browser_side_probe(self) -> None:
+        now = datetime(2026, 7, 16, 0, 0, tzinfo=UTC)
+        self.assertIn("正常と判断できません", analytics_web.health_snapshot_note({}, now=now))
+        stale = {"checked_at": (now - timedelta(minutes=11)).isoformat()}
+        self.assertIn("11分", analytics_web.health_snapshot_note(stale, now=now))
+        fresh = {"checked_at": (now - timedelta(minutes=2)).isoformat()}
+        self.assertEqual("", analytics_web.health_snapshot_note(fresh, now=now))
 
     def test_overview_next_check_keeps_unknown_and_critical_fail_closed(self) -> None:
         self.assertEqual(analytics_web._next_check({"overall": "unknown"})[0], "推移")
