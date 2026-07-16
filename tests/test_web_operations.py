@@ -102,10 +102,14 @@ class WebOperationsContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("SMAI_Server_Runtime\\development_environment", launcher)
+        self.assertIn("vscode-shared-settings.json", launcher)
+        self.assertIn("SMAI-Shared-VSCode", launcher)
         self.assertIn("--user-data-dir", launcher)
         self.assertIn("--extensions-dir", launcher)
         self.assertIn("ms-python.python", launcher)
         self.assertIn("ms-vscode.powershell", launcher)
+        self.assertIn("ms-toolsai.jupyter", launcher)
+        self.assertIn("openai.chatgpt", launcher)
         self.assertIn("login --device-auth", launcher)
 
     def test_autofix_handover_desktop_placement_requires_admin_and_uses_the_runtime_copy(self) -> None:
@@ -117,6 +121,10 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("development_environment\\handover", placement)
         self.assertIn("SMAI-Codex-Autofix-Handover.docx", placement)
         self.assertIn("Copy-Item", placement)
+        self.assertIn("WScript.Shell", placement)
+        self.assertIn("SMAI-Shared-Developer-Workspace.lnk", placement)
+        self.assertIn("SMAI-Codex-CLI.lnk", placement)
+        self.assertIn("ChatGPT-Web.lnk", placement)
 
     def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
         register = (
