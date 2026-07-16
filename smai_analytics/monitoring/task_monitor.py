@@ -220,9 +220,20 @@ def query_task(
             "detail": "タスク実行パスを取得できません",
             "source": "scheduler",
         }
-    expected = str(expected_root).replace("/", "\\").casefold()
-    path_ok = expected in str(contract.stdout or "").replace("/", "\\").casefold()
+    expected_paths = {_normalized_path(expected_root)}
+    try:
+        expected_paths.add(_normalized_path(expected_root.resolve(strict=False)))
+    except OSError:
+        pass
+    contract_text = str(contract.stdout or "").replace("/", "\\").casefold()
+    path_ok = any(expected in contract_text for expected in expected_paths)
     return _task_row(name, scheduler_values(stdout), path_ok=path_ok, now=current)
+
+
+def _normalized_path(path: Path) -> str:
+    """Compare task workspace paths independent of Windows junction aliases."""
+
+    return os.path.normcase(os.path.normpath(str(path))).replace("/", "\\").casefold()
 
 
 def backup_row(backup_state: Mapping[str, object], *, now: datetime | None = None) -> dict[str, str]:

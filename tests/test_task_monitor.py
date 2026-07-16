@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 import task_monitor
 
@@ -103,6 +104,22 @@ class TaskMonitorTests(unittest.TestCase):
         )
         self.assertEqual(row["status"], "healthy")
         self.assertEqual(row["last_result"], "0")
+
+    def test_query_task_accepts_resolved_junction_workspace_path(self) -> None:
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if "/XML" in command:
+                return subprocess.CompletedProcess(command, 0, "<WorkingDirectory>C:\\workspace\\physical</WorkingDirectory>", "")
+            return subprocess.CompletedProcess(command, 0, LIST_OUTPUT, "")
+
+        with mock.patch("task_monitor.Path.resolve", return_value=Path(r"C:\workspace\physical")):
+            row = task_monitor.query_task(
+                "SMAI-Server-Analytics",
+                expected_root=Path(r"C:\workspace\alias"),
+                runner=runner,
+                now=datetime(2026, 7, 12, 12, tzinfo=UTC),
+            )
+
+        self.assertEqual(row["status"], "healthy")
 
 
 if __name__ == "__main__":

@@ -100,6 +100,10 @@
 
 ## 2026-07-16
 
+- Main ApplicationのWatch整合を確認・反映
+  - Mainの`SMAI_Projects\Smart_Market_AI`は実体`workspace\Smart_Market_AI`へのJunctionだった。Task Schedulerの実体パスを、Analyticsの期待パスと同一ワークスペースとして正規化し、実際の別作業ディレクトリとの不一致だけをdegradedにする。
+  - `SmartMarketAI-Server-Watch`の`exit 1`はTailscale CLI JSONのCP932デコード例外だった。Main側でUTF-8読取りへ修正後、通常のS4U Watchを起動して`Running`（0x41301）と8501正常ログを確認した。
+  - Chromeの`http://localhost:8502`実画面で、タスク画面はAutostart／Watchとも「正常・タスクは実行中」、失敗0件、Host Maintenanceだけ未実行の`unknown`を表示することを確認した。
 - Phase A（定期監視・復元確認）を実運用へ移行
   - `SMAI-Incident-Automation`を現在の対話ユーザー・Limited・5分間隔・`IgnoreNew`で登録し、OS既定PythonではなくAnalytics起動と同じ仮想環境を固定した。手動起動はexit 0で完了した。
   - `SMAI-Backup-Restore-Smoke`を現在の対話ユーザー・Limited・毎月1日02:00で登録した。日曜04:00の保守枠と重なりにくい時刻とし、手動起動はexit 0で完了した。
