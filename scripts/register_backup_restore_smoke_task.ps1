@@ -12,7 +12,8 @@ param(
 $ErrorActionPreference = "Stop"
 $taskName = "SMAI-Backup-Restore-Smoke"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$runner = Join-Path $projectRoot "scripts\run_backup_restore_smoke.cmd"
+$runner = Join-Path $projectRoot "scripts\run_backup_restore_smoke.ps1"
+$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $analyticsPython = Join-Path $projectRoot "venv_SMAI_Analytics\Scripts\python.exe"
 $compatibilityPython = "C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI\venv_SMAI\Scripts\python.exe"
 
@@ -30,7 +31,7 @@ if (-not [string]::IsNullOrWhiteSpace($PythonPath)) {
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$taskCommand = ('"{0}"' -f $runner)
+$taskCommand = ('"{0}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}"' -f $powershell, $runner)
 $arguments = @(
     "/Create", "/TN", $taskName, "/TR", $taskCommand,
     "/SC", "MONTHLY", "/D", $DayOfMonth, "/ST", $At,

@@ -8,11 +8,12 @@ $ErrorActionPreference = "Stop"
 $taskName = "SMAI-Codex-Autofix-Deploy"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $python = if ($PythonPath) { (Resolve-Path -LiteralPath $PythonPath).Path } else { (Get-Command python.exe -ErrorAction Stop).Source }
-$script = Join-Path $projectRoot "incident_automation.py"
+$runner = Join-Path $PSScriptRoot "run_incident_automation_task.ps1"
+$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $config = Join-Path $projectRoot "config\codex_autofix.json"
 
-if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
-    throw "Required script was not found: $script"
+if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
+    throw "Required hidden task runner was not found: $runner"
 }
 if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
     throw "Required Autofix config was not found: $config"
@@ -20,7 +21,7 @@ if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
-$action = New-ScheduledTaskAction -Execute $python -Argument ('"{0}" autofix-deploy-worker' -f $script) -WorkingDirectory $projectRoot
+$action = New-ScheduledTaskAction -Execute $powershell -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Mode autofix-deploy-worker -PythonPath "{1}"' -f $runner, $python) -WorkingDirectory $projectRoot
 $trigger = New-ScheduledTaskTrigger -Daily -At "00:00"
 $repetition = New-CimInstance -ClassName MSFT_TaskRepetitionPattern `
     -Namespace Root\Microsoft\Windows\TaskScheduler `
@@ -33,7 +34,7 @@ $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principa
 if ($DryRun) {
     Write-Host "[DRY-RUN] Task: $taskName"
     Write-Host "[DRY-RUN] User: current interactive Analytics owner (limited token)"
-    Write-Host "[DRY-RUN] Action: $python $script autofix-deploy-worker"
+    Write-Host "[DRY-RUN] Action: hidden PowerShell -> $python incident_automation.py autofix-deploy-worker"
     Write-Host "[DRY-RUN] Deployment remains disabled unless enabled=true, mode=active, and deployment_enabled=true."
     exit 0
 }

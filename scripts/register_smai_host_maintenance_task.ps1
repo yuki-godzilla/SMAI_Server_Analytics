@@ -20,7 +20,7 @@ if ($null -ne $legacyTask -and $legacyTask.State -ne "Disabled" -and -not $Repla
 $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType S4U -RunLevel Highest
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "04:00"
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 1 -RestartInterval (New-TimeSpan -Minutes 30) -ExecutionTimeLimit (New-TimeSpan -Minutes 20) -StartWhenAvailable
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $script) -WorkingDirectory $projectRoot
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $script) -WorkingDirectory $projectRoot
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Safely back up and retain SMAI data before a deferred scheduled Windows restart."
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 if ($ReplaceLegacyWeeklyRestart -and $null -ne $legacyTask) {

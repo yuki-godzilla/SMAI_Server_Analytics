@@ -67,6 +67,20 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("health.py", runner)
         self.assertNotIn("cmd.exe", runner.casefold())
 
+    def test_periodic_tasks_use_hidden_powershell_launchers(self) -> None:
+        incident = self.read("register_incident_automation_task.ps1")
+        backup = self.read("register_backup_restore_smoke_task.ps1")
+        maintenance = self.read("register_smai_host_maintenance_task.ps1")
+        runner = self.read("run_incident_automation_task.ps1")
+
+        self.assertIn("run_incident_automation_task.ps1", incident)
+        self.assertIn("-WindowStyle Hidden", incident)
+        self.assertIn("-WindowStyle Hidden", backup)
+        self.assertNotIn("run_backup_restore_smoke.cmd", backup)
+        self.assertIn("-WindowStyle Hidden", maintenance)
+        self.assertIn('ValidateSet("once", "autofix-worker", "autofix-deploy-worker")', runner)
+        self.assertNotIn("cmd.exe", runner.casefold())
+
     def test_dashboard_does_not_require_a_nonexistent_workspace_scheduler_task(self) -> None:
         self.assertNotIn("SMAI-Operations-Workspace", web_dashboard.TASKS)
         self.assertNotIn("SMAI-Analytics-Startup-User", web_dashboard.TASKS)
