@@ -20,7 +20,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Mapping
 
-from ..monitoring import connection_watch, task_observer, telemetry
+from ..monitoring import connection_watch, task_monitor, task_observer, telemetry
 from ..operations import incident_automation
 
 try:  # Keep pure helper tests usable without the optional Web runtime.
