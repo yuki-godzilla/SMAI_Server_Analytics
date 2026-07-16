@@ -165,7 +165,7 @@ TIME_WINDOW_OPTIONS = {
 DASHBOARD_HEALTH_WINDOW = timedelta(hours=24)
 HISTORY_RESULT_OPTIONS = ("すべて", "成功", "失敗", "取り消し")
 INCIDENT_SEVERITY_OPTIONS = ("すべて", "失敗", "エラー", "重大")
-WEB_TAB_LABELS = ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定")
+WEB_TAB_LABELS = ("ダッシュボード", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定")
 RESULT_FILTER_KEYS = {
     "すべて": "all",
     "成功": "ok",
@@ -349,6 +349,21 @@ def health_score(overall: object) -> int:
 def status_label(status: object) -> str:
     normalized = str(status or "unknown").casefold()
     return STATUS_LABELS.get(normalized, STATUS_LABELS["unknown"])
+
+
+def report_next_action(status: object) -> str:
+    """Give an operator one concrete next check without implying an approval."""
+
+    normalized = str(status or "unknown").casefold()
+    if normalized in {"healthy_observed", "healthy", "ok", "auto_applied"}:
+        return "復旧内容とGmail配送結果を確認"
+    if normalized in {"pending_investigation", "codex_approved", "autofix_approved", "autofix_running", "auto_patch_ready"}:
+        return "障害タブで根拠と修復候補を確認"
+    if normalized in {"autofix_merge_approved", "auto_merged_pending_deploy", "autofix_deploy_approved", "autofix_deploying"}:
+        return "別画面の明示承認・検証結果を確認"
+    if normalized in {"critical", "failed", "error", "auto_validation_failed", "auto_merge_blocked", "auto_failed", "auto_blocked", "auto_deploy_blocked", "auto_rollback_failed"}:
+        return "障害タブで原因と安全停止を確認"
+    return "レポート本文と障害タブを確認"
 
 
 def status_color(status: object) -> str:
@@ -699,6 +714,8 @@ def _render_styles() -> None:
           .app-mascot { display: block; height: 132px; margin: -10px 0 -10px -4px; object-fit: contain; width: 132px; }
           .app-name { color: #F8FBFF; font-size: 2rem; letter-spacing: 0.02em; }
           .app-context, .app-state span { color: #8FA4BE; font-size: 0.94rem; letter-spacing: 0.08em; white-space: nowrap; }
+          .app-context { display: flex; flex-direction: column; gap: 2px; line-height: 1.25; }
+          .app-context small { color: #607A99; font-size: 0.67rem; letter-spacing: 0.12em; }
           .app-state { border-left: 1px solid #26384f; padding-left: 26px; }
           .app-state .status-pill { font-size: 0.92rem; padding: 6px 13px; }
           .header-control-spacer { height: 57px; }
@@ -707,7 +724,7 @@ def _render_styles() -> None:
           .smai-administrator-trigger {
             align-items: center; background: #08182a !important; border-color: #22d3ee !important;
             box-shadow: 0 8px 24px rgba(0,0,0,.35); display: flex; font-size: .88rem;
-            font-weight: 750; gap: .48rem; justify-content: flex-start; min-height: 50px; padding: 5px 10px;
+            font-weight: 750; gap: .48rem; justify-content: flex-start; max-width: min(268px, calc(100vw - 3.5rem)); min-height: 50px; padding: 5px 10px;
           }
           .smai-administrator-trigger::before {
             align-items: center; background: radial-gradient(circle at 35% 30%, #5ee8ff, #0d5b8f 58%, #071827 60%);
@@ -716,6 +733,11 @@ def _render_styles() -> None:
             background-image: __ADMIN_AVATAR_BACKGROUND__; background-position: center; background-repeat: no-repeat; background-size: cover;
           }
           .smai-administrator-trigger::after { color: #8fa4be; content: "⌄"; font-size: 1rem; margin-left: auto; }
+          .smai-administrator-trigger:focus-visible { box-shadow: 0 0 0 3px rgba(34, 211, 238, .38), 0 8px 24px rgba(0,0,0,.35); outline: 0; }
+          .admin-delivery-summary { background: #0B1A2D; border: 1px solid #274866; border-radius: 10px; margin: 10px 0 12px; padding: 12px 13px; }
+          .admin-delivery-summary strong { color: #EAF4FF; display: block; font-size: .88rem; margin-bottom: 3px; }
+          .admin-delivery-summary span { color: #8FA4BE; display: block; font-size: .76rem; line-height: 1.5; }
+          .admin-scope-note { border-left: 3px solid #22D3EE; color: #BFD1E6; font-size: .84rem; line-height: 1.65; margin: 12px 0 2px; padding: 3px 0 3px 11px; }
           [data-testid="stButton"] > button { font-size: 1.02rem; min-height: 50px; }
           [data-baseweb="tab-list"] { border-bottom: 1px solid #26384f; gap: 0; }
           [data-baseweb="tab"] { border-bottom: 2px solid transparent; padding: 11px 15px 9px; }
@@ -1206,13 +1228,20 @@ def _render_administrator_menu_chrome() -> None:
         (() => {
           const triggerText = "SMAI_ADMIN_MENU";
           const parent = window.parent;
+          const placement = () => {
+            const compact = parent.matchMedia("(max-width: 1024px)").matches;
+            return compact
+              ? { triggerTop: ".4rem", triggerRight: "3rem", popoverTop: "4.15rem", popoverRight: ".75rem" }
+              : { triggerTop: "4.75rem", triggerRight: "1.25rem", popoverTop: "8.4rem", popoverRight: "1.25rem" };
+          };
           const positionPopover = () => {
+            const current = placement();
             const bodies = parent.document.querySelectorAll('[data-testid="stPopoverBody"], [data-baseweb="popover"]');
             for (const body of bodies) {
               if (!body.innerText.includes("管理設定を開く")) continue;
               body.style.setProperty("position", "fixed", "important");
-              body.style.setProperty("top", "8.4rem", "important");
-              body.style.setProperty("right", "1.25rem", "important");
+              body.style.setProperty("top", current.popoverTop, "important");
+              body.style.setProperty("right", current.popoverRight, "important");
               body.style.setProperty("left", "auto", "important");
               body.style.setProperty("transform", "none", "important");
               body.style.setProperty("z-index", "2147482999", "important");
@@ -1220,6 +1249,7 @@ def _render_administrator_menu_chrome() -> None:
             }
           };
           const decorate = () => {
+            const current = placement();
             for (const button of parent.document.querySelectorAll("button")) {
               if (!button.innerText.includes(triggerText) && !button.classList.contains("smai-administrator-trigger")) continue;
               if (!button.classList.contains("smai-administrator-trigger")) {
@@ -1243,14 +1273,14 @@ def _render_administrator_menu_chrome() -> None:
                 }
               }
               button.style.setProperty("position", "fixed", "important");
-              button.style.setProperty("top", "4.75rem", "important");
-              button.style.setProperty("right", "1.25rem", "important");
+              button.style.setProperty("top", current.triggerTop, "important");
+              button.style.setProperty("right", current.triggerRight, "important");
               button.style.setProperty("z-index", "2147483000", "important");
               const host = button.closest('[data-testid="stPopover"]');
               if (host) {
                 host.style.setProperty("position", "fixed", "important");
-                host.style.setProperty("top", "4.75rem", "important");
-                host.style.setProperty("right", "1.25rem", "important");
+                host.style.setProperty("top", current.triggerTop, "important");
+                host.style.setProperty("right", current.triggerRight, "important");
                 host.style.setProperty("z-index", "2147483000", "important");
                 host.style.setProperty("width", "fit-content", "important");
               }
@@ -1261,7 +1291,7 @@ def _render_administrator_menu_chrome() -> None:
             const style = parent.document.createElement("style");
             style.id = "smai-analytics-administrator-menu-style";
             style.textContent = `
-              .smai-administrator-trigger { position: fixed !important; top: 4.75rem !important; right: 1.25rem !important; z-index: 2147483000 !important; min-width: 164px; }
+              .smai-administrator-trigger { position: fixed !important; z-index: 2147483000 !important; min-width: 164px; }
               .smai-administrator-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
               .smai-administrator-role { color: #a9bfd2; font-size: .76rem; white-space: nowrap; }
               @media (max-width: 1024px) { .smai-administrator-trigger { top: .25rem !important; right: 3rem !important; } }
@@ -1318,7 +1348,7 @@ def _render_header(data: Mapping[str, object]) -> None:
     brand_mark = f'<img class="app-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else '<strong class="app-name">SMAI Analytics</strong>'
     mascot_mark = f'<img class="app-mascot" src="{mascot}" alt="SMAI Analytics operations mascot">' if mascot else ""
     st.markdown(
-        f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}</div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
+        f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}</div><span class="app-context">ローカル運用 / 閲覧専用<small>LOCAL OPERATIONS / READ ONLY</small></span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -1550,7 +1580,7 @@ def _next_check(data: Mapping[str, object]) -> tuple[str, str, str]:
     task_statuses = [str(row.get("status") or "unknown") for row in tasks if isinstance(row, dict)] if isinstance(tasks, list) else []
     if task_statuses and worst_status(*task_statuses) not in {"healthy", "ok"}:
         return "タスク", "Scheduled Taskまたは復元検証に要確認の記録があります。", "タスクタブで鮮度と実行結果を確認"
-    return "DashBoard", "直近の監視結果に緊急の要確認項目はありません。", "詳細な推移は推移タブで確認"
+    return "ダッシュボード", "直近の監視結果に緊急の要確認項目はありません。", "詳細な推移は推移タブで確認"
 
 
 def _render_overview_route(tab_name: str, title: str, description: str) -> None:
@@ -2016,7 +2046,7 @@ def _render_incidents(data: Mapping[str, object]) -> None:
 
 def _render_reports(data: Mapping[str, object]) -> None:
     assert st is not None
-    _panel_heading("RECOVERY READINESS", "復元検証、容量、履歴カバレッジをここで確認します。", kicker="RECOVERY")
+    _panel_heading("復元の準備状況", "復元検証、容量、履歴カバレッジを確認し、運用を続けられる根拠を把握します。", kicker="RECOVERY / 復元")
     tasks = data.get("tasks")
     smoke = next(
         (
@@ -2068,21 +2098,30 @@ def _render_reports(data: Mapping[str, object]) -> None:
 
     _panel_heading(
         "改善レポート",
-        "重大な障害の調査結果と、固定Gmail通知の安全な配送状態を確認します。",
-        kicker="REPORTS",
+        "何が起きたか、現在の状態、次に確認することを一行ずつ整理します。固定Gmailの配送結果もここで確認できます。",
+        kicker="REPORTS / レポート",
     )
-    reports = data.get("reports")
+    reports = [report for report in data.get("reports", []) if isinstance(report, dict)] if isinstance(data.get("reports"), list) else []
+    open_reports = sum(
+        str(report.get("status") or "").casefold()
+        not in {"healthy_observed", "healthy", "ok", "auto_applied"}
+        for report in reports
+    )
+    report_metrics = st.columns(3)
+    report_metrics[0].metric("記録済み", str(len(reports)), "障害・修復のレポート")
+    report_metrics[1].metric("要確認", str(open_reports), "完了・復旧以外のレポート")
+    report_metrics[2].metric("メール配送", notification_label, "上段のGmail通知と同じ状態")
     rows = [
         {
             "記録時刻": format_timestamp(report.get("reported_at")),
-            "調査依頼": compact_id(report.get("request_id"), limit=28),
+            "レポート ID": compact_id(report.get("request_id"), limit=28),
             "重要度": str(report.get("severity") or "—").upper(),
-            "状態": status_label(report.get("status")),
-            "改善結果": str(report.get("summary") or "調査結果はまだ記録されていません。"),
+            "現在の状態": status_label(report.get("status")),
+            "要点": str(report.get("summary") or "調査結果はまだ記録されていません。"),
+            "次の確認": report_next_action(report.get("status")),
         }
         for report in reports
-        if isinstance(report, dict)
-    ] if isinstance(reports, list) else []
+    ]
     if rows:
         _render_readonly_table(rows)
     else:
@@ -2141,24 +2180,32 @@ def _render_administrator_settings() -> None:
     notifications = settings.get("notifications")
     if not isinstance(notifications, dict):  # Defensive for a malformed Runtime file.
         notifications = {}
+    delivery = incident_automation.notification_status()
+    delivery_state = str(delivery.get("status") or "unknown")
+    delivery_label = {
+        "ready": "配信準備完了",
+        "legacy_ready": "既存SMTPで配信準備完了",
+        "unconfigured": "メール配信未設定",
+    }.get(delivery_state, "要確認")
+    delivery_detail = sanitize_log_line(delivery.get("last_delivery") or "最終配送の記録なし")
     _panel_heading(
         "管理者と自動運用の設定",
-        "この端末のRuntimeにのみ保存します。メールの認証情報はWindows Credential Managerに保存され、画面・ログには表示しません。",
-        kicker="ADMINISTRATION",
+        "管理者プロフィール、固定Gmail通知、自動修復候補の作成範囲を、この端末のRuntimeで管理します。認証情報は画面・ログ・Gitに表示しません。",
+        kicker="ADMINISTRATION / 管理",
     )
     profile_col, access_col = st.columns((3, 2), gap="large")
     with profile_col:
-        st.markdown("#### 管理者情報")
-        st.caption("障害通知の管理者名と通知先メールアドレスを設定します。")
+        st.markdown("#### 管理者プロフィール")
+        st.caption("右上に常時表示する管理者名と、通知先のメールアドレスを設定します。")
         with st.form("administrator_profile_form", clear_on_submit=False):
             name = st.text_input(
-                "管理者名称",
+                "管理者名（右上の表示名）",
                 value=str(settings.get("administrator_name") or ""),
                 max_chars=80,
                 key="administrator_name_input",
             )
             email = st.text_input(
-                "管理者メールアドレス",
+                "通知先メールアドレス",
                 value=str(settings.get("administrator_email") or ""),
                 max_chars=254,
                 key="administrator_email_input",
@@ -2172,35 +2219,39 @@ def _render_administrator_settings() -> None:
             else:
                 st.success("管理者情報をRuntimeへ保存しました。")
     with access_col:
-        st.markdown("#### Gmail 認証・通知設定")
-        st.caption("障害・修復結果を送る固定Gmailの認証情報を、このサーバーのWindows Credential Managerへ安全に保存します。")
+        st.markdown("#### Gmail 認証と配信")
+        st.caption("障害・修復結果を送る固定Gmailを、このサーバーのWindows Credential Managerで管理します。")
+        st.markdown(
+            '<div class="admin-delivery-summary"><strong>現在の配信状態: '
+            f'{html.escape(delivery_label)}</strong><span>最終結果: {html.escape(delivery_detail)}</span></div>',
+            unsafe_allow_html=True,
+        )
         if st.button("Gmail 認証・通知設定を開く", type="primary", key="open_gmail_delivery_settings_from_admin", use_container_width=True):
             st.session_state["open_gmail_delivery_settings"] = True
             st.rerun()
         st.caption("Googleアカウントの認証情報やアプリパスワードは、通常画面・ログ・Gitには表示しません。")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("#### 障害通知・自動修復・修復結果レポート")
-    delivery = incident_automation.notification_status()
-    delivery_state = str(delivery.get("status") or "unknown")
-    delivery_label = {"ready": "配信準備完了", "legacy_ready": "既存SMTPで配信準備完了", "unconfigured": "メール配信未設定"}.get(delivery_state, "要確認")
-    st.caption(
-        f"メール配送: {delivery_label} / 最終結果: {sanitize_log_line(delivery.get('last_delivery') or '記録なし')}。"
+    st.markdown("#### 障害通知と自動修復候補")
+    st.caption("通知の受け取り方と、重大障害で隔離された修復候補を作成するかを選択します。")
+    st.markdown(
+        '<p class="admin-scope-note"><strong>安全な範囲:</strong> 通知を無効にしてもRuntimeの監査証跡は保持します。'
+        '自動修復は候補の作成までで、マージ・配備・再起動・pushは行いません。</p>',
+        unsafe_allow_html=True,
     )
-    st.caption("通知を無効にしても、障害・修復レポートのRuntime監査証跡は保持されます。")
     with st.form("administrator_operations_form", clear_on_submit=False):
         incident_detection = st.checkbox(
-            "障害検知通知を受け取る",
+            "障害を検知したら通知する",
             value=notifications.get("incident_detection") is True,
             key="administrator_incident_detection",
         )
         repair_report = st.checkbox(
-            "自動修復の進行・修復結果レポートを受け取る",
+            "自動修復候補の進行・結果を通知する",
             value=notifications.get("repair_report") is True,
             key="administrator_repair_report",
         )
         recovery_result = st.checkbox(
-            "復旧結果の通知を受け取る",
+            "復旧を確認したら通知する",
             value=notifications.get("recovery_result") is True,
             key="administrator_recovery_result",
         )
@@ -2209,7 +2260,7 @@ def _render_administrator_settings() -> None:
             value=settings.get("auto_repair_candidate") is True,
             key="administrator_auto_repair_candidate",
         )
-        st.caption("有効時も、修復候補の作成だけです。マージ・配備・再起動・pushは必ず別の明示承認が必要です。")
+        st.caption("有効時も、修復候補の作成だけです。マージ・配備・再起動・pushは別の明示承認が必要です。")
         operations_saved = st.form_submit_button("通知・自動修復設定を保存", type="primary", use_container_width=True)
     if operations_saved:
         try:
@@ -2225,7 +2276,7 @@ def _render_administrator_settings() -> None:
             st.success("通知・自動修復設定をRuntimeへ保存しました。")
 
     open_gmail_delivery_settings = st.session_state.pop("open_gmail_delivery_settings", False) is True
-    with st.expander("Gmail 配信接続を設定・確認", expanded=open_gmail_delivery_settings):
+    with st.expander("Gmail 配信を設定・テスト", expanded=open_gmail_delivery_settings):
         st.caption("送信元Gmailとアプリパスワードを更新します。アプリパスワードはWindows Credential Managerにのみ保存されます。")
         with st.form("gmail_delivery_form", clear_on_submit=False):
             sender = st.text_input("Gmail送信元アドレス", key="administrator_gmail_sender")
@@ -2291,7 +2342,7 @@ def render_dashboard() -> None:
         key="operations_view",
     )
     data = cached_operations_snapshot()
-    if selected_view == "DashBoard":
+    if selected_view == "ダッシュボード":
         _render_overview(data)
     elif selected_view == "推移":
         _render_trends(data)

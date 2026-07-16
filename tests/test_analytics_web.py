@@ -123,7 +123,7 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
     def test_web_tab_contract_covers_every_operations_surface(self) -> None:
         self.assertEqual(
             analytics_web.WEB_TAB_LABELS,
-            ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定"),
+            ("ダッシュボード", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定"),
         )
 
     def test_administrator_menu_uses_saved_name_or_a_safe_default(self) -> None:
@@ -135,7 +135,8 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn("SMAI_ADMIN_MENU", source)
         self.assertIn("smai-administrator-trigger", source)
         self.assertIn("Gmail 認証・通知設定", source)
-        self.assertIn('top", "4.75rem"', source)
+        self.assertIn('triggerTop: "4.75rem"', source)
+        self.assertIn('matchMedia("(max-width: 1024px)")', source)
 
     def test_dashboard_renders_only_the_selected_static_operations_surface(self) -> None:
         class DashboardShell:
@@ -183,13 +184,18 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertEqual(analytics_web._next_check({"overall": "critical"})[0], "障害")
 
     def test_overview_next_check_does_not_treat_missing_tasks_as_a_task_failure(self) -> None:
-        self.assertEqual(analytics_web._next_check({"overall": "healthy", "tasks": []})[0], "DashBoard")
+        self.assertEqual(analytics_web._next_check({"overall": "healthy", "tasks": []})[0], "ダッシュボード")
         self.assertEqual(
             analytics_web._next_check(
                 {"overall": "healthy", "tasks": [{"status": "degraded"}]}
             )[0],
             "タスク",
         )
+
+    def test_report_next_action_explains_the_safe_operator_follow_up(self) -> None:
+        self.assertIn("障害タブ", analytics_web.report_next_action("auto_patch_ready"))
+        self.assertIn("明示承認", analytics_web.report_next_action("autofix_deploying"))
+        self.assertIn("復旧", analytics_web.report_next_action("healthy_observed"))
 
     def test_dashboard_connection_nodes_animate_only_current_heartbeats(self) -> None:
         now = datetime.now(UTC).isoformat()

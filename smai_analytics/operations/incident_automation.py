@@ -601,7 +601,7 @@ def _notification_html(
         '<tr><td style="padding:26px 28px 8px;">'
         '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>'
         f'<td valign="top"><span style="background:{color}; border-radius:999px; color:#FFFFFF; display:inline-block; font-family:Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.1em; padding:8px 12px;">{html.escape(label)}</span></td>'
-        '<td align="right" valign="top" style="color:#7F9BB9; font-family:Arial, sans-serif; font-size:10px; line-height:1.5; padding-left:12px;">SMAI OPERATIONS<br>LOCAL-FIRST CONSOLE</td>'
+        '<td align="right" valign="top" style="color:#7F9BB9; font-family:Arial, sans-serif; font-size:10px; line-height:1.5; padding-left:12px;">SMAI 運用通知 / OPERATIONS<br>ローカル運用 / LOCAL-FIRST</td>'
         '</tr></table>'
         f'<h1 style="color:#F8FBFF; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:25px; line-height:1.42; margin:20px 0 10px;">{html.escape(headline)}</h1>'
         f'<p style="color:#BED0E6; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:15px; line-height:1.8; margin:0;">{html.escape(action)}</p>'
@@ -609,14 +609,14 @@ def _notification_html(
         f'<tr><td align="center" style="padding:8px 28px 6px;">{repair}</td></tr>'
         '<tr><td style="padding:14px 28px 6px;">'
         '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0E213A; border:1px solid #254C73; border-radius:12px;"><tr><td style="padding:16px 17px;">'
-        '<p style="color:#52D7EE; font-family:Arial, sans-serif; font-size:10px; font-weight:700; letter-spacing:0.13em; margin:0 0 6px;">INCIDENT / WORKFLOW ID</p>'
+        '<p style="color:#52D7EE; font-family:Arial, sans-serif; font-size:10px; font-weight:700; letter-spacing:0.08em; margin:0 0 6px;">障害・ワークフロー ID / INCIDENT ID</p>'
         f'<p style="color:#F8FBFF; font-family:Consolas, &quot;Courier New&quot;, monospace; font-size:13px; line-height:1.55; margin:0; overflow-wrap:anywhere;">{escaped_id}</p>'
         '</td></tr></table></td></tr>'
         '<tr><td style="padding:10px 28px 26px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="border-top:1px solid #203B5D; padding-top:16px;">'
         f'<p style="color:#8FA5BE; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:12px; line-height:1.65; margin:0 0 8px;">通知時刻: {html.escape(issued_at)}</p>'
         '<p style="color:#8FA5BE; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:12px; line-height:1.65; margin:0;">詳細は添付のローカル運用レポートで確認してください。SMAI Analyticsは閲覧専用であり、このメールへの返信は承認操作として扱われません。</p>'
         '</td></tr></table></td></tr></table></td></tr>'
-        '<tr><td align="center" style="color:#607A99; font-family:Arial, sans-serif; font-size:11px; line-height:1.5; padding:16px 12px 0;">SMAI Analytics · Secure local operations notification</td></tr>'
+        '<tr><td align="center" style="color:#607A99; font-family:Arial, sans-serif; font-size:11px; line-height:1.5; padding:16px 12px 0;">SMAI Analytics · ローカル運用通知 / LOCAL OPERATIONS</td></tr>'
         '</table></td></tr></table></body></html>'
     )
 
@@ -905,7 +905,7 @@ def send_gmail_test_email(*, now: datetime | None = None) -> bool:
     _add_branded_html_alternative(
         message,
         request_id=f"gmail-test-{current.strftime('%Y%m%dT%H%M%SZ')}",
-        label="GMAIL DELIVERY TEST",
+        label="Gmail 配信テスト / DELIVERY TEST",
         color="#2563EB",
         headline="SMAI Gmail 配信テストを送信しました。",
         action="固定の通知先へ安全に送信できることを確認するテストです。障害データや添付レポートは含みません。",

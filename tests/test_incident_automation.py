@@ -258,7 +258,7 @@ class IncidentAutomationTests(unittest.TestCase):
         test_message = send.call_args.args[1]
         test_html = test_message.get_body(preferencelist=("html",))
         self.assertIsNotNone(test_html)
-        self.assertIn("GMAIL DELIVERY TEST", test_html.get_content())
+        self.assertIn("Gmail 配信テスト / DELIVERY TEST", test_html.get_content())
         self.assertIn("cid:smai-analytics-brand", test_html.get_content())
         self.assertIn("cid:smai-analytics-repair", test_html.get_content())
         row = incident_automation._load_jsonl(incident_automation.OUTBOX_INDEX_PATH)[-1]
@@ -313,9 +313,9 @@ class IncidentAutomationTests(unittest.TestCase):
         self.assertIn("緊急: ロールバック失敗", plain.get_content())
         rendered = html_body.get_content()
         self.assertIn("SMAI Analytics", rendered)
-        self.assertIn("SMAI OPERATIONS", rendered)
-        self.assertIn("LOCAL-FIRST CONSOLE", rendered)
-        self.assertIn("Secure local operations notification", rendered)
+        self.assertIn("SMAI 運用通知 / OPERATIONS", rendered)
+        self.assertIn("ローカル運用 / LOCAL-FIRST", rendered)
+        self.assertIn("ローカル運用通知 / LOCAL OPERATIONS", rendered)
         self.assertIn("cid:smai-analytics-brand", rendered)
         self.assertIn("cid:smai-analytics-repair", rendered)
         content_ids = {str(part["Content-ID"]) for part in message.walk() if part.get_content_maintype() == "image"}
