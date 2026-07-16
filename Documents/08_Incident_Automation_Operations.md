@@ -172,7 +172,7 @@ preflight成功後だけAnalyticsを再起動し、90秒以内に`http://127.0.0
 
 ### Workerの準備と有効化
 
-既定の[`config/codex_autofix.json`](../config/codex_autofix.json)は`enabled=false` / `mode=dry_run` / `deployment_enabled=false`です。まず専用Windows標準アカウントへ、Analyticsリポジトリの必要最小限のGit書き込み、Autofix Runtime、既存Incidentレポート／Outboxだけの権限と、専用Codexログインを用意します。SMAI本体のソース、ユーザーデータ、Credential Managerの不要な資格情報、管理者権限を与えません。
+現在の[`config/codex_autofix.json`](../config/codex_autofix.json)は`enabled=true` / `mode=active` / `deployment_enabled=false`です。critical障害での隔離修復候補作成だけを許可し、workerタスク未登録時は候補を実行しません。まず専用Windows標準アカウントへ、Analyticsリポジトリの必要最小限のGit書き込み、Autofix Runtime、既存Incidentレポート／Outboxだけの権限と、専用Codexログインを用意します。SMAI本体のソース、ユーザーデータ、Credential Managerの不要な資格情報、管理者権限を与えません。
 
 タスクを変更せず内容だけ確認します。
 
@@ -189,7 +189,7 @@ python .\incident_automation.py autofix-worker --dry-run
 .\scripts\register_smai_codex_autofix_worker_task.ps1 -UserId <専用Windowsユーザー>
 ```
 
-登録後に実行ID、`RunLevel Limited`、作業ディレクトリ、5分間隔、`IgnoreNew`、45分上限、Codexログインを確認し、実Incidentを模したdry-runを2回行います。その後だけ設定を`enabled=true` / `mode=active`へ明示変更します。解除は次のとおりです。
+登録後に実行ID、`RunLevel Limited`、作業ディレクトリ、5分間隔、`IgnoreNew`、45分上限、Codexログインを確認し、実Incidentを模したdry-runを2回行います。設定はすでに`enabled=true` / `mode=active`のため、登録確認後から修復候補の自動作成が開始可能です。解除は次のとおりです。
 
 ```powershell
 .\scripts\unregister_smai_codex_autofix_worker_task.ps1

@@ -59,7 +59,7 @@ class WebOperationsContractTests(unittest.TestCase):
 
         self.assertTrue(all(not path.exists() for path in legacy_paths))
 
-    def test_codex_autofix_worker_requires_a_dedicated_user_and_starts_fail_closed(self) -> None:
+    def test_codex_autofix_worker_requires_a_dedicated_user_and_keeps_deployment_disabled(self) -> None:
         register = (
             REPOSITORY_ROOT / "scripts" / "register_smai_codex_autofix_worker_task.ps1"
         ).read_text(encoding="utf-8")
@@ -74,8 +74,8 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
         self.assertIn('PSVersionTable.PSEdition -ne "Desktop"', register)
         self.assertIn("WindowsPowerShell\\v1.0\\powershell.exe", register)
-        self.assertIn('"enabled": false', config)
-        self.assertIn('"mode": "dry_run"', config)
+        self.assertIn('"enabled": true', config)
+        self.assertIn('"mode": "active"', config)
         self.assertIn('"deployment_enabled": false', config)
 
     def test_autofix_account_provisioner_requires_an_elevated_secure_local_setup(self) -> None:

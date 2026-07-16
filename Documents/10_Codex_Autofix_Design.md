@@ -1,7 +1,7 @@
 # Codex自動起動・自動修復 設計仕様
 
 更新日: 2026-07-16
-状態: v2実装済み。既定設定は`enabled=false` / `mode=dry_run` / `deployment_enabled=false`であり、実行ID・権限・ドリルの準備と管理者による明示有効化までは自動実行しない。
+状態: v2実装済み。現在の設定は`enabled=true` / `mode=active` / `deployment_enabled=false`であり、critical障害での隔離修復候補作成を許可する。workerタスク未登録時は候補を実行せず、マージ・配備・再起動・pushは別の明示承認を必要とする。
 対象: `SMAI_Server_Analytics` だけ。`Smart_Market_AI`本体を変更対象に含めない。
 
 ## 1. 目的と結論
@@ -206,10 +206,10 @@ Live operationとして未実施:
 
 1. 専用Windows標準アカウントの作成、ACL、Codexログイン、Windows Task登録。
 2. 実Incidentを模した`--dry-run`ドリル2回と、固定Gmailへの実配送確認。
-3. [`config/codex_autofix.json`](../config/codex_autofix.json)の`enabled=true` / `mode=active`への変更。
+3. [`config/codex_autofix.json`](../config/codex_autofix.json)を`enabled=true` / `mode=active`へ変更済み。workerタスクは専用標準Windowsアカウントの資格情報を要するため、タスク登録までは修復候補を実行しない。
 4. 配備executorのdry-run／rollbackドリル後の`deployment_enabled=true`への変更。
 
-この3項目は実装不足ではなく、実機の認証・権限・外部送信を伴う管理者操作である。完了前は設定を有効にしない。
+これらは実装不足ではなく、実機の認証・権限・外部送信を伴う管理者操作である。配備は`deployment_enabled=false`のまま維持し、worker未登録時は候補作成を実行しない。
 
 ## 10. 管理者の第3承認と自動配備（v2）
 

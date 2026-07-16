@@ -131,7 +131,7 @@ python .\incident_automation.py approve-autofix-deploy --request-id <incident-id
 python .\incident_automation.py cancel-autofix --request-id <incident-id> --reason "管理者判断"
 ```
 
-既定設定は[`config/codex_autofix.json`](config/codex_autofix.json)の`enabled=false` / `mode=dry_run` / `deployment_enabled=false`です。Codex workerは専用標準Windowsアカウント、配備executorはAnalytics所有者の対話limited tokenへ分離します。両方のdry-runとrollbackドリルを確認してから段階的に有効化します。
+現在の設定は[`config/codex_autofix.json`](config/codex_autofix.json)の`enabled=true` / `mode=active` / `deployment_enabled=false`です。critical障害では隔離worktreeでの修復候補作成だけを自動許可し、マージ・配備・再起動・pushは別の明示承認を必要とします。Codex workerは専用標準Windowsアカウント、配備executorはAnalytics所有者の対話limited tokenへ分離します。workerタスク未登録時は候補作成を実行しません。
 
 ```powershell
 python .\incident_automation.py autofix-worker --dry-run
