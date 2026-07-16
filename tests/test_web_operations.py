@@ -76,6 +76,23 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn('"mode": "dry_run"', config)
         self.assertIn('"deployment_enabled": false', config)
 
+    def test_autofix_account_provisioner_requires_an_elevated_secure_local_setup(self) -> None:
+        provisioner = (
+            REPOSITORY_ROOT / "scripts" / "provision_smai_codex_autofix_user.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("SMAI-Codex-Autofix", provisioner)
+        self.assertIn("WindowsBuiltInRole]::Administrator", provisioner)
+        self.assertIn("Read-Host", provisioner)
+        self.assertIn("-AsSecureString", provisioner)
+        self.assertIn("New-LocalUser", provisioner)
+        self.assertIn("Add-LocalGroupMember", provisioner)
+        self.assertIn("CodexSandboxUsers", provisioner)
+        self.assertIn("/passwordreq:yes", provisioner)
+        self.assertIn("Administrators", provisioner)
+        self.assertIn("icacls", provisioner)
+        self.assertIn("incident_operations", provisioner)
+
     def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
         register = (
             REPOSITORY_ROOT / "scripts" / "register_smai_codex_autofix_deploy_task.ps1"

@@ -13,7 +13,7 @@ from smai_analytics.operations import codex_autofix
 
 class CodexAutofixTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-autofix-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-autofix-")
         self.root = Path(self.temp_dir.name)
         self.repository = self.root / "repository"
         self.runtime = self.root / "runtime"
