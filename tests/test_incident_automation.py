@@ -12,7 +12,7 @@ import incident_automation
 
 class IncidentAutomationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-incident-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-incident-")
         root = Path(self.temp_dir.name)
         self.paths = {
             "INCIDENT_ROOT": incident_automation.INCIDENT_ROOT,

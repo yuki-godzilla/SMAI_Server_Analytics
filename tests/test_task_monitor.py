@@ -18,7 +18,7 @@ Scheduled Task State:                 Enabled
 
 class TaskMonitorTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-task-monitor-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-task-monitor-")
         self.runtime = Path(self.temp_dir.name) / "runtime"
 
     def tearDown(self) -> None:

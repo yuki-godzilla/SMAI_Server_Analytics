@@ -8,7 +8,7 @@ import retention
 
 class RetentionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-retention-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-retention-")
         self.runtime = Path(self.temp_dir.name) / "runtime"
         (self.runtime / "logs").mkdir(parents=True)
         (self.runtime / "backups").mkdir()

@@ -9,7 +9,7 @@ import connection_watch
 
 class ConnectionWatchTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-connections-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-connections-")
         self.path = Path(self.temp_dir.name) / "connections" / "watch_state.json"
         self.now = datetime(2026, 7, 12, 1, tzinfo=UTC)
 

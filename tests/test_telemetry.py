@@ -21,7 +21,7 @@ def snapshot(at: datetime, *, overall: str = "healthy", l1: str = "ok", latency:
 
 class TelemetryTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-telemetry-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-telemetry-")
         self.runtime = Path(self.temp_dir.name) / "runtime"
 
     def tearDown(self) -> None:

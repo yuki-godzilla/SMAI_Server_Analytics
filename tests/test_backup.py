@@ -11,7 +11,7 @@ import backup
 
 class BackupCreateTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-backup-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-backup-")
         self.project_root = Path(self.temp_dir.name) / "project"
         self.runtime_root = Path(self.temp_dir.name) / "runtime"
         self.project_root.mkdir(parents=True, exist_ok=True)

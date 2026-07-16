@@ -83,7 +83,7 @@ def _seed(project_root: Path, runtime_root: Path, status: str, *, event_count: i
 
 
 def _run_render(case: str, status: str, *, event_count: int) -> None:
-    with tempfile.TemporaryDirectory(prefix="smai-web-render-", dir=str(REPOSITORY_ROOT)) as directory:
+    with tempfile.TemporaryDirectory(prefix="smai-web-render-") as directory:
         root = Path(directory)
         project_root, runtime_root = root / "project", root / "runtime"
         _seed(project_root, runtime_root, status, event_count=event_count)

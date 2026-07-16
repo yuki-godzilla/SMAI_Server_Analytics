@@ -9,7 +9,7 @@ import audit
 
 class AuditTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-audit-", dir=str(Path.cwd()))
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="smai-audit-")
         root = Path(self.temp_dir.name)
         self.original_event_log = audit.EVENT_LOG
         self.original_salt_path = audit.DEVICE_SALT_PATH
