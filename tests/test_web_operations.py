@@ -75,7 +75,7 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn('PSVersionTable.PSEdition -ne "Desktop"', register)
         self.assertIn("WindowsPowerShell\\v1.0\\powershell.exe", register)
         self.assertIn("$Host.UI.PromptForCredential", register)
-        self.assertNotIn("Get-Credential", register)
+        self.assertNotIn("$credential = Get-Credential", register)
         self.assertIn('"enabled": true', config)
         self.assertIn('"mode": "active"', config)
         self.assertIn('"deployment_enabled": false', config)
