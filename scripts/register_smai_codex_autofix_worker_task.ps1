@@ -72,6 +72,10 @@ if (-not $PSCmdlet.ShouldProcess($taskName, "Register dedicated Codex Autofix wo
     exit 0
 }
 
+# Some restricted Windows PowerShell sessions disable module autoload even
+# though the inbox credential cmdlet is available.  Load it explicitly so the
+# interactive credential dialog remains local to the Windows desktop.
+Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
 $credential = Get-Credential -UserName $UserId -Message "Enter the dedicated standard-account credential for the Autofix task."
 Register-ScheduledTask -TaskName $taskName -InputObject $task -User $credential.UserName -Password $credential.GetNetworkCredential().Password -Force | Out-Null
 Write-Host "[OK] Registered: $taskName"

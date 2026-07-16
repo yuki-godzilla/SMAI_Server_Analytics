@@ -74,6 +74,7 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
         self.assertIn('PSVersionTable.PSEdition -ne "Desktop"', register)
         self.assertIn("WindowsPowerShell\\v1.0\\powershell.exe", register)
+        self.assertIn("Import-Module Microsoft.PowerShell.Security -ErrorAction Stop", register)
         self.assertIn('"enabled": true', config)
         self.assertIn('"mode": "active"', config)
         self.assertIn('"deployment_enabled": false', config)
