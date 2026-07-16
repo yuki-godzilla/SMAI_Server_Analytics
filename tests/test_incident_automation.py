@@ -252,9 +252,15 @@ class IncidentAutomationTests(unittest.TestCase):
         error = __import__("smtplib").SMTPAuthenticationError(535, b"provider message is not retained")
         with patch.object(incident_automation, "_gmail_delivery_configuration", return_value=configuration), patch.object(
             incident_automation, "_send_message", side_effect=error
-        ):
+        ) as send:
             self.assertFalse(incident_automation.send_gmail_test_email(now=datetime(2026, 7, 12, tzinfo=UTC)))
 
+        test_message = send.call_args.args[1]
+        test_html = test_message.get_body(preferencelist=("html",))
+        self.assertIsNotNone(test_html)
+        self.assertIn("GMAIL DELIVERY TEST", test_html.get_content())
+        self.assertIn("cid:smai-analytics-brand", test_html.get_content())
+        self.assertIn("cid:smai-analytics-repair", test_html.get_content())
         row = incident_automation._load_jsonl(incident_automation.OUTBOX_INDEX_PATH)[-1]
         self.assertEqual("test_delivery_failed", row["status"])
         self.assertEqual("smtp_authentication", row["failure_category"])
@@ -307,6 +313,9 @@ class IncidentAutomationTests(unittest.TestCase):
         self.assertIn("緊急: ロールバック失敗", plain.get_content())
         rendered = html_body.get_content()
         self.assertIn("SMAI Analytics", rendered)
+        self.assertIn("SMAI OPERATIONS", rendered)
+        self.assertIn("LOCAL-FIRST CONSOLE", rendered)
+        self.assertIn("Secure local operations notification", rendered)
         self.assertIn("cid:smai-analytics-brand", rendered)
         self.assertIn("cid:smai-analytics-repair", rendered)
         content_ids = {str(part["Content-ID"]) for part in message.walk() if part.get_content_maintype() == "image"}

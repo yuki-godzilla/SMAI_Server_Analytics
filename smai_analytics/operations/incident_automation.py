@@ -563,43 +563,95 @@ def _attach_inline_image(part: EmailMessage, path: Path, *, cid: str) -> bool:
     return True
 
 
-def _notification_html(*, request_id: str, label: str, color: str, headline: str, action: str, brand_cid: str | None, repair_cid: str | None) -> str:
-    """Build a table-based HTML email that remains readable in conservative clients."""
+def _notification_html(
+    *,
+    request_id: str,
+    label: str,
+    color: str,
+    headline: str,
+    action: str,
+    issued_at: str,
+    brand_cid: str | None,
+    repair_cid: str | None,
+) -> str:
+    """Build the SMAI operations email with an Outlook-friendly table layout."""
 
     escaped_id = html.escape(request_id)
     brand = (
-        f'<img src="cid:{brand_cid}" width="250" alt="SMAI Analytics" style="border:0; display:block; height:auto; max-width:250px;">'
+        f'<img src="cid:{brand_cid}" width="252" alt="SMAI Analytics" style="border:0; display:block; height:auto; max-width:252px;">'
         if brand_cid
         else '<strong style="color:#F8FBFF; font-size:24px; letter-spacing:0.02em;">SMAI Analytics</strong>'
     )
     repair = (
-        f'<img src="cid:{repair_cid}" width="150" alt="SMAI operations response" style="border:0; display:block; height:auto; margin:0 auto; max-width:150px;">'
+        f'<img src="cid:{repair_cid}" width="148" alt="SMAI operations mascot" style="border:0; display:block; height:auto; margin:0 auto; max-width:148px;">'
         if repair_cid
         else ""
     )
     return (
-        '<!doctype html><html lang="ja"><head><meta charset="utf-8"></head><body style="background:#EAF0F7; margin:0; padding:24px 12px;">'
-        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center">'
-        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#081323; border-radius:16px; max-width:640px; overflow:hidden;">'
-        f'<tr><td style="background:#07111F; padding:24px 28px;">{brand}</td></tr>'
-        f'<tr><td style="background:{color}; height:6px; line-height:6px; font-size:0;">&nbsp;</td></tr>'
-        '<tr><td style="padding:28px 28px 14px;">'
-        f'<span style="background:{color}; border-radius:999px; color:#FFFFFF; display:inline-block; font-family:Arial, sans-serif; font-size:12px; font-weight:700; letter-spacing:0.08em; padding:7px 12px;">{html.escape(label)}</span>'
-        f'<h1 style="color:#F8FBFF; font-family:Arial, \"Hiragino Kaku Gothic ProN\", Meiryo, sans-serif; font-size:25px; line-height:1.4; margin:18px 0 8px;">{html.escape(headline)}</h1>'
-        f'<p style="color:#BED0E6; font-family:Arial, \"Hiragino Kaku Gothic ProN\", Meiryo, sans-serif; font-size:15px; line-height:1.75; margin:0;">{html.escape(action)}</p>'
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
+        '<body style="background:#050B16; margin:0; padding:0;">'
+        '<div style="display:none; font-size:1px; color:#050B16; line-height:1px; max-height:0; opacity:0; overflow:hidden;">'
+        f'{html.escape(label)} — {html.escape(headline)}</div>'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#050B16;"><tr><td align="center" style="padding:28px 12px 36px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;">'
+        f'<tr><td style="background:{color}; font-size:0; height:4px; line-height:4px;">&nbsp;</td></tr>'
+        '<tr><td style="background:#091426; border:1px solid #203B5D; border-top:0; border-radius:0 0 18px 18px; overflow:hidden;">'
+        f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="background:#07111F; padding:24px 28px 20px;">{brand}</td></tr>'
+        '<tr><td style="padding:26px 28px 8px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>'
+        f'<td valign="top"><span style="background:{color}; border-radius:999px; color:#FFFFFF; display:inline-block; font-family:Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.1em; padding:8px 12px;">{html.escape(label)}</span></td>'
+        '<td align="right" valign="top" style="color:#7F9BB9; font-family:Arial, sans-serif; font-size:10px; line-height:1.5; padding-left:12px;">SMAI OPERATIONS<br>LOCAL-FIRST CONSOLE</td>'
+        '</tr></table>'
+        f'<h1 style="color:#F8FBFF; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:25px; line-height:1.42; margin:20px 0 10px;">{html.escape(headline)}</h1>'
+        f'<p style="color:#BED0E6; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:15px; line-height:1.8; margin:0;">{html.escape(action)}</p>'
         '</td></tr>'
-        f'<tr><td align="center" style="padding:4px 28px 18px;">{repair}</td></tr>'
-        '<tr><td style="padding:0 28px 28px;">'
-        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#10233A; border:1px solid #244566; border-radius:10px;">'
-        '<tr><td style="padding:14px 16px;">'
-        '<p style="color:#78A7D6; font-family:Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; margin:0 0 5px;">INCIDENT / WORKFLOW ID</p>'
-        f'<p style="color:#F8FBFF; font-family:Consolas, \"Courier New\", monospace; font-size:13px; margin:0; overflow-wrap:anywhere;">{escaped_id}</p>'
-        '</td></tr></table>'
-        '<p style="color:#8FA5BE; font-family:Arial, \"Hiragino Kaku Gothic ProN\", Meiryo, sans-serif; font-size:12px; line-height:1.6; margin:18px 0 0;">'
-        '詳細は添付のローカル運用レポートで確認してください。SMAI Analyticsは閲覧専用であり、このメールへの返信は承認操作として扱われません。'
-        '</p></td></tr>'
+        f'<tr><td align="center" style="padding:8px 28px 6px;">{repair}</td></tr>'
+        '<tr><td style="padding:14px 28px 6px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0E213A; border:1px solid #254C73; border-radius:12px;"><tr><td style="padding:16px 17px;">'
+        '<p style="color:#52D7EE; font-family:Arial, sans-serif; font-size:10px; font-weight:700; letter-spacing:0.13em; margin:0 0 6px;">INCIDENT / WORKFLOW ID</p>'
+        f'<p style="color:#F8FBFF; font-family:Consolas, &quot;Courier New&quot;, monospace; font-size:13px; line-height:1.55; margin:0; overflow-wrap:anywhere;">{escaped_id}</p>'
+        '</td></tr></table></td></tr>'
+        '<tr><td style="padding:10px 28px 26px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="border-top:1px solid #203B5D; padding-top:16px;">'
+        f'<p style="color:#8FA5BE; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:12px; line-height:1.65; margin:0 0 8px;">通知時刻: {html.escape(issued_at)}</p>'
+        '<p style="color:#8FA5BE; font-family:Arial, &quot;Hiragino Kaku Gothic ProN&quot;, Meiryo, sans-serif; font-size:12px; line-height:1.65; margin:0;">詳細は添付のローカル運用レポートで確認してください。SMAI Analyticsは閲覧専用であり、このメールへの返信は承認操作として扱われません。</p>'
+        '</td></tr></table></td></tr></table></td></tr>'
+        '<tr><td align="center" style="color:#607A99; font-family:Arial, sans-serif; font-size:11px; line-height:1.5; padding:16px 12px 0;">SMAI Analytics · Secure local operations notification</td></tr>'
         '</table></td></tr></table></body></html>'
     )
+
+
+def _add_branded_html_alternative(
+    message: EmailMessage,
+    *,
+    request_id: str,
+    label: str,
+    color: str,
+    headline: str,
+    action: str,
+    issued_at: str,
+) -> None:
+    """Attach the same visual hierarchy and local artwork to every mail type."""
+
+    brand_cid = "smai-analytics-brand"
+    repair_cid = "smai-analytics-repair"
+    message.add_alternative(
+        _notification_html(
+            request_id=request_id,
+            label=label,
+            color=color,
+            headline=headline,
+            action=action,
+            issued_at=issued_at,
+            brand_cid=brand_cid if EMAIL_BRAND_IMAGE.is_file() else None,
+            repair_cid=repair_cid if EMAIL_REPAIR_IMAGE.is_file() else None,
+        ),
+        subtype="html",
+    )
+    html_part = message.get_payload()[-1]
+    if isinstance(html_part, EmailMessage):
+        _attach_inline_image(html_part, EMAIL_BRAND_IMAGE, cid=brand_cid)
+        _attach_inline_image(html_part, EMAIL_REPAIR_IMAGE, cid=repair_cid)
 
 
 def _build_notification_message(payload: Mapping[str, object], *, sender: str, recipient: str, attachment: Path) -> EmailMessage:
@@ -638,24 +690,15 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
     message["To"] = recipient
     message["Subject"] = f"[SMAI {subject_prefix}] {request_id}"
     message.set_content(plain_text)
-    brand_cid = "smai-analytics-brand"
-    repair_cid = "smai-analytics-repair"
-    message.add_alternative(
-        _notification_html(
-            request_id=request_id,
-            label=label,
-            color=color,
-            headline=headline,
-            action=action,
-            brand_cid=brand_cid if EMAIL_BRAND_IMAGE.is_file() else None,
-            repair_cid=repair_cid if EMAIL_REPAIR_IMAGE.is_file() else None,
-        ),
-        subtype="html",
+    _add_branded_html_alternative(
+        message,
+        request_id=request_id,
+        label=label,
+        color=color,
+        headline=headline,
+        action=action,
+        issued_at=_safe_text(payload.get("created_at") or utc_now().isoformat(), limit=80),
     )
-    html_part = message.get_payload()[-1]
-    if isinstance(html_part, EmailMessage):
-        _attach_inline_image(html_part, EMAIL_BRAND_IMAGE, cid=brand_cid)
-        _attach_inline_image(html_part, EMAIL_REPAIR_IMAGE, cid=repair_cid)
     message.add_attachment(
         attachment.read_bytes(),
         maintype="text",
@@ -854,7 +897,20 @@ def send_gmail_test_email(*, now: datetime | None = None) -> bool:
     message["From"] = str(configuration["sender"])
     message["To"] = str(configuration["recipient"])
     message["Subject"] = "[SMAI Analytics][TEST] Gmail notification delivery"
-    message.set_content("This is an explicit Gmail delivery test from SMAI Analytics. No incident data is attached.")
+    message.set_content(
+        "SMAI Analytics | Gmail 配信テスト\n\n"
+        "固定通知先へのテストメールを正常に作成しました。障害データや添付レポートは含みません。\n\n"
+        "このメールへの返信は承認操作として扱われません。"
+    )
+    _add_branded_html_alternative(
+        message,
+        request_id=f"gmail-test-{current.strftime('%Y%m%dT%H%M%SZ')}",
+        label="GMAIL DELIVERY TEST",
+        color="#2563EB",
+        headline="SMAI Gmail 配信テストを送信しました。",
+        action="固定の通知先へ安全に送信できることを確認するテストです。障害データや添付レポートは含みません。",
+        issued_at=_timestamp(current),
+    )
     result = {
         "schema_version": SCHEMA_VERSION,
         "notification_id": f"mail-test-{current.strftime('%Y%m%dT%H%M%S%fZ')}",
