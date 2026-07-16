@@ -16,6 +16,7 @@
 
 - AnalyticsはWindows Task Schedulerを読み取り、最終実行、次回予定、最終結果、実行パスを`タスク`画面へ表示します。
 - `SMAI-Incident-Automation`は5分周期を想定し、最終成功から10分超で要確認、20分超で重大です。
+- `SMAI-Runtime-Retention`は毎日03:45に既存のRuntime保持ポリシーを適用します。最終成功から26時間超で要確認、48時間超で重大です。
 - `SMAI-Codex-Autofix-Worker`は専用標準アカウントで5分周期、`IgnoreNew`、45分上限を使います。`config/codex_autofix.json`が明示的にactiveになるまでは変更を実行しません。
 - `SMAI-Codex-Autofix-Deploy`はAnalytics所有者のInteractive limited tokenで1分周期、`IgnoreNew`、15分上限を使います。`deployment_enabled=true`までは再起動しません。最終成功から3分超で要確認、5分超で重大です。
 - Gmail通知は固定のCredential Manager設定が完了している場合だけ送信します。設定がない・Credentialを読めない場合、外部送信せずlocal outboxを要確認として残します。

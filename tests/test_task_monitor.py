@@ -48,6 +48,13 @@ class TaskMonitorTests(unittest.TestCase):
         self.assertEqual(task_monitor.classify_task("SMAI-Codex-Autofix-Deploy", degraded, path_ok=True, now=now)[0], "degraded")
         self.assertEqual(task_monitor.classify_task("SMAI-Codex-Autofix-Deploy", critical, path_ok=True, now=now)[0], "critical")
 
+    def test_daily_runtime_retention_has_a_daily_freshness_window(self) -> None:
+        now = datetime(2026, 7, 12, 12, tzinfo=UTC)
+        recent = {"last_result": "0", "last_run_time": (now - timedelta(hours=25)).isoformat()}
+        stale = {"last_result": "0", "last_run_time": (now - timedelta(hours=49)).isoformat()}
+        self.assertEqual(task_monitor.classify_task("SMAI-Runtime-Retention", recent, path_ok=True, now=now)[0], "healthy")
+        self.assertEqual(task_monitor.classify_task("SMAI-Runtime-Retention", stale, path_ok=True, now=now)[0], "critical")
+
     def test_nonzero_result_and_path_mismatch_are_not_ready(self) -> None:
         now = datetime(2026, 7, 12, 12, tzinfo=UTC)
         values = {"last_result": "1", "last_run_time": now.isoformat()}

@@ -20,8 +20,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Mapping
 
-from ..monitoring import connection_watch, task_monitor, telemetry
-from ..operations import codex_autofix, incident_automation
+from ..monitoring import connection_watch, task_observer, telemetry
+from ..operations import incident_automation
 
 try:  # Keep pure helper tests usable without the optional Web runtime.
     import streamlit as st
@@ -55,25 +55,7 @@ ANALYTICS_WORDMARK_LARGE_TEXT = ASSET_ROOT / "smai-analytics-wordmark-luminous-l
 TOPOLOGY_SPRITE = ASSET_ROOT / "smai-topology-devices.png"
 TOPOLOGY_SMARTPHONE = ASSET_ROOT / "smai-topology-smartphone-v1.png"
 TOPOLOGY_TABLET = ASSET_ROOT / "smai-topology-tablet-v1.png"
-AUTOFIX_CONFIG = codex_autofix.load_config()
-TASKS = (
-    "SMAI-Host-Monitor",
-    "SMAI-Host-Maintenance",
-    "SmartMarketAI-Server-Autostart",
-    "SmartMarketAI-Server-Watch",
-    "SmartMarketAI-Symbol-Maintenance-IfDue",
-    "SMAI-Incident-Automation",
-) + (
-    ("SMAI-Codex-Autofix-Worker",)
-    if AUTOFIX_CONFIG["enabled"] and AUTOFIX_CONFIG["mode"] == "active"
-    else ()
-) + (
-    ("SMAI-Codex-Autofix-Deploy",)
-    if AUTOFIX_CONFIG["enabled"]
-    and AUTOFIX_CONFIG["mode"] == "active"
-    and AUTOFIX_CONFIG["deployment_enabled"]
-    else ()
-)
+TASKS = task_observer.task_names()
 CLIENT_TYPE_LABELS = {
     "desktop": "PC",
     "smartphone": "スマートフォン",
@@ -207,19 +189,7 @@ _URL_QUERY_PATTERN = re.compile(r"https?://[^\s?#]+(?:/[^\s?#]*)?\?[^\s]+", re.I
 
 
 def expected_task_root(task: str) -> Path:
-    return (
-        REPOSITORY_ROOT
-        if task
-        in {
-            "SMAI-Server-Analytics",
-            "SMAI-Host-Monitor",
-            "SMAI-Host-Maintenance",
-            "SMAI-Incident-Automation",
-            "SMAI-Codex-Autofix-Worker",
-            "SMAI-Codex-Autofix-Deploy",
-        }
-        else PROJECT_ROOT
-    )
+    return task_observer.expected_task_root(task)
 
 
 def read_json(path: Path) -> dict[str, object]:
@@ -430,12 +400,7 @@ def recent_logs() -> list[str]:
 
 def task_rows() -> list[dict[str, str]]:
     try:
-        return task_monitor.collect(
-            TASKS,
-            runtime_root=RUNTIME_ROOT,
-            expected_root=expected_task_root,
-            backup_state=read_json(BACKUP_SMOKE_STATE),
-        )
+        return task_observer.collect_rows()
     except (OSError, ValueError, TypeError):
         return [
             {

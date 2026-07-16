@@ -55,12 +55,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 ## PC常時運用と安全保守
 
 `SMAI-Host-Monitor`は5分ごとに、Main Application、Tailscale、物理ディスク、メモリ、CPU、過去24時間の異常停止を同じhealth snapshotへ記録します。異常の記録だけでWindows全体を再起動することはありません。
+NVIDIA GPUがあるPCでは、同じsnapshotへ温度・ファン・消費電力を任意のL3観測として記録します。GPUがない、または取得できないPCでは既存のhealth判定を悪化させません。タスク状態もこの監視で5分ごとに記録するため、Web Consoleを開いていない時間帯も履歴が残ります。
 
 最初に変更前の電源・更新・タスク設定をRuntimeへ保存します。
 
 ```powershell
 .\scripts\capture_smai_host_baseline.ps1
 .\scripts\register_smai_host_monitor_task.ps1 -RunImmediately
+.\scripts\register_smai_runtime_retention_task.ps1
 ```
 
 週次の安全保守は、アクティブなSMAIセッション、実行中操作、古いhealth snapshot、health異常のいずれかを検知すると再起動を延期します。dry-runではバックアップ、保持期間削除、再起動を行いません。`WeeklyRestart`の置換は、二重実行を避けるため**管理者として開いたPowerShell**からだけ許可します。
@@ -75,6 +77,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```powershell
 .\scripts\unregister_smai_host_maintenance_task.ps1 -RestoreLegacyWeeklyRestart
 .\scripts\unregister_smai_host_monitor_task.ps1
+.\scripts\unregister_smai_runtime_retention_task.ps1
 .\scripts\restore_smai_server_power_profile.ps1
 ```
 

@@ -66,6 +66,7 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("run_hidden_powershell.vbs", registration)
         self.assertIn("wscript.exe", registration)
         self.assertIn("health.py", runner)
+        self.assertIn("observe_tasks.py", runner)
         self.assertNotIn("cmd.exe", runner.casefold())
 
     def test_periodic_tasks_use_hidden_powershell_launchers(self) -> None:
@@ -88,6 +89,15 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn('CreateObject("WScript.Shell")', launcher)
         self.assertIn("shell.Run(command, 0, True)", launcher)
         self.assertIn("WScript.Quit exitCode", launcher)
+
+    def test_runtime_retention_runs_daily_without_a_console(self) -> None:
+        registration = self.read("register_smai_runtime_retention_task.ps1")
+        runner = self.read("run_smai_retention.ps1")
+
+        self.assertIn('New-ScheduledTaskTrigger -Daily -At "03:45"', registration)
+        self.assertIn("SMAI-Runtime-Retention", registration)
+        self.assertIn("run_hidden_powershell.vbs", registration)
+        self.assertIn("retention.py", runner)
 
     def test_dashboard_does_not_require_a_nonexistent_workspace_scheduler_task(self) -> None:
         self.assertNotIn("SMAI-Operations-Workspace", web_dashboard.TASKS)

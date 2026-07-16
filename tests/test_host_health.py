@@ -31,6 +31,38 @@ class HostHealthTests(unittest.TestCase):
         checks = host_health.collect_checks(runner=runner)
         self.assertEqual("unknown", checks[0]["status"])
 
+    def test_gpu_telemetry_is_optional_and_only_flags_high_temperature(self) -> None:
+        payload = {
+            "tailscale_status": "Up",
+            "disks": [{"health": "Healthy", "operational": "OK"}],
+            "memory_free_percent": 42.0,
+            "cpu_percent": 15.0,
+            "unexpected_shutdown_events": 0,
+            "gpus": [{"temperature_c": 86.0, "fan_percent": 70.0, "power_draw_w": 120.0}],
+        }
+
+        def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+
+        checks = {str(item["name"]): item for item in host_health.collect_checks(runner=runner)}
+        self.assertEqual("degraded", checks["GPU thermal"]["status"])
+        self.assertIn("86", str(checks["GPU thermal"]["detail"]))
+
+    def test_absent_gpu_does_not_change_host_health(self) -> None:
+        payload = {
+            "tailscale_status": "Up",
+            "disks": [{"health": "Healthy", "operational": "OK"}],
+            "memory_free_percent": 42.0,
+            "cpu_percent": 15.0,
+            "unexpected_shutdown_events": 0,
+            "gpus": [],
+        }
+
+        def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+
+        self.assertNotIn("GPU thermal", {str(item["name"]) for item in host_health.collect_checks(runner=runner)})
+
     def test_health_snapshot_degrades_on_noncritical_host_attention(self) -> None:
         snapshot = health.collect(
             host_checks=[

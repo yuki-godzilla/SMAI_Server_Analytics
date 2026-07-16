@@ -13,10 +13,19 @@ $python = if (Test-Path -LiteralPath $analyticsPython -PathType Leaf) {
     throw "Analytics Python was not found."
 }
 $healthScript = Join-Path $projectRoot "health.py"
+$taskObserver = Join-Path $projectRoot "observe_tasks.py"
 
 if (-not (Test-Path -LiteralPath $healthScript -PathType Leaf)) {
     throw "Analytics health entry point was not found: $healthScript"
 }
+if (-not (Test-Path -LiteralPath $taskObserver -PathType Leaf)) {
+    throw "Scheduled-task observer was not found: $taskObserver"
+}
 
 & $python $healthScript
-exit $LASTEXITCODE
+$healthExit = $LASTEXITCODE
+& $python $taskObserver | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "[SMAI] Scheduled-task observation could not be recorded."
+}
+exit $healthExit

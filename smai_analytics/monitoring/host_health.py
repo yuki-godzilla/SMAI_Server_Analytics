@@ -46,12 +46,43 @@ try {
     Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 41, 6008; StartTime = (Get-Date).AddHours(-24) } -ErrorAction SilentlyContinue
   ).Count
 } catch {}
+$gpus = @()
+try {
+  $nvidia = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+  if ($nvidia) {
+    $gpuRows = & $nvidia.Source --query-gpu=name,temperature.gpu,fan.speed,power.draw,power.limit,utilization.gpu --format=csv,noheader,nounits 2>$null
+    foreach ($row in @($gpuRows)) {
+      $parts = ([string]$row -split ',\s*')
+      if ($parts.Count -ge 6) {
+        $temperature = 0.0
+        $fan = 0.0
+        $power = 0.0
+        $limit = 0.0
+        $utilization = 0.0
+        if ([double]::TryParse($parts[1], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$temperature)) {
+          [void][double]::TryParse($parts[2], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$fan)
+          [void][double]::TryParse($parts[3], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$power)
+          [void][double]::TryParse($parts[4], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$limit)
+          [void][double]::TryParse($parts[5], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$utilization)
+          $gpus += [pscustomobject]@{
+            temperature_c = [math]::Round($temperature, 1)
+            fan_percent = [math]::Round($fan, 1)
+            power_draw_w = [math]::Round($power, 1)
+            power_limit_w = [math]::Round($limit, 1)
+            utilization_percent = [math]::Round($utilization, 1)
+          }
+        }
+      }
+    }
+  }
+} catch {}
 [pscustomobject]@{
   tailscale_status = if ($tailscale) { [string]$tailscale.Status } else { 'missing' }
   disks = $disks
   memory_free_percent = $memoryFreePercent
   cpu_percent = $cpuPercent
   unexpected_shutdown_events = $unexpectedShutdowns
+  gpus = $gpus
 } | ConvertTo-Json -Compress -Depth 4
 """
 
@@ -110,6 +141,22 @@ def collect_checks(*, runner: PowerShellRunner = subprocess.run) -> list[dict[st
             "latency_ms": None,
         }
     )
+
+    gpus = payload.get("gpus")
+    gpu_values = [item for item in gpus if isinstance(item, dict)] if isinstance(gpus, list) else []
+    if gpu_values:
+        temperatures = [float(item["temperature_c"]) for item in gpu_values if isinstance(item.get("temperature_c"), (int, float))]
+        fans = [float(item["fan_percent"]) for item in gpu_values if isinstance(item.get("fan_percent"), (int, float))]
+        powers = [float(item["power_draw_w"]) for item in gpu_values if isinstance(item.get("power_draw_w"), (int, float))]
+        if temperatures:
+            maximum = max(temperatures)
+            status = "failed" if maximum >= 90 else "degraded" if maximum >= 85 else "ok"
+            detail = f"GPU temperature {maximum:.0f}°C"
+            if fans:
+                detail += f", fan {max(fans):.0f}%"
+            if powers:
+                detail += f", power {max(powers):.0f}W"
+            checks.append({"name": "GPU thermal", "level": "L3", "status": status, "detail": detail, "latency_ms": None})
 
     disks = payload.get("disks")
     disk_values = [item for item in disks if isinstance(item, dict)] if isinstance(disks, list) else []
