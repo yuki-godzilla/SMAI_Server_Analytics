@@ -6,6 +6,29 @@ param(
     [switch]$DryRun
 )
 
+if ($PSVersionTable.PSEdition -ne "Desktop") {
+    $windowsPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path -LiteralPath $windowsPowerShell)) {
+        throw "Windows PowerShell 5.1 was not found: $windowsPowerShell"
+    }
+
+    $arguments = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $PSCommandPath,
+        "-UserId", $UserId
+    )
+    if ($PythonPath) {
+        $arguments += @("-PythonPath", $PythonPath)
+    }
+    if ($DryRun) {
+        $arguments += "-DryRun"
+    }
+
+    & $windowsPowerShell @arguments
+    exit $LASTEXITCODE
+}
+
 $ErrorActionPreference = "Stop"
 $taskName = "SMAI-Codex-Autofix-Worker"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path

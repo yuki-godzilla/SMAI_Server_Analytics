@@ -72,6 +72,8 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("-MultipleInstances IgnoreNew", register)
         self.assertIn("-Minutes 45", register)
         self.assertIn('New-ScheduledTaskTrigger -Daily -At "00:00"', register)
+        self.assertIn('PSVersionTable.PSEdition -ne "Desktop"', register)
+        self.assertIn("WindowsPowerShell\\v1.0\\powershell.exe", register)
         self.assertIn('"enabled": false', config)
         self.assertIn('"mode": "dry_run"', config)
         self.assertIn('"deployment_enabled": false', config)
