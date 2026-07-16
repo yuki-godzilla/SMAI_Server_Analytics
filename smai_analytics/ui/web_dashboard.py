@@ -201,32 +201,6 @@ def read_json(path: Path) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
-def main_application_url() -> str:
-    """Return the configured public Main Application entry point.
-
-    Analytics does not own authentication.  This is deliberately a simple
-    navigation contract so the browser can enter the Main Application's local
-    profile/authentication flow without importing any of its private modules.
-    """
-
-    network = read_json(REPOSITORY_ROOT / "config" / "network.json")
-    values = network.get("network") if isinstance(network.get("network"), dict) else {}
-    application = values.get("main_application") if isinstance(values.get("main_application"), dict) else {}
-    hostname = str(values.get("tailscale_hostname") or "smai-server").strip()
-    scheme = str(application.get("scheme") or "http").casefold()
-    try:
-        port = int(application.get("port") or 8501)
-    except (TypeError, ValueError):
-        port = 8501
-    if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", hostname):
-        hostname = "smai-server"
-    if scheme not in {"http", "https"}:
-        scheme = "http"
-    if not 1 <= port <= 65535:
-        port = 8501
-    return f"{scheme}://{hostname}:{port}"
-
-
 def read_events(limit: int = 200) -> list[dict[str, object]]:
     if not EVENT_LOG.is_file():
         return []
@@ -730,20 +704,18 @@ def _render_styles() -> None:
           .header-control-spacer { height: 57px; }
           /* Matches the Main Application account trigger: one compact avatar
              chip that opens a menu instead of exposing header actions. */
-          [data-testid="stColumn"]:has(.administrator-menu-marker) { align-items: flex-start; display: flex; justify-content: flex-end; padding-top: 4px; }
-          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] { width: min(100%, 15rem); }
-          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button {
+          .smai-administrator-trigger {
             align-items: center; background: #08182a !important; border-color: #22d3ee !important;
             box-shadow: 0 8px 24px rgba(0,0,0,.35); display: flex; font-size: .88rem;
             font-weight: 750; gap: .48rem; justify-content: flex-start; min-height: 50px; padding: 5px 10px;
           }
-          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button::before {
+          .smai-administrator-trigger::before {
             align-items: center; background: radial-gradient(circle at 35% 30%, #5ee8ff, #0d5b8f 58%, #071827 60%);
             border: 1px solid #22d3ee; border-radius: 50%; color: #eaffff; content: __ADMIN_AVATAR_CONTENT__; display: inline-flex;
             flex: 0 0 36px; font-size: 1.25rem; height: 36px; justify-content: center; width: 36px;
             background-image: __ADMIN_AVATAR_BACKGROUND__; background-position: center; background-repeat: no-repeat; background-size: cover;
           }
-          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button::after { color: #8fa4be; content: "⌄"; font-size: 1rem; margin-left: auto; }
+          .smai-administrator-trigger::after { color: #8fa4be; content: "⌄"; font-size: 1rem; margin-left: auto; }
           [data-testid="stButton"] > button { font-size: 1.02rem; min-height: 50px; }
           [data-baseweb="tab-list"] { border-bottom: 1px solid #26384f; gap: 0; }
           [data-baseweb="tab"] { border-bottom: 2px solid transparent; padding: 11px 15px 9px; }
@@ -917,10 +889,8 @@ def _render_styles() -> None:
             .app-state .status-pill { font-size: 0.78rem; padding: 4px 9px; }
             .app-state span { font-size: 0.76rem; letter-spacing: 0.04em; white-space: normal; }
             .header-control-spacer { display: none; }
-            [data-testid="stColumn"]:has(.administrator-menu-marker) { padding-top: 0; }
-            [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] { width: 100%; }
-            [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button { font-size: .74rem; gap: .28rem; padding: 4px 6px; }
-            [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button::before { flex-basis: 31px; font-size: 1rem; height: 31px; width: 31px; }
+            .smai-administrator-trigger { font-size: .74rem; gap: .28rem; padding: 4px 6px; }
+            .smai-administrator-trigger::before { flex-basis: 31px; font-size: 1rem; height: 31px; width: 31px; }
             [data-testid="stMarkdownContainer"]:has(.header-control-spacer) + [data-testid="stButton"] button { min-height: 44px; }
             [data-testid="stButton"] > button { font-size: 0.96rem; min-height: 44px; }
             [data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
@@ -1223,42 +1193,134 @@ def administrator_display_name(settings: Mapping[str, object] | None = None) -> 
     return name[:80] or "管理者"
 
 
+def _render_administrator_menu_chrome() -> None:
+    """Fix the account trigger and its popover to the Main Application position."""
+
+    try:
+        import streamlit.components.v1 as components
+    except ImportError:  # pragma: no cover - the browser runtime is optional in unit tests
+        return
+    components.html(
+        """
+        <script>
+        (() => {
+          const triggerText = "SMAI_ADMIN_MENU";
+          const parent = window.parent;
+          const positionPopover = () => {
+            const bodies = parent.document.querySelectorAll('[data-testid="stPopoverBody"], [data-baseweb="popover"]');
+            for (const body of bodies) {
+              if (!body.innerText.includes("管理設定を開く")) continue;
+              body.style.setProperty("position", "fixed", "important");
+              body.style.setProperty("top", "8.4rem", "important");
+              body.style.setProperty("right", "1.25rem", "important");
+              body.style.setProperty("left", "auto", "important");
+              body.style.setProperty("transform", "none", "important");
+              body.style.setProperty("z-index", "2147482999", "important");
+              body.style.setProperty("max-width", "min(22rem, calc(100vw - 2rem))", "important");
+            }
+          };
+          const decorate = () => {
+            for (const button of parent.document.querySelectorAll("button")) {
+              if (!button.innerText.includes(triggerText) && !button.classList.contains("smai-administrator-trigger")) continue;
+              if (!button.classList.contains("smai-administrator-trigger")) {
+                const name = button.innerText.replace(triggerText, "").trim() || "管理者";
+                button.textContent = "";
+                button.classList.add("smai-administrator-trigger");
+                const display = parent.document.createElement("span");
+                display.className = "smai-administrator-name";
+                display.textContent = name;
+                const role = parent.document.createElement("span");
+                role.className = "smai-administrator-role";
+                role.textContent = " / 管理者";
+                button.append(display, role);
+                if (button.dataset.smaiAdministratorBound !== "1") {
+                  button.dataset.smaiAdministratorBound = "1";
+                  button.addEventListener("click", () => {
+                    parent.setTimeout(positionPopover, 0);
+                    parent.setTimeout(positionPopover, 80);
+                    parent.setTimeout(positionPopover, 220);
+                  });
+                }
+              }
+              button.style.setProperty("position", "fixed", "important");
+              button.style.setProperty("top", "4.75rem", "important");
+              button.style.setProperty("right", "1.25rem", "important");
+              button.style.setProperty("z-index", "2147483000", "important");
+              const host = button.closest('[data-testid="stPopover"]');
+              if (host) {
+                host.style.setProperty("position", "fixed", "important");
+                host.style.setProperty("top", "4.75rem", "important");
+                host.style.setProperty("right", "1.25rem", "important");
+                host.style.setProperty("z-index", "2147483000", "important");
+                host.style.setProperty("width", "fit-content", "important");
+              }
+            }
+            positionPopover();
+          };
+          if (!parent.document.getElementById("smai-analytics-administrator-menu-style")) {
+            const style = parent.document.createElement("style");
+            style.id = "smai-analytics-administrator-menu-style";
+            style.textContent = `
+              .smai-administrator-trigger { position: fixed !important; top: 4.75rem !important; right: 1.25rem !important; z-index: 2147483000 !important; min-width: 164px; }
+              .smai-administrator-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+              .smai-administrator-role { color: #a9bfd2; font-size: .76rem; white-space: nowrap; }
+              @media (max-width: 1024px) { .smai-administrator-trigger { top: .25rem !important; right: 3rem !important; } }
+              @media (max-width: 767px) { .smai-administrator-trigger { min-width: 96px; } .smai-administrator-role { display: none; } }
+            `;
+            parent.document.head.appendChild(style);
+          }
+          let attempts = 0;
+          const timer = parent.setInterval(() => {
+            decorate();
+            attempts += 1;
+            if (attempts >= 40) parent.clearInterval(timer);
+          }, 125);
+          decorate();
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
 def _render_administrator_menu() -> None:
     """Render the Main Application-style account chip and its explicit actions."""
 
     assert st is not None
     name = administrator_display_name()
     st.markdown('<span class="administrator-menu-marker"></span>', unsafe_allow_html=True)
-    with st.popover(f"{name} / 管理者", use_container_width=True):
+    with st.popover(f"SMAI_ADMIN_MENU {name}"):
         st.markdown("#### 管理者メニュー")
         st.caption(f"{name} / SMAI Analytics")
         if st.button("管理設定を開く", key="open_administrator_settings", use_container_width=True):
             st.session_state["operations_view"] = "管理設定"
             st.rerun()
-        st.link_button("認証・ユーザー管理", main_application_url(), use_container_width=True)
+        if st.button("Gmail 認証・通知設定", key="open_gmail_notification_settings", use_container_width=True):
+            st.session_state["operations_view"] = "管理設定"
+            st.session_state["open_gmail_delivery_settings"] = True
+            st.rerun()
         if st.button("最新状態に更新", key="refresh_now", use_container_width=True):
             cached_summary_snapshot.clear()
             cached_operations_snapshot.clear()
             # This is an explicit operator action; timed updates only redraw
             # the compact summary and never request the detailed snapshot.
             st.rerun()
+    _render_administrator_menu_chrome()
 
 
 def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
-    app_bar, controls = st.columns((10, 3))
-    with app_bar:
-        wordmark_asset = ANALYTICS_WORDMARK_LARGE_TEXT if ANALYTICS_WORDMARK_LARGE_TEXT.is_file() else ANALYTICS_WORDMARK
-        wordmark = _image_data_uri(_scaled_transparent_asset(str(wordmark_asset), maximum=(700, 180)))
-        mascot = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_MASCOT_HEADER), maximum=(180, 180)))
-        brand_mark = f'<img class="app-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else '<strong class="app-name">SMAI Analytics</strong>'
-        mascot_mark = f'<img class="app-mascot" src="{mascot}" alt="SMAI Analytics operations mascot">' if mascot else ""
-        st.markdown(
-            f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}</div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
-            unsafe_allow_html=True,
-        )
-    with controls:
-        _render_administrator_menu()
+    _render_administrator_menu()
+    wordmark_asset = ANALYTICS_WORDMARK_LARGE_TEXT if ANALYTICS_WORDMARK_LARGE_TEXT.is_file() else ANALYTICS_WORDMARK
+    wordmark = _image_data_uri(_scaled_transparent_asset(str(wordmark_asset), maximum=(700, 180)))
+    mascot = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_MASCOT_HEADER), maximum=(180, 180)))
+    brand_mark = f'<img class="app-wordmark" src="{wordmark}" alt="SMAI Analytics">' if wordmark else '<strong class="app-name">SMAI Analytics</strong>'
+    mascot_mark = f'<img class="app-mascot" src="{mascot}" alt="SMAI Analytics operations mascot">' if mascot else ""
+    st.markdown(
+        f'<div class="app-shell"><div class="app-brand"><div class="app-title">{brand_mark}</div><span class="app-context">LOCAL OPERATIONS / READ ONLY</span></div><div class="app-state">{mascot_mark}<div class="app-state-copy">{_status_pill(data["overall"])}<span>最終確認 {html.escape(compact_timestamp(data["checked_at"]))}</span></div></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _render_metrics(data: Mapping[str, object]) -> None:
@@ -2110,10 +2172,12 @@ def _render_administrator_settings() -> None:
             else:
                 st.success("管理者情報をRuntimeへ保存しました。")
     with access_col:
-        st.markdown("#### 認証・ユーザー管理")
-        st.caption("SMAI Main Applicationのローカルプロフィール／認証画面で、ユーザーの選択と管理を行います。")
-        st.link_button("SMAI Main Applicationを開く", main_application_url(), type="primary", use_container_width=True)
-        st.caption("AnalyticsはMain Applicationのユーザー情報を直接import・変更しません。")
+        st.markdown("#### Gmail 認証・通知設定")
+        st.caption("障害・修復結果を送る固定Gmailの認証情報を、このサーバーのWindows Credential Managerへ安全に保存します。")
+        if st.button("Gmail 認証・通知設定を開く", type="primary", key="open_gmail_delivery_settings_from_admin", use_container_width=True):
+            st.session_state["open_gmail_delivery_settings"] = True
+            st.rerun()
+        st.caption("Googleアカウントの認証情報やアプリパスワードは、通常画面・ログ・Gitには表示しません。")
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("#### 障害通知・自動修復・修復結果レポート")
@@ -2160,7 +2224,8 @@ def _render_administrator_settings() -> None:
         else:
             st.success("通知・自動修復設定をRuntimeへ保存しました。")
 
-    with st.expander("Gmail 配信接続を設定・確認", expanded=False):
+    open_gmail_delivery_settings = st.session_state.pop("open_gmail_delivery_settings", False) is True
+    with st.expander("Gmail 配信接続を設定・確認", expanded=open_gmail_delivery_settings):
         st.caption("送信元Gmailとアプリパスワードを更新します。アプリパスワードはWindows Credential Managerにのみ保存されます。")
         with st.form("gmail_delivery_form", clear_on_submit=False):
             sender = st.text_input("Gmail送信元アドレス", key="administrator_gmail_sender")

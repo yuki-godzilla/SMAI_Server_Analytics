@@ -126,12 +126,16 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
             ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定"),
         )
 
-    def test_main_application_navigation_uses_the_network_contract(self) -> None:
-        self.assertEqual("http://smai-server:8501", analytics_web.main_application_url())
-
     def test_administrator_menu_uses_saved_name_or_a_safe_default(self) -> None:
         self.assertEqual("運用管理者", analytics_web.administrator_display_name({"administrator_name": "運用管理者"}))
         self.assertEqual("管理者", analytics_web.administrator_display_name({"administrator_name": ""}))
+
+    def test_administrator_menu_uses_the_fixed_main_application_style_contract(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
+        self.assertIn("SMAI_ADMIN_MENU", source)
+        self.assertIn("smai-administrator-trigger", source)
+        self.assertIn("Gmail 認証・通知設定", source)
+        self.assertIn('top", "4.75rem"', source)
 
     def test_dashboard_renders_only_the_selected_static_operations_surface(self) -> None:
         class DashboardShell:
