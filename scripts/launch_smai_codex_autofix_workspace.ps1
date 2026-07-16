@@ -5,14 +5,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$expectedUser = "SMAI-Codex-Autofix"
-
-if ($env:USERNAME -ne $expectedUser) {
-    throw "Run this launcher while signed in as $expectedUser."
-}
-
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$runtimeRoot = "C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime\incident_operations\developer_environment"
+$runtimeRoot = "C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime\development_environment"
 $codeExecutable = "C:\Users\user\AppData\Local\Programs\Microsoft VS Code\Code.exe"
 $codeCli = "C:\Users\user\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd"
 $python = "C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe"
@@ -55,7 +49,7 @@ if ($InstallRecommendedExtensions) {
     }
 }
 
-Write-Host "[OK] VS Code, Python, Git, and Codex are available to $expectedUser."
+Write-Host "[OK] VS Code, Python, Git, and Codex are available in the shared developer environment."
 Write-Host "[INFO] VS Code settings and extensions: $runtimeRoot"
 Write-Host "[NEXT] Complete Codex sign-in with: & `"$codex`" login --device-auth"
 

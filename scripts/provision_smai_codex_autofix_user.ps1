@@ -25,7 +25,8 @@ if (-not $existingAccount) {
 }
 
 $incidentRoot = Join-Path $RuntimeRoot "incident_operations"
-$targets = @($projectRoot, $incidentRoot)
+$developerRoot = Join-Path $RuntimeRoot "development_environment"
+$targets = @($projectRoot, $incidentRoot, $developerRoot)
 $created = $false
 
 try {
@@ -59,6 +60,7 @@ try {
         throw "Could not require a password for: $UserName"
     }
     New-Item -ItemType Directory -Path $incidentRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $developerRoot -Force | Out-Null
 
     $grant = "{0}:(OI)(CI)M" -f "$env:COMPUTERNAME\$UserName"
     foreach ($target in $targets) {
