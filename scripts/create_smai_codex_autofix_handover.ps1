@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$outputPath = Join-Path $OutputDirectory "SMAI-Codex-Autofix_引継ぎ指示書.docx"
+$outputPath = Join-Path $OutputDirectory "SMAI-Codex-Autofix-Handover.docx"
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 

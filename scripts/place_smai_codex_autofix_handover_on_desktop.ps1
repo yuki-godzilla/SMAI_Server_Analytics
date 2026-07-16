@@ -11,9 +11,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw "Place the handover document from an elevated Windows PowerShell session."
 }
 
-$source = Join-Path $RuntimeRoot "development_environment\handover\SMAI-Codex-Autofix_引継ぎ指示書.docx"
+$source = Join-Path $RuntimeRoot "development_environment\handover\SMAI-Codex-Autofix-Handover.docx"
 $desktop = Join-Path "C:\Users\$UserName" "Desktop"
-$destination = Join-Path $desktop "SMAI-Codex-Autofix_引継ぎ指示書.docx"
+$destination = Join-Path $desktop "SMAI-Codex-Autofix-Handover.docx"
 
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw "Handover document was not found: $source"

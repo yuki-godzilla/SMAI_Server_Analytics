@@ -115,7 +115,7 @@ class WebOperationsContractTests(unittest.TestCase):
 
         self.assertIn("WindowsBuiltInRole]::Administrator", placement)
         self.assertIn("development_environment\\handover", placement)
-        self.assertIn("SMAI-Codex-Autofix_引継ぎ指示書.docx", placement)
+        self.assertIn("SMAI-Codex-Autofix-Handover.docx", placement)
         self.assertIn("Copy-Item", placement)
 
     def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
