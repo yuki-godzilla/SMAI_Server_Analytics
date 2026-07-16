@@ -93,6 +93,19 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("icacls", provisioner)
         self.assertIn("incident_operations", provisioner)
 
+    def test_autofix_workspace_launcher_keeps_developer_state_outside_the_repository(self) -> None:
+        launcher = (
+            REPOSITORY_ROOT / "scripts" / "launch_smai_codex_autofix_workspace.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("SMAI-Codex-Autofix", launcher)
+        self.assertIn("developer_environment", launcher)
+        self.assertIn("--user-data-dir", launcher)
+        self.assertIn("--extensions-dir", launcher)
+        self.assertIn("ms-python.python", launcher)
+        self.assertIn("ms-vscode.powershell", launcher)
+        self.assertIn("login --device-auth", launcher)
+
     def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
         register = (
             REPOSITORY_ROOT / "scripts" / "register_smai_codex_autofix_deploy_task.ps1"
