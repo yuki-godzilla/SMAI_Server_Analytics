@@ -9,11 +9,16 @@ $taskName = "SMAI-Codex-Autofix-Deploy"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $python = if ($PythonPath) { (Resolve-Path -LiteralPath $PythonPath).Path } else { (Get-Command python.exe -ErrorAction Stop).Source }
 $runner = Join-Path $PSScriptRoot "run_incident_automation_task.ps1"
+$hiddenRunner = Join-Path $PSScriptRoot "run_hidden_powershell.vbs"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$wscript = "$env:SystemRoot\System32\wscript.exe"
 $config = Join-Path $projectRoot "config\codex_autofix.json"
 
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
     throw "Required hidden task runner was not found: $runner"
+}
+if (-not (Test-Path -LiteralPath $hiddenRunner -PathType Leaf)) {
+    throw "Required non-console launcher was not found: $hiddenRunner"
 }
 if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
     throw "Required Autofix config was not found: $config"
@@ -21,7 +26,7 @@ if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
-$action = New-ScheduledTaskAction -Execute $powershell -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Mode autofix-deploy-worker -PythonPath "{1}"' -f $runner, $python) -WorkingDirectory $projectRoot
+$action = New-ScheduledTaskAction -Execute $wscript -Argument ('//B //Nologo "{0}" "{1}" -NoProfile -ExecutionPolicy Bypass -File "{2}" -Mode autofix-deploy-worker -PythonPath "{3}"' -f $hiddenRunner, $powershell, $runner, $python) -WorkingDirectory $projectRoot
 $trigger = New-ScheduledTaskTrigger -Daily -At "00:00"
 $repetition = New-CimInstance -ClassName MSFT_TaskRepetitionPattern `
     -Namespace Root\Microsoft\Windows\TaskScheduler `

@@ -58,12 +58,13 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("--server.enableXsrfProtection true", launcher)
         self.assertNotIn("cmd.exe", launcher.casefold())
 
-    def test_host_monitor_uses_a_hidden_powershell_launcher(self) -> None:
+    def test_host_monitor_uses_a_non_console_launcher(self) -> None:
         registration = self.read("register_smai_host_monitor_task.ps1")
         runner = self.read("run_smai_host_monitor.ps1")
 
         self.assertIn("run_smai_host_monitor.ps1", registration)
-        self.assertIn("-WindowStyle Hidden", registration)
+        self.assertIn("run_hidden_powershell.vbs", registration)
+        self.assertIn("wscript.exe", registration)
         self.assertIn("health.py", runner)
         self.assertNotIn("cmd.exe", runner.casefold())
 
@@ -74,12 +75,19 @@ class StartupWorkspaceTests(unittest.TestCase):
         runner = self.read("run_incident_automation_task.ps1")
 
         self.assertIn("run_incident_automation_task.ps1", incident)
-        self.assertIn("-WindowStyle Hidden", incident)
-        self.assertIn("-WindowStyle Hidden", backup)
+        self.assertIn("run_hidden_powershell.vbs", incident)
+        self.assertIn("run_backup_restore_smoke_hidden.vbs", backup)
         self.assertNotIn("run_backup_restore_smoke.cmd", backup)
         self.assertIn("-WindowStyle Hidden", maintenance)
         self.assertIn('ValidateSet("once", "autofix-worker", "autofix-deploy-worker")', runner)
         self.assertNotIn("cmd.exe", runner.casefold())
+
+    def test_hidden_launcher_uses_a_gui_host_and_waits_for_completion(self) -> None:
+        launcher = self.read("run_hidden_powershell.vbs")
+
+        self.assertIn('CreateObject("WScript.Shell")', launcher)
+        self.assertIn("shell.Run(command, 0, True)", launcher)
+        self.assertIn("WScript.Quit exitCode", launcher)
 
     def test_dashboard_does_not_require_a_nonexistent_workspace_scheduler_task(self) -> None:
         self.assertNotIn("SMAI-Operations-Workspace", web_dashboard.TASKS)

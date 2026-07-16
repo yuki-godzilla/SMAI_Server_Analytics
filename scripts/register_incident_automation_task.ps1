@@ -9,10 +9,15 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $analyticsPython = Join-Path $projectRoot "venv_SMAI_Analytics\Scripts\python.exe"
 $compatibilityPython = "C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI\venv_SMAI\Scripts\python.exe"
 $runner = Join-Path $PSScriptRoot "run_incident_automation_task.ps1"
+$hiddenRunner = Join-Path $PSScriptRoot "run_hidden_powershell.vbs"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$wscript = "$env:SystemRoot\System32\wscript.exe"
 
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
     throw "Required hidden task runner was not found: $runner"
+}
+if (-not (Test-Path -LiteralPath $hiddenRunner -PathType Leaf)) {
+    throw "Required non-console launcher was not found: $hiddenRunner"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($PythonPath)) {
@@ -34,7 +39,7 @@ $repetition = New-CimInstance -ClassName MSFT_TaskRepetitionPattern `
     -Property @{ Interval = "PT5M"; Duration = "P1D"; StopAtDurationEnd = $false }
 $trigger.Repetition = $repetition
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 4) -StartWhenAvailable
-$action = New-ScheduledTaskAction -Execute $powershell -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Mode once -PythonPath "{1}"' -f $runner, $python) -WorkingDirectory $projectRoot
+$action = New-ScheduledTaskAction -Execute $wscript -Argument ('//B //Nologo "{0}" "{1}" -NoProfile -ExecutionPolicy Bypass -File "{2}" -Mode once -PythonPath "{3}"' -f $hiddenRunner, $powershell, $runner, $python) -WorkingDirectory $projectRoot
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Detect SMAI critical health alerts, create approval-gated local Codex drafts, and deliver configured Gmail notifications."
 
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null

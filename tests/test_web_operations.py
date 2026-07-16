@@ -108,18 +108,23 @@ class WebOperationsContractTests(unittest.TestCase):
         runner = (
             REPOSITORY_ROOT / "scripts" / "run_backup_restore_smoke.ps1"
         ).read_text(encoding="utf-8")
+        hidden_launcher = (
+            REPOSITORY_ROOT / "scripts" / "run_backup_restore_smoke_hidden.vbs"
+        ).read_text(encoding="utf-8")
 
         self.assertIn('"SMAI-Backup-Restore-Smoke"', register)
         self.assertIn('"MONTHLY"', register)
         self.assertIn('"02:00"', register)
         self.assertIn('"/IT"', register)
         self.assertIn('"/RL", "LIMITED"', register)
-        self.assertIn("run_backup_restore_smoke.ps1", register)
-        self.assertIn("-WindowStyle Hidden", register)
+        self.assertIn("run_backup_restore_smoke_hidden.vbs", register)
+        self.assertIn("wscript.exe", register)
         self.assertNotIn("run_backup_restore_smoke.cmd", register)
         self.assertIn("backup.py", runner)
         self.assertIn(" smoke", runner)
         self.assertIn("venv_SMAI_Analytics", runner)
+        self.assertIn("run_backup_restore_smoke.ps1", hidden_launcher)
+        self.assertIn("shell.Run(command, 0, True)", hidden_launcher)
 
 
 if __name__ == "__main__":

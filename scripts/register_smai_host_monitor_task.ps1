@@ -7,13 +7,18 @@ $ErrorActionPreference = "Stop"
 $taskName = "SMAI-Host-Monitor"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $script = Join-Path $PSScriptRoot "run_smai_host_monitor.ps1"
+$hiddenRunner = Join-Path $PSScriptRoot "run_hidden_powershell.vbs"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$wscript = "$env:SystemRoot\System32\wscript.exe"
 
 if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
     throw "Host monitor launcher was not found: $script"
 }
+if (-not (Test-Path -LiteralPath $hiddenRunner -PathType Leaf)) {
+    throw "Required non-console launcher was not found: $hiddenRunner"
+}
 
-$taskCommand = ('"{0}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}"' -f $powershell, $script)
+$taskCommand = ('"{0}" //B //Nologo "{1}" "{2}" -NoProfile -ExecutionPolicy Bypass -File "{3}"' -f $wscript, $hiddenRunner, $powershell, $script)
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
