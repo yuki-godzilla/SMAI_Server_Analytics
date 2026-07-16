@@ -123,8 +123,11 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
     def test_web_tab_contract_covers_every_operations_surface(self) -> None:
         self.assertEqual(
             analytics_web.WEB_TAB_LABELS,
-            ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ"),
+            ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定"),
         )
+
+    def test_main_application_navigation_uses_the_network_contract(self) -> None:
+        self.assertEqual("http://smai-server:8501", analytics_web.main_application_url())
 
     def test_dashboard_renders_only_the_selected_static_operations_surface(self) -> None:
         class DashboardShell:

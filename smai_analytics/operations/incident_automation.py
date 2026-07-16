@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from ..monitoring import health
-from . import codex_autofix, windows_credentials
+from . import admin_settings, codex_autofix, windows_credentials
 
 RUNTIME_ROOT = Path(
     os.environ.get(
@@ -494,13 +494,21 @@ def queue_administrator_notification(
 ) -> dict[str, object]:
     """Queue a bounded report notification without persisting recipient or credential data."""
 
-    delivery_status = "queued" if _delivery_configuration() else "pending_configuration"
+    normalized_kind = _safe_text(kind, limit=30) or "incident"
+    preference_enabled = admin_settings.notification_allowed(normalized_kind)
+    delivery_status = (
+        "suppressed_by_administrator"
+        if not preference_enabled
+        else "queued"
+        if _delivery_configuration()
+        else "pending_configuration"
+    )
     notification = {
         "schema_version": SCHEMA_VERSION,
         "notification_id": f"mail-{_safe_text(record.get('request_id'), limit=120)}-{_safe_text(kind, limit=30)}-{utc_now().strftime('%Y%m%dT%H%M%S%fZ')}",
         "request_id": _safe_text(record.get("request_id"), limit=120),
         "severity": _safe_text(record.get("severity") or "critical", limit=20),
-        "kind": _safe_text(kind, limit=30) or "incident",
+        "kind": normalized_kind,
         "status": delivery_status,
         "recipient_configured": delivery_status == "queued",
         "attachment_path": str(report_path),
@@ -920,6 +928,22 @@ def run_once(*, now: datetime | None = None) -> dict[str, object]:
     snapshot = health.collect()
     incident = critical_health_incident(snapshot)
     request = create_codex_request(incident, now=current) if incident else None
+    auto_repair_approved = False
+    if request and admin_settings.auto_repair_candidate_requested():
+        config = codex_autofix.load_config()
+        if config["enabled"] is True and config["mode"] == "active":
+            try:
+                codex_autofix.approve_autofix(
+                    request_id=str(request["request_id"]),
+                    now=current,
+                    approval_source="administrator_settings",
+                )
+                auto_repair_approved = True
+            except (OSError, ValueError, codex_autofix.AutofixError):
+                # The durable incident and report remain the evidence of record.
+                # A malformed/changed Autofix environment must not make a health
+                # probe fail or be reported as an approved repair.
+                auto_repair_approved = False
     reminder_queued = False
     recovery_queued = 0
     if incident and request is None:
@@ -931,6 +955,7 @@ def run_once(*, now: datetime | None = None) -> dict[str, object]:
         "overall": snapshot.get("overall", "unknown"),
         "request_created": bool(request),
         "request_id": request.get("request_id", "") if request else "",
+        "auto_repair_approved": auto_repair_approved,
         "reminder_queued": reminder_queued,
         "recovery_queued": recovery_queued,
         "delivered": delivered,

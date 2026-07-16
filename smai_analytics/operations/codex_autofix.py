@@ -352,6 +352,7 @@ def approve_autofix(
     request_id: str,
     now: datetime | None = None,
     repository: Path = REPOSITORY_ROOT,
+    approval_source: str = "local_administrator_cli",
 ) -> dict[str, object]:
     """Create a 24-hour repair lease for one known incident."""
 
@@ -390,7 +391,7 @@ def approve_autofix(
         "branch": f"autofix/{normalized}-{attempt}",
         "approved_at": _timestamp(current),
         "approval_expires_at": _timestamp(current + APPROVAL_LIFETIME),
-        "approval_source": "local_administrator_cli",
+        "approval_source": _safe_text(approval_source, limit=80) or "local_administrator_cli",
     }
     _save_state(state, event="autofix_approved")
     _append_report_event(

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Mapping
 
 from ..monitoring import connection_watch, task_monitor, task_observer, telemetry
-from ..operations import incident_automation
+from ..operations import admin_settings, incident_automation
 
 try:  # Keep pure helper tests usable without the optional Web runtime.
     import streamlit as st
@@ -164,7 +164,7 @@ TIME_WINDOW_OPTIONS = {
 DASHBOARD_HEALTH_WINDOW = timedelta(hours=24)
 HISTORY_RESULT_OPTIONS = ("すべて", "成功", "失敗", "取り消し")
 INCIDENT_SEVERITY_OPTIONS = ("すべて", "失敗", "エラー", "重大")
-WEB_TAB_LABELS = ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ")
+WEB_TAB_LABELS = ("DashBoard", "推移", "セッション", "操作履歴", "障害", "改善レポート", "タスク", "ログ", "管理設定")
 RESULT_FILTER_KEYS = {
     "すべて": "all",
     "成功": "ok",
@@ -198,6 +198,32 @@ def read_json(path: Path) -> dict[str, object]:
     except (OSError, ValueError, TypeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def main_application_url() -> str:
+    """Return the configured public Main Application entry point.
+
+    Analytics does not own authentication.  This is deliberately a simple
+    navigation contract so the browser can enter the Main Application's local
+    profile/authentication flow without importing any of its private modules.
+    """
+
+    network = read_json(REPOSITORY_ROOT / "config" / "network.json")
+    values = network.get("network") if isinstance(network.get("network"), dict) else {}
+    application = values.get("main_application") if isinstance(values.get("main_application"), dict) else {}
+    hostname = str(values.get("tailscale_hostname") or "smai-server").strip()
+    scheme = str(application.get("scheme") or "http").casefold()
+    try:
+        port = int(application.get("port") or 8501)
+    except (TypeError, ValueError):
+        port = 8501
+    if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", hostname):
+        hostname = "smai-server"
+    if scheme not in {"http", "https"}:
+        scheme = "http"
+    if not 1 <= port <= 65535:
+        port = 8501
+    return f"{scheme}://{hostname}:{port}"
 
 
 def read_events(limit: int = 200) -> list[dict[str, object]]:
@@ -832,8 +858,8 @@ def _render_styles() -> None:
             [data-testid="stMainBlockContainer"], .block-container { padding: 1.25rem 1.25rem 1.75rem; }
             [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) { flex-wrap: wrap; }
             [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) > [data-testid="column"] { flex: 1 1 calc(50% - 0.55rem) !important; min-width: calc(50% - 0.55rem) !important; width: calc(50% - 0.55rem) !important; }
-            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 7.75rem) !important; min-width: 0 !important; width: calc(100% - 7.75rem) !important; }
-            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 7rem !important; min-width: 7rem !important; width: 7rem !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 16.75rem) !important; min-width: 0 !important; width: calc(100% - 16.75rem) !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 16rem !important; min-width: 16rem !important; width: 16rem !important; }
             .app-shell { min-height: 142px; padding: 14px 12px; }
             .app-brand, .app-state, .app-title { gap: 14px; }
             .app-wordmark { height: 68px; max-width: min(46vw, 480px); }
@@ -1165,7 +1191,7 @@ def _current_level_statuses(data: Mapping[str, object]) -> dict[str, str]:
 
 def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
-    app_bar, controls = st.columns((12, 1))
+    app_bar, controls = st.columns((10, 3))
     with app_bar:
         wordmark_asset = ANALYTICS_WORDMARK_LARGE_TEXT if ANALYTICS_WORDMARK_LARGE_TEXT.is_file() else ANALYTICS_WORDMARK
         wordmark = _image_data_uri(_scaled_transparent_asset(str(wordmark_asset), maximum=(700, 180)))
@@ -1177,13 +1203,20 @@ def _render_header(data: Mapping[str, object]) -> None:
             unsafe_allow_html=True,
         )
     with controls:
-        st.markdown('<div class="header-control-spacer header-refresh-anchor"></div>', unsafe_allow_html=True)
-        if st.button("更新", key="refresh_now", use_container_width=True):
-            cached_summary_snapshot.clear()
-            cached_operations_snapshot.clear()
-            # A user explicitly requested fresh detail, so this one action may
-            # rerun the application. Timed refreshes never take this path.
-            st.rerun()
+        account_control, refresh_control = st.columns((2, 1), gap="small")
+        with account_control:
+            if st.button("管理設定", key="open_administrator_settings", use_container_width=True):
+                st.session_state["operations_view"] = "管理設定"
+                st.rerun()
+            st.link_button("認証・ユーザー管理", main_application_url(), use_container_width=True)
+        with refresh_control:
+            st.markdown('<div class="header-control-spacer header-refresh-anchor"></div>', unsafe_allow_html=True)
+            if st.button("更新", key="refresh_now", use_container_width=True):
+                cached_summary_snapshot.clear()
+                cached_operations_snapshot.clear()
+                # A user explicitly requested fresh detail, so this one action may
+                # rerun the application. Timed refreshes never take this path.
+                st.rerun()
 
 
 def _render_metrics(data: Mapping[str, object]) -> None:
@@ -1992,6 +2025,126 @@ def _render_logs(data: Mapping[str, object]) -> None:
     st.code("\n".join(lines[-limit:]) if lines else "ログを読み取れません", language="text")
 
 
+def _render_administrator_settings() -> None:
+    """Render the local administrator settings surface.
+
+    The console owns these operations preferences, while Main Application
+    identity/authentication remains behind its own stable browser entry point.
+    """
+
+    assert st is not None
+    settings = admin_settings.load()
+    notifications = settings.get("notifications")
+    if not isinstance(notifications, dict):  # Defensive for a malformed Runtime file.
+        notifications = {}
+    _panel_heading(
+        "管理者と自動運用の設定",
+        "この端末のRuntimeにのみ保存します。メールの認証情報はWindows Credential Managerに保存され、画面・ログには表示しません。",
+        kicker="ADMINISTRATION",
+    )
+    profile_col, access_col = st.columns((3, 2), gap="large")
+    with profile_col:
+        st.markdown("#### 管理者情報")
+        st.caption("障害通知の管理者名と通知先メールアドレスを設定します。")
+        with st.form("administrator_profile_form", clear_on_submit=False):
+            name = st.text_input(
+                "管理者名称",
+                value=str(settings.get("administrator_name") or ""),
+                max_chars=80,
+                key="administrator_name_input",
+            )
+            email = st.text_input(
+                "管理者メールアドレス",
+                value=str(settings.get("administrator_email") or ""),
+                max_chars=254,
+                key="administrator_email_input",
+            )
+            profile_saved = st.form_submit_button("管理者情報を保存", type="primary", use_container_width=True)
+        if profile_saved:
+            try:
+                admin_settings.save_profile(administrator_name=name, administrator_email=email)
+            except (OSError, ValueError):
+                st.error("管理者情報を保存できませんでした。名称とメールアドレスを確認してください。")
+            else:
+                st.success("管理者情報をRuntimeへ保存しました。")
+    with access_col:
+        st.markdown("#### 認証・ユーザー管理")
+        st.caption("SMAI Main Applicationのローカルプロフィール／認証画面で、ユーザーの選択と管理を行います。")
+        st.link_button("SMAI Main Applicationを開く", main_application_url(), type="primary", use_container_width=True)
+        st.caption("AnalyticsはMain Applicationのユーザー情報を直接import・変更しません。")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### 障害通知・自動修復・修復結果レポート")
+    delivery = incident_automation.notification_status()
+    delivery_state = str(delivery.get("status") or "unknown")
+    delivery_label = {"ready": "配信準備完了", "legacy_ready": "既存SMTPで配信準備完了", "unconfigured": "メール配信未設定"}.get(delivery_state, "要確認")
+    st.caption(
+        f"メール配送: {delivery_label} / 最終結果: {sanitize_log_line(delivery.get('last_delivery') or '記録なし')}。"
+    )
+    st.caption("通知を無効にしても、障害・修復レポートのRuntime監査証跡は保持されます。")
+    with st.form("administrator_operations_form", clear_on_submit=False):
+        incident_detection = st.checkbox(
+            "障害検知通知を受け取る",
+            value=notifications.get("incident_detection") is True,
+            key="administrator_incident_detection",
+        )
+        repair_report = st.checkbox(
+            "自動修復の進行・修復結果レポートを受け取る",
+            value=notifications.get("repair_report") is True,
+            key="administrator_repair_report",
+        )
+        recovery_result = st.checkbox(
+            "復旧結果の通知を受け取る",
+            value=notifications.get("recovery_result") is True,
+            key="administrator_recovery_result",
+        )
+        auto_repair_candidate = st.checkbox(
+            "重大障害で隔離された自動修復候補の作成を許可する",
+            value=settings.get("auto_repair_candidate") is True,
+            key="administrator_auto_repair_candidate",
+        )
+        st.caption("有効時も、修復候補の作成だけです。マージ・配備・再起動・pushは必ず別の明示承認が必要です。")
+        operations_saved = st.form_submit_button("通知・自動修復設定を保存", type="primary", use_container_width=True)
+    if operations_saved:
+        try:
+            admin_settings.save_operations(
+                incident_detection=incident_detection,
+                repair_report=repair_report,
+                recovery_result=recovery_result,
+                auto_repair_candidate=auto_repair_candidate,
+            )
+        except OSError:
+            st.error("通知・自動修復設定を保存できませんでした。Runtimeの書込み権限を確認してください。")
+        else:
+            st.success("通知・自動修復設定をRuntimeへ保存しました。")
+
+    with st.expander("Gmail 配信接続を設定・確認", expanded=False):
+        st.caption("送信元Gmailとアプリパスワードを更新します。アプリパスワードはWindows Credential Managerにのみ保存されます。")
+        with st.form("gmail_delivery_form", clear_on_submit=False):
+            sender = st.text_input("Gmail送信元アドレス", key="administrator_gmail_sender")
+            recipient = st.text_input(
+                "通知先メールアドレス",
+                value=str(settings.get("administrator_email") or ""),
+                key="administrator_gmail_recipient",
+            )
+            app_password = st.text_input("Gmailアプリパスワード", type="password", key="administrator_gmail_app_password")
+            gmail_saved = st.form_submit_button("Gmail配信を保存", use_container_width=True)
+        if gmail_saved:
+            try:
+                incident_automation.configure_fixed_gmail(sender=sender, recipient=recipient, app_password=app_password)
+            except (OSError, ValueError):
+                st.error("Gmail配信を保存できませんでした。アドレス、アプリパスワード、Windows Credential Managerを確認してください。")
+            else:
+                st.session_state.pop("administrator_gmail_app_password", None)
+                st.success("Gmail配信を安全なローカル設定へ保存しました。")
+        test_confirmed = st.checkbox("通知先と内容を確認し、テストメールの送信を許可します", key="administrator_gmail_test_confirm")
+        if st.button("Gmailテストメールを送信", disabled=not test_confirmed, key="administrator_gmail_test", use_container_width=True):
+            if incident_automation.send_gmail_test_email():
+                st.success("テストメールを送信しました。")
+            else:
+                st.error("テストメールを送信できませんでした。配送状態を確認してください。")
+
+
 def _render_live_header() -> None:
     """Refresh only the compact header summary on the periodic timer."""
 
@@ -2047,6 +2200,8 @@ def render_dashboard() -> None:
         _render_tasks(data)
     elif selected_view == "ログ":
         _render_logs(data)
+    elif selected_view == "管理設定":
+        _render_administrator_settings()
 
 
 def main() -> None:
