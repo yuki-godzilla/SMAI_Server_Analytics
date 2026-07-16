@@ -288,6 +288,30 @@ class IncidentAutomationTests(unittest.TestCase):
             )
             self.assertTrue(str(message["Subject"]).startswith(prefix))
 
+    def test_notification_email_has_a_branded_html_alternative_and_plain_text_fallback(self) -> None:
+        incident_automation.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        attachment = incident_automation.REPORTS_DIR / "email-layout-test.md"
+        attachment.write_text("TEST ONLY", encoding="utf-8")
+
+        message = incident_automation._build_notification_message(
+            {"kind": "autofix_rollback_failed", "severity": "critical", "request_id": "incident-layout"},
+            sender="admin@example.com",
+            recipient="notify@example.com",
+            attachment=attachment,
+        )
+
+        plain = message.get_body(preferencelist=("plain",))
+        html_body = message.get_body(preferencelist=("html",))
+        self.assertIsNotNone(plain)
+        self.assertIsNotNone(html_body)
+        self.assertIn("緊急: ロールバック失敗", plain.get_content())
+        rendered = html_body.get_content()
+        self.assertIn("SMAI Analytics", rendered)
+        self.assertIn("cid:smai-analytics-brand", rendered)
+        self.assertIn("cid:smai-analytics-repair", rendered)
+        content_ids = {str(part["Content-ID"]) for part in message.walk() if part.get_content_maintype() == "image"}
+        self.assertEqual({"<smai-analytics-brand>", "<smai-analytics-repair>"}, content_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

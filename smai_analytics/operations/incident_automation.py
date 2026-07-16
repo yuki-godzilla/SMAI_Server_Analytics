@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import hashlib
+import html
 import json
 import os
 import re
@@ -47,6 +48,9 @@ DELIVERY_RETRY_DELAYS = (timedelta(minutes=5), timedelta(minutes=15), timedelta(
 GMAIL_SMTP_HOST = "smtp.gmail.com"
 GMAIL_SMTP_PORT = 587
 GMAIL_CREDENTIAL_TARGET = "SMAI-Analytics-Gmail-SMTP"
+ASSET_ROOT = Path(__file__).resolve().parents[2] / "assets"
+EMAIL_BRAND_IMAGE = ASSET_ROOT / "smai-analytics-wordmark-header.png"
+EMAIL_REPAIR_IMAGE = ASSET_ROOT / "smai-analytics-incident-repair-v1.png"
 SCHEMA_VERSION = 2
 
 
@@ -514,6 +518,82 @@ def _notification_due(payload: Mapping[str, object], *, now: datetime) -> bool:
     return retry_after is None or retry_after <= now
 
 
+def _notification_presentation(kind: str, severity: str) -> tuple[str, str, str, str]:
+    """Return a bounded Japanese email presentation for a notification kind."""
+
+    presentations = {
+        "incident": ("重大アラート", "#DC2626", "SMAIの監視で重大な異常を検知しました。", "添付レポートとSMAIの稼働状態を直ちに確認してください。"),
+        "repeat": ("未解決アラート", "#D97706", "重大な異常が継続しています。", "未解決の原因と直近の対応状況を確認してください。"),
+        "recovery": ("復旧を確認", "#059669", "SMAI Analyticsは正常状態への復帰を観測しました。", "添付レポートで復旧時刻と対応結果を確認してください。"),
+        "approval": ("調査を承認", "#2563EB", "管理者がCodex調査依頼を承認しました。", "これは調査承認です。自動修復や再起動の承認ではありません。"),
+        "report": ("改善レポート", "#2563EB", "調査または運用対応の結果が記録されました。", "添付レポートで検証結果を確認してください。"),
+        "autofix_approval": ("自動修復を承認", "#D97706", "隔離環境での修復案作成が承認されました。", "この承認だけでは、マージ・再起動・pushは行われません。"),
+        "autofix_ready": ("修復案を確認", "#D97706", "隔離環境の修復commitが決定的検証を通過しました。", "添付レポートとローカルcommitを確認してから、マージを明示承認してください。"),
+        "autofix_merge_approval": ("マージを承認", "#D97706", "指定された修復commitのマージが承認されました。", "対象checkoutまたはcommitが変化した場合、マージは停止します。"),
+        "autofix_merged": ("ローカルマージ完了", "#2563EB", "承認済みの修復commitをローカルへfast-forwardしました。", "Analyticsの再起動には、別途配備承認が必要です。"),
+        "autofix_deploy_approval": ("配備を承認", "#D97706", "指定された修復commitのAnalytics配備が承認されました。", "事前検査、backup、再起動、health確認はすべてfail-closedで実行されます。"),
+        "autofix_applied": ("配備と確認が完了", "#059669", "Analyticsを再起動し、health確認に成功しました。", "添付レポートを確認し、画面確認とGitHubへのpushは手動で判断してください。"),
+        "autofix_rolled_back": ("自動ロールバック完了", "#2563EB", "配備確認に失敗したため、修復commitをrevertして復旧を確認しました。", "添付レポートで失敗理由とrollback commitを確認してください。"),
+        "autofix_rollback_failed": ("緊急: ロールバック失敗", "#B91C1C", "配備確認と自動ロールバックの両方に失敗しました。", "自動処理を継続せず、直ちに管理者による手動復旧を開始してください。"),
+        "autofix_failed": ("自動修復を停止", "#B91C1C", "自動修復は配備を報告せずに停止しました。", "添付レポートの失敗分類を確認し、必要なら新しい承認からやり直してください。"),
+        "autofix_cancelled": ("自動修復を取消", "#64748B", "管理者または安全制約により自動修復を取り消しました。", "添付レポートで取消理由と現在の状態を確認してください。"),
+    }
+    return presentations.get(
+        kind,
+        (f"{severity} アラート", "#D97706", "SMAI Analyticsから運用通知があります。", "添付レポートで詳細を確認してください。"),
+    )
+
+
+def _attach_inline_image(part: EmailMessage, path: Path, *, cid: str) -> bool:
+    """Attach one local PNG to the HTML alternative without making delivery depend on artwork."""
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    part.add_related(data, maintype="image", subtype="png", cid=f"<{cid}>", disposition="inline", filename=path.name)
+    return True
+
+
+def _notification_html(*, request_id: str, label: str, color: str, headline: str, action: str, brand_cid: str | None, repair_cid: str | None) -> str:
+    """Build a table-based HTML email that remains readable in conservative clients."""
+
+    escaped_id = html.escape(request_id)
+    brand = (
+        f'<img src="cid:{brand_cid}" width="250" alt="SMAI Analytics" style="border:0; display:block; height:auto; max-width:250px;">'
+        if brand_cid
+        else '<strong style="color:#F8FBFF; font-size:24px; letter-spacing:0.02em;">SMAI Analytics</strong>'
+    )
+    repair = (
+        f'<img src="cid:{repair_cid}" width="150" alt="SMAI operations response" style="border:0; display:block; height:auto; margin:0 auto; max-width:150px;">'
+        if repair_cid
+        else ""
+    )
+    return (
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8"></head><body style="background:#EAF0F7; margin:0; padding:24px 12px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#081323; border-radius:16px; max-width:640px; overflow:hidden;">'
+        f'<tr><td style="background:#07111F; padding:24px 28px;">{brand}</td></tr>'
+        f'<tr><td style="background:{color}; height:6px; line-height:6px; font-size:0;">&nbsp;</td></tr>'
+        '<tr><td style="padding:28px 28px 14px;">'
+        f'<span style="background:{color}; border-radius:999px; color:#FFFFFF; display:inline-block; font-family:Arial, sans-serif; font-size:12px; font-weight:700; letter-spacing:0.08em; padding:7px 12px;">{html.escape(label)}</span>'
+        f'<h1 style="color:#F8FBFF; font-family:Arial, \"Hiragino Kaku Gothic ProN\", Meiryo, sans-serif; font-size:25px; line-height:1.4; margin:18px 0 8px;">{html.escape(headline)}</h1>'
+        f'<p style="color:#BED0E6; font-family:Arial, \"Hiragino Kaku Gothic ProN\", Meiryo, sans-serif; font-size:15px; line-height:1.75; margin:0;">{html.escape(action)}</p>'
+        '</td></tr>'
+        f'<tr><td align="center" style="padding:4px 28px 18px;">{repair}</td></tr>'
+        '<tr><td style="padding:0 28px 28px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#10233A; border:1px solid #244566; border-radius:10px;">'
+        '<tr><td style="padding:14px 16px;">'
+        '<p style="color:#78A7D6; font-family:Arial, sans-serif; font-size:11px; font-weight:700; letter-spacing:0.08em; margin:0 0 5px;">INCIDENT / WORKFLOW ID</p>'
+        f'<p style="color:#F8FBFF; font-family:Consolas, \"Courier New\", monospace; font-size:13px; margin:0; overflow-wrap:anywhere;">{escaped_id}</p>'
+        '</td></tr></table>'
+        '<p style="color:#8FA5BE; font-family:Arial, \"Hiragino Kaku Gothic ProN\", Meiryo, sans-serif; font-size:12px; line-height:1.6; margin:18px 0 0;">'
+        '詳細は添付のローカル運用レポートで確認してください。SMAI Analyticsは閲覧専用であり、このメールへの返信は承認操作として扱われません。'
+        '</p></td></tr>'
+        '</table></td></tr></table></body></html>'
+    )
+
+
 def _build_notification_message(payload: Mapping[str, object], *, sender: str, recipient: str, attachment: Path) -> EmailMessage:
     kind = _safe_text(payload.get("kind") or "incident", limit=30).lower()
     severity = _safe_text(payload.get("severity") or "critical", limit=20).upper()
@@ -535,80 +615,39 @@ def _build_notification_message(payload: Mapping[str, object], *, sender: str, r
         "autofix_failed": "AUTOFIX STOPPED",
         "autofix_cancelled": "AUTOFIX CANCELLED",
     }.get(kind, severity)
+    label, color, headline, action = _notification_presentation(kind, severity)
+    plain_text = "\n\n".join(
+        (
+            f"SMAI Analytics | {label}",
+            headline,
+            action,
+            f"Incident / Workflow ID: {request_id}",
+            "詳細は添付のローカル運用レポートで確認してください。メール返信は承認操作として扱われません。",
+        )
+    )
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
     message["Subject"] = f"[SMAI {subject_prefix}] {request_id}"
-    if kind == "autofix_ready":
-        message.set_content(
-            "An isolated Codex Autofix commit passed deterministic validation. "
-            "Review the attached bounded report and local commit before granting merge approval."
-        )
-    elif kind == "autofix_merge_approval":
-        message.set_content(
-            "A local administrator granted a one-hour merge lease for the exact Autofix commit. "
-            "The merge remains fail-closed if the target or commit changes."
-        )
-    elif kind == "autofix_merged":
-        message.set_content(
-            "The approved Autofix commit was fast-forwarded into the local Analytics checkout. "
-            "A separate deployment approval is required before Analytics restart."
-        )
-    elif kind == "autofix_deploy_approval":
-        message.set_content(
-            "A local administrator granted a 30-minute Analytics-only deployment lease. "
-            "Preflight, backup, restart, and health checks remain fail-closed."
-        )
-    elif kind == "autofix_applied":
-        message.set_content(
-            "Analytics restarted on the approved Autofix commit and automated health checks passed. "
-            "Browser visual review and Git push remain manual operations."
-        )
-    elif kind == "autofix_rolled_back":
-        message.set_content(
-            "Deployment verification failed, so the exact Autofix commit was reverted and "
-            "Analytics health recovered. Review before any further deployment or push."
-        )
-    elif kind == "autofix_rollback_failed":
-        message.set_content(
-            "Analytics deployment and automatic rollback both failed. Do not push; immediate "
-            "administrator recovery is required."
-        )
-    elif kind in {"autofix_failed", "autofix_cancelled"}:
-        message.set_content(
-            "The Codex Autofix workflow stopped without reporting an automatic deployment. "
-            "Review the attached bounded local report."
-        )
-    elif kind == "autofix_approval":
-        message.set_content(
-            "A local administrator approved one isolated Codex Autofix run. "
-            "This approval does not authorize merge, restart, or push."
-        )
-    elif kind == "recovery":
-        message.set_content(
-            "SMAI Analytics observed a healthy recovery for this incident. "
-            "The attached local report remains the audit record."
-        )
-    elif kind == "approval":
-        message.set_content(
-            "A local administrator approved the Codex repair request. "
-            "The attached report records the approval; no automatic code change was started."
-        )
-    elif kind == "report":
-        message.set_content(
-            "SMAI Analytics recorded a bounded investigation outcome. "
-            "The attached local report is available for administrator review."
-        )
-    elif kind == "repeat":
-        message.set_content(
-            "SMAI Analytics still observes this unresolved critical incident. "
-            "The attached local report remains the current audit record."
-        )
-    else:
-        message.set_content(
-            "SMAI Analytics detected a critical operational incident. "
-            "The attached local report contains only bounded operational evidence."
-        )
+    message.set_content(plain_text)
+    brand_cid = "smai-analytics-brand"
+    repair_cid = "smai-analytics-repair"
+    message.add_alternative(
+        _notification_html(
+            request_id=request_id,
+            label=label,
+            color=color,
+            headline=headline,
+            action=action,
+            brand_cid=brand_cid if EMAIL_BRAND_IMAGE.is_file() else None,
+            repair_cid=repair_cid if EMAIL_REPAIR_IMAGE.is_file() else None,
+        ),
+        subtype="html",
+    )
+    html_part = message.get_payload()[-1]
+    if isinstance(html_part, EmailMessage):
+        _attach_inline_image(html_part, EMAIL_BRAND_IMAGE, cid=brand_cid)
+        _attach_inline_image(html_part, EMAIL_REPAIR_IMAGE, cid=repair_cid)
     message.add_attachment(
         attachment.read_bytes(),
         maintype="text",
