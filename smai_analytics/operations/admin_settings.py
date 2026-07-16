@@ -99,7 +99,18 @@ def load() -> dict[str, object]:
 def save_profile(*, administrator_name: str, administrator_email: str) -> dict[str, object]:
     settings = load()
     settings["administrator_name"] = _name(administrator_name)
-    settings["administrator_email"] = _email(administrator_email)
+    email = str(administrator_email or "").strip()
+    settings["administrator_email"] = _email(email) if email else ""
+    settings["updated_at"] = _timestamp()
+    _write_json_atomic(SETTINGS_PATH, settings)
+    return load()
+
+
+def set_administrator_name(administrator_name: str) -> dict[str, object]:
+    """Update the visible administrator name without requiring an email change."""
+
+    settings = load()
+    settings["administrator_name"] = _name(administrator_name)
     settings["updated_at"] = _timestamp()
     _write_json_atomic(SETTINGS_PATH, settings)
     return load()

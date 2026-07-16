@@ -47,6 +47,13 @@ class AdministratorSettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             admin_settings.save_profile(administrator_name="", administrator_email="not-an-email")
 
+    def test_administrator_name_can_be_updated_without_an_email_change(self) -> None:
+        admin_settings.set_administrator_name("YUKI_Admin")
+
+        persisted = json.loads(admin_settings.SETTINGS_PATH.read_text(encoding="utf-8"))
+        self.assertEqual("YUKI_Admin", persisted["administrator_name"])
+        self.assertEqual("", persisted["administrator_email"])
+
 
 if __name__ == "__main__":
     unittest.main()
