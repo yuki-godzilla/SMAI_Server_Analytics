@@ -124,7 +124,7 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("WScript.Shell", placement)
         self.assertIn("SMAI-Shared-Developer-Workspace.lnk", placement)
         self.assertIn("SMAI-Codex-CLI.lnk", placement)
-        self.assertIn("ChatGPT-Web.lnk", placement)
+        self.assertIn("ChatGPT-Web.url", placement)
 
     def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
         register = (

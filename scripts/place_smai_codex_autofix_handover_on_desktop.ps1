@@ -39,7 +39,6 @@ if ($PSCmdlet.ShouldProcess($destination, "Copy the SMAI Codex Autofix handover 
     $shortcuts = @(
         @("SMAI-Shared-Developer-Workspace.lnk", $windowsPowerShell, "-NoProfile -ExecutionPolicy Bypass -File `"$workspaceLauncher`"", $projectRoot, "Open the SMAI Server Analytics shared VS Code workspace."),
         @("SMAI-Codex-CLI.lnk", $windowsPowerShell, "-NoExit -NoProfile -Command `"Set-Location -LiteralPath '$projectRoot'; & '$codex'`"", $projectRoot, "Open the dedicated-account Codex CLI."),
-        @("ChatGPT-Web.lnk", "https://chatgpt.com", "", "", "Open ChatGPT in the default browser."),
         @("SMAI-Codex-Autofix-Handover.lnk", $destination, "", "", "Open the dedicated-account handover guide.")
     )
     foreach ($shortcut in $shortcuts) {
@@ -50,6 +49,7 @@ if ($PSCmdlet.ShouldProcess($destination, "Copy the SMAI Codex Autofix handover 
         $link.Description = $shortcut[4]
         $link.Save()
     }
+    @("[InternetShortcut]", "URL=https://chatgpt.com") | Set-Content -LiteralPath (Join-Path $desktop "ChatGPT-Web.url") -Encoding ascii
     Write-Host "[OK] Placed on desktop: $destination"
     Write-Host "[OK] Added desktop launchers: shared workspace, Codex CLI, ChatGPT Web, and handover guide."
 }
