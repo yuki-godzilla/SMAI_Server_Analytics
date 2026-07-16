@@ -78,26 +78,6 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn("SMAI_SERVER_ANALYTICS_URL", content)
         self.assertNotIn("SMAI_ANALYTICS_LAN_IP", content)
 
-    def test_access_guidance_uses_only_the_magicdns_analytics_url(self) -> None:
-        class MarkdownRecorder:
-            rendered = ""
-
-            @staticmethod
-            def markdown(value: str, **_: object) -> None:
-                MarkdownRecorder.rendered = value
-
-        original_streamlit = analytics_web.st
-        analytics_web.st = MarkdownRecorder
-        try:
-            analytics_web._render_access_guidance()
-        finally:
-            analytics_web.st = original_streamlit
-
-        self.assertIn("Server Analytics接続URL", MarkdownRecorder.rendered)
-        self.assertIn("http://smai-server:8502", MarkdownRecorder.rendered)
-        self.assertIn("LAN内でも外出先でも共通", MarkdownRecorder.rendered)
-        self.assertNotIn("0.0.0.0", MarkdownRecorder.rendered)
-
     def test_browser_visible_logs_and_session_details_redact_sensitive_values(self) -> None:
         line = analytics_web.sanitize_log_line(
             "api_key=live-secret Authorization: Bearer session-token user@example.com "

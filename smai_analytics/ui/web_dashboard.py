@@ -20,7 +20,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Mapping
 
-from .. import network
 from ..monitoring import connection_watch, task_monitor, telemetry
 from ..operations import codex_autofix, incident_automation
 
@@ -624,11 +623,6 @@ def _render_styles() -> None:
           .panel-kicker { color: #60A5FA; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 2px; }
           .panel-title { color: #F8FBFF; font-size: 1.06rem; font-weight: 800; margin: 0 0 4px; }
           .panel-caption, .section-note { color: #AAB8C8; font-size: 0.88rem; margin: 0 0 12px; }
-          .access-guidance { background: linear-gradient(135deg, rgba(14, 31, 53, 0.92), rgba(11, 20, 35, 0.96)); border: 1px solid #2B6387; border-left: 4px solid #22D3EE; border-radius: 12px; margin: 12px 0 18px; padding: 14px 17px; }
-          .access-guidance h2 { color: #F8FBFF; font-size: 1rem; margin: 0 0 6px; }
-          .access-guidance p { color: #B9C7D8; margin: 5px 0; }
-          .access-guidance code { color: #67E8F9; font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
-          .access-guidance small { color: #AAB8C8; display: block; line-height: 1.55; margin-top: 8px; }
           .topology-node { min-height: 164px; padding: 12px; text-align: center; }
           .topology-image { display: block; height: 60px; margin: 0 auto 4px; object-fit: contain; width: 76px; }
           .topology-node strong { color: #F8FBFF; display: block; margin-top: 3px; }
@@ -1241,30 +1235,6 @@ def _render_metrics(data: Mapping[str, object]) -> None:
     columns[2].caption("現在の実行状態")
     columns[3].metric("最終確認", compact_timestamp(data["checked_at"]))
     columns[3].caption(format_timestamp(data["checked_at"]))
-
-
-def _render_access_guidance() -> None:
-    """Show one MagicDNS URL without falling back to LAN or Tailscale IP addresses."""
-
-    assert st is not None
-    try:
-        urls = network.resolve_network_urls()
-    except network.NetworkConfigurationError:
-        st.warning("Server Analyticsの接続設定を確認できません。通常URLは表示していません。")
-        return
-    st.markdown(
-        "<section class=\"access-guidance\">"
-        "<p class=\"panel-kicker\">SERVER ANALYTICS ACCESS</p>"
-        "<h2>Server Analytics接続URL</h2>"
-        f"<code>{html.escape(urls.server_analytics_url)}</code>"
-        "<p>LAN内でも外出先でも共通のURLです。接続する端末でTailscaleを起動してください。</p>"
-        "<small>MagicDNSはサーバーPCをIPアドレスではなく端末名で接続する仕組みです。"
-        "Main ApplicationとServer Analyticsは同じサーバー名、異なるポート番号で区別します。"
-        "この画面はサーバー運用者向けです。接続できない場合は、Tailscale、サーバーPC、"
-        "Server Analyticsの起動状態、URLとポート番号を順に確認してください。</small>"
-        "</section>",
-        unsafe_allow_html=True,
-    )
 
 
 def _render_topology_node(column: object, *, label: str, detail: str, status: str, image: bytes | str | None = None) -> None:
@@ -2063,7 +2033,6 @@ def _render_live_header() -> None:
     assert st is not None
     data = cached_summary_snapshot()
     _render_header(data)
-    _render_access_guidance()
     _render_metrics(data)
     if data["health_note"]:
         st.warning(str(data["health_note"]))
