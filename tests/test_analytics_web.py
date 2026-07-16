@@ -129,6 +129,10 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
     def test_main_application_navigation_uses_the_network_contract(self) -> None:
         self.assertEqual("http://smai-server:8501", analytics_web.main_application_url())
 
+    def test_administrator_menu_uses_saved_name_or_a_safe_default(self) -> None:
+        self.assertEqual("運用管理者", analytics_web.administrator_display_name({"administrator_name": "運用管理者"}))
+        self.assertEqual("管理者", analytics_web.administrator_display_name({"administrator_name": ""}))
+
     def test_dashboard_renders_only_the_selected_static_operations_surface(self) -> None:
         class DashboardShell:
             @staticmethod

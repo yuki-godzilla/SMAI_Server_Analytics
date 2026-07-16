@@ -48,6 +48,7 @@ HEALTH_SNAPSHOT_STALE_AFTER = timedelta(minutes=10)
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
 ANALYTICS_MASCOT = ASSET_ROOT / "smai-analytics-mascot.png"
 ANALYTICS_MASCOT_HEADER = ASSET_ROOT / "smai-analytics-mascot-header.png"
+ANALYTICS_ADMIN_MASCOT = ASSET_ROOT / "smai-analytics-admin-mascot-v1.png"
 ANALYTICS_APP_ICON = ASSET_ROOT / "smai-analytics-app-icon-v3.png"
 PWA_COMPONENT_ROOT = Path(__file__).resolve().parent / "pwa_metadata_component"
 ANALYTICS_WORDMARK = ASSET_ROOT / "smai-analytics-wordmark-luminous.png"
@@ -567,6 +568,9 @@ def _narrative(overall: str) -> tuple[str, str]:
 
 def _render_styles() -> None:
     assert st is not None
+    avatar = _image_data_uri(_scaled_transparent_asset(str(ANALYTICS_ADMIN_MASCOT), maximum=(96, 96)))
+    avatar_background = f'url("{avatar}")' if avatar else "none"
+    avatar_content = '""' if avatar else '"🛡"'
     st.markdown(
         """
         <style>
@@ -724,6 +728,22 @@ def _render_styles() -> None:
           .app-state { border-left: 1px solid #26384f; padding-left: 26px; }
           .app-state .status-pill { font-size: 0.92rem; padding: 6px 13px; }
           .header-control-spacer { height: 57px; }
+          /* Matches the Main Application account trigger: one compact avatar
+             chip that opens a menu instead of exposing header actions. */
+          [data-testid="stColumn"]:has(.administrator-menu-marker) { align-items: flex-start; display: flex; justify-content: flex-end; padding-top: 4px; }
+          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] { width: min(100%, 15rem); }
+          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button {
+            align-items: center; background: #08182a !important; border-color: #22d3ee !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,.35); display: flex; font-size: .88rem;
+            font-weight: 750; gap: .48rem; justify-content: flex-start; min-height: 50px; padding: 5px 10px;
+          }
+          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button::before {
+            align-items: center; background: radial-gradient(circle at 35% 30%, #5ee8ff, #0d5b8f 58%, #071827 60%);
+            border: 1px solid #22d3ee; border-radius: 50%; color: #eaffff; content: __ADMIN_AVATAR_CONTENT__; display: inline-flex;
+            flex: 0 0 36px; font-size: 1.25rem; height: 36px; justify-content: center; width: 36px;
+            background-image: __ADMIN_AVATAR_BACKGROUND__; background-position: center; background-repeat: no-repeat; background-size: cover;
+          }
+          [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button::after { color: #8fa4be; content: "⌄"; font-size: 1rem; margin-left: auto; }
           [data-testid="stButton"] > button { font-size: 1.02rem; min-height: 50px; }
           [data-baseweb="tab-list"] { border-bottom: 1px solid #26384f; gap: 0; }
           [data-baseweb="tab"] { border-bottom: 2px solid transparent; padding: 11px 15px 9px; }
@@ -858,8 +878,8 @@ def _render_styles() -> None:
             [data-testid="stMainBlockContainer"], .block-container { padding: 1.25rem 1.25rem 1.75rem; }
             [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) { flex-wrap: wrap; }
             [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) > [data-testid="column"] { flex: 1 1 calc(50% - 0.55rem) !important; min-width: calc(50% - 0.55rem) !important; width: calc(50% - 0.55rem) !important; }
-            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 16.75rem) !important; min-width: 0 !important; width: calc(100% - 16.75rem) !important; }
-            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 16rem !important; min-width: 16rem !important; width: 16rem !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 14.75rem) !important; min-width: 0 !important; width: calc(100% - 14.75rem) !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 14rem !important; min-width: 14rem !important; width: 14rem !important; }
             .app-shell { min-height: 142px; padding: 14px 12px; }
             .app-brand, .app-state, .app-title { gap: 14px; }
             .app-wordmark { height: 68px; max-width: min(46vw, 480px); }
@@ -884,6 +904,8 @@ def _render_styles() -> None:
             [data-testid="stMetricValue"] { font-size: 1.45rem; }
             [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { font-size: 0.7rem !important; line-height: 1.35; margin-top: 2px; }
             [data-testid="stHorizontalBlock"]:has(.app-shell) { gap: 8px; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 10rem) !important; min-width: 0 !important; width: calc(100% - 10rem) !important; }
+            [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 9.5rem !important; min-width: 9.5rem !important; width: 9.5rem !important; }
             .app-shell { align-items: flex-start; flex-direction: column; gap: 8px; min-height: 0; padding: 8px 0 10px; }
             .app-brand { width: 100%; }
             .app-brand, .app-state, .app-title { gap: 10px; }
@@ -895,6 +917,10 @@ def _render_styles() -> None:
             .app-state .status-pill { font-size: 0.78rem; padding: 4px 9px; }
             .app-state span { font-size: 0.76rem; letter-spacing: 0.04em; white-space: normal; }
             .header-control-spacer { display: none; }
+            [data-testid="stColumn"]:has(.administrator-menu-marker) { padding-top: 0; }
+            [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] { width: 100%; }
+            [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button { font-size: .74rem; gap: .28rem; padding: 4px 6px; }
+            [data-testid="stColumn"]:has(.administrator-menu-marker) [data-testid="stPopover"] > button::before { flex-basis: 31px; font-size: 1rem; height: 31px; width: 31px; }
             [data-testid="stMarkdownContainer"]:has(.header-control-spacer) + [data-testid="stButton"] button { min-height: 44px; }
             [data-testid="stButton"] > button { font-size: 0.96rem; min-height: 44px; }
             [data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
@@ -929,7 +955,7 @@ def _render_styles() -> None:
             .evidence-signal:nth-child(n + 3) { border-top: 1px solid #1E3047; }
           }
         </style>
-        """,
+        """.replace("__ADMIN_AVATAR_BACKGROUND__", avatar_background).replace("__ADMIN_AVATAR_CONTENT__", avatar_content),
         unsafe_allow_html=True,
     )
 
@@ -1189,6 +1215,35 @@ def _current_level_statuses(data: Mapping[str, object]) -> dict[str, str]:
     }
 
 
+def administrator_display_name(settings: Mapping[str, object] | None = None) -> str:
+    """Return a safe, compact name for the always-visible administrator menu."""
+
+    value = (settings or admin_settings.load()).get("administrator_name")
+    name = str(value or "").strip().replace("\r", " ").replace("\n", " ")
+    return name[:80] or "管理者"
+
+
+def _render_administrator_menu() -> None:
+    """Render the Main Application-style account chip and its explicit actions."""
+
+    assert st is not None
+    name = administrator_display_name()
+    st.markdown('<span class="administrator-menu-marker"></span>', unsafe_allow_html=True)
+    with st.popover(f"{name} / 管理者", use_container_width=True):
+        st.markdown("#### 管理者メニュー")
+        st.caption(f"{name} / SMAI Analytics")
+        if st.button("管理設定を開く", key="open_administrator_settings", use_container_width=True):
+            st.session_state["operations_view"] = "管理設定"
+            st.rerun()
+        st.link_button("認証・ユーザー管理", main_application_url(), use_container_width=True)
+        if st.button("最新状態に更新", key="refresh_now", use_container_width=True):
+            cached_summary_snapshot.clear()
+            cached_operations_snapshot.clear()
+            # This is an explicit operator action; timed updates only redraw
+            # the compact summary and never request the detailed snapshot.
+            st.rerun()
+
+
 def _render_header(data: Mapping[str, object]) -> None:
     assert st is not None
     app_bar, controls = st.columns((10, 3))
@@ -1203,20 +1258,7 @@ def _render_header(data: Mapping[str, object]) -> None:
             unsafe_allow_html=True,
         )
     with controls:
-        account_control, refresh_control = st.columns((2, 1), gap="small")
-        with account_control:
-            if st.button("管理設定", key="open_administrator_settings", use_container_width=True):
-                st.session_state["operations_view"] = "管理設定"
-                st.rerun()
-            st.link_button("認証・ユーザー管理", main_application_url(), use_container_width=True)
-        with refresh_control:
-            st.markdown('<div class="header-control-spacer header-refresh-anchor"></div>', unsafe_allow_html=True)
-            if st.button("更新", key="refresh_now", use_container_width=True):
-                cached_summary_snapshot.clear()
-                cached_operations_snapshot.clear()
-                # A user explicitly requested fresh detail, so this one action may
-                # rerun the application. Timed refreshes never take this path.
-                st.rerun()
+        _render_administrator_menu()
 
 
 def _render_metrics(data: Mapping[str, object]) -> None:
