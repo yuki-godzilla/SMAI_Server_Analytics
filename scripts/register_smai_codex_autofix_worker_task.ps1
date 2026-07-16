@@ -72,11 +72,19 @@ if (-not $PSCmdlet.ShouldProcess($taskName, "Register dedicated Codex Autofix wo
     exit 0
 }
 
-# Some restricted Windows PowerShell sessions disable module autoload even
-# though the inbox credential cmdlet is available.  Load it explicitly so the
-# interactive credential dialog remains local to the Windows desktop.
-Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
-$credential = Get-Credential -UserName $UserId -Message "Enter the dedicated standard-account credential for the Autofix task."
+# Do not use Get-Credential here.  Its inbox module can fail to import on a
+# host with duplicated TypeData registrations.  The host API is available
+# without Microsoft.PowerShell.Security and keeps the password in the native
+# Windows credential dialog rather than this script or its output.
+$credential = $Host.UI.PromptForCredential(
+    "SMAI Codex Autofix worker",
+    "Enter the Windows password for the Autofix worker account.",
+    $UserId,
+    ""
+)
+if ($null -eq $credential) {
+    throw "Autofix worker task registration was cancelled because no credential was provided."
+}
 Register-ScheduledTask -TaskName $taskName -InputObject $task -User $credential.UserName -Password $credential.GetNetworkCredential().Password -Force | Out-Null
 Write-Host "[OK] Registered: $taskName"
 Write-Host "[INFO] Autofix is still controlled by config/codex_autofix.json and per-Incident administrator leases."
