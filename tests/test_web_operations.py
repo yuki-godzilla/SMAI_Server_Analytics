@@ -108,6 +108,16 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("ms-vscode.powershell", launcher)
         self.assertIn("login --device-auth", launcher)
 
+    def test_autofix_handover_desktop_placement_requires_admin_and_uses_the_runtime_copy(self) -> None:
+        placement = (
+            REPOSITORY_ROOT / "scripts" / "place_smai_codex_autofix_handover_on_desktop.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("WindowsBuiltInRole]::Administrator", placement)
+        self.assertIn("development_environment\\handover", placement)
+        self.assertIn("SMAI-Codex-Autofix_引継ぎ指示書.docx", placement)
+        self.assertIn("Copy-Item", placement)
+
     def test_codex_autofix_deploy_executor_uses_the_interactive_analytics_owner(self) -> None:
         register = (
             REPOSITORY_ROOT / "scripts" / "register_smai_codex_autofix_deploy_task.ps1"
