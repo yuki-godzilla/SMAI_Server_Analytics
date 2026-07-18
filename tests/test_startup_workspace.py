@@ -87,6 +87,9 @@ class StartupWorkspaceTests(unittest.TestCase):
         launcher = self.read("run_hidden_powershell.vbs")
 
         self.assertIn('CreateObject("WScript.Shell")', launcher)
+        self.assertIn('command = QuoteArgument(CStr(WScript.Arguments(0)))', launcher)
+        self.assertIn('For index = 1 To WScript.Arguments.Count - 1', launcher)
+        self.assertNotIn('command = ""', launcher)
         self.assertIn("shell.Run(command, 0, True)", launcher)
         self.assertIn("WScript.Quit exitCode", launcher)
 

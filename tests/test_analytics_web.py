@@ -217,6 +217,14 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertFalse(by_client["tablet"]["flow"])
         self.assertEqual(by_client["tablet"]["status"], "degraded")
 
+    def test_connection_ui_labels_sessions_without_claiming_physical_device_counts(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
+
+        self.assertIn('columns[1].metric("現在のセッション", active_sessions)', source)
+        self.assertIn("現在 {active} セッション", source)
+        self.assertIn("実端末数ではありません", source)
+        self.assertIn("現在セッション", source)
+
     def test_live_connection_map_uses_bidirectional_particles_only_for_current_heartbeats(self) -> None:
         class MarkdownRecorder:
             rendered = ""

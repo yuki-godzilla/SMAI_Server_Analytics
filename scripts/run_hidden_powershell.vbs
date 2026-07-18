@@ -6,8 +6,8 @@ If WScript.Arguments.Count = 0 Then
     WScript.Quit 1
 End If
 
-command = ""
-For index = 0 To WScript.Arguments.Count - 1
+command = QuoteArgument(CStr(WScript.Arguments(0)))
+For index = 1 To WScript.Arguments.Count - 1
     command = command & " " & QuoteArgument(CStr(WScript.Arguments(index)))
 Next
 

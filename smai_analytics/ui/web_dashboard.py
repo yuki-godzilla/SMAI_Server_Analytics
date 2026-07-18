@@ -1356,12 +1356,12 @@ def _render_header(data: Mapping[str, object]) -> None:
 def _render_metrics(data: Mapping[str, object]) -> None:
     assert st is not None
     active_sessions = "—" if data["active_session_count"] is None else str(data["active_session_count"])
-    session_detail = "接続情報を取得できません" if data["session_count"] is None else f"観測セッション {data['session_count']}件 / 90秒以内"
+    session_detail = "接続情報を取得できません" if data["session_count"] is None else f"観測 {data['session_count']} セッション / 90秒以内"
     operations = "—" if data["operation_count"] is None else str(data["operation_count"])
     columns = st.columns(4)
     columns[0].metric("ヘルススコア", f"{health_score(data['overall'])} / 100")
     columns[0].caption(status_label(data["overall"]))
-    columns[1].metric("現在接続", active_sessions)
+    columns[1].metric("現在のセッション", active_sessions)
     columns[1].caption(session_detail)
     columns[2].metric("実行中の処理", operations)
     columns[2].caption("現在の実行状態")
@@ -1634,8 +1634,8 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
         status_label_text, color = _visual_status(node["status"])
         active = node["active"]
         observed = node["observed"]
-        active_text = "観測不能" if active is None else f"現在 {active} 接続"
-        observed_text = "" if observed is None or observed == active else f" / 観測 {observed}"
+        active_text = "観測不能" if active is None else f"現在 {active} セッション"
+        observed_text = "" if observed is None or observed == active else f" / 観測 {observed} セッション"
         classes = f"network-image-node network-{client} {_network_status_class(node['status'])}" + (" active" if bool(node["flow"]) else "")
         image_uri = _image_data_uri(topology_images[client])
         image_tag = f'<img class="network-topology-image" src="{image_uri}" alt="{html.escape(CLIENT_TYPE_LABELS[client])}">' if image_uri else ""
@@ -1668,7 +1668,7 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
     )
     st.markdown(
         f'<section class="visual-surface"><div class="visual-heading"><strong>ライブ接続トポロジー</strong><span>LIVE HEARTBEAT FLOW</span></div>'
-        f'<p class="visual-copy">SMAI Serverと端末種別の現在接続を、個人情報を表示せずに集約します。</p>'
+        f'<p class="visual-copy">SMAI Serverとブラウザ・セッションの現在接続を、推定された利用環境種別ごとに集約します。実端末数ではありません。</p>'
         f'<div class="network-canvas"><svg class="network-links" viewBox="0 0 1000 528" preserveAspectRatio="none" aria-hidden="true">'
         f'{"".join(link_markup)}{"".join(packet_markup)}</svg>'
         f'<div class="network-image-node network-server {server_status_class}{server_class}">'
@@ -1897,7 +1897,7 @@ def _render_trends(data: Mapping[str, object]) -> None:
 
 def _render_connections(data: Mapping[str, object]) -> None:
     assert st is not None
-    _panel_heading("端末接続状況", "端末種別ごとの現在接続数とAnalytics観測開始後の累計です。", kicker="SESSIONS")
+    _panel_heading("セッション接続状況", "利用環境種別ごとの現在のブラウザ・セッション数です。実端末数は端末ID連携済みの累計だけで確認できます。", kicker="SESSIONS")
     sessions = [item for item in data.get("sessions", []) if isinstance(item, dict)] if isinstance(data.get("sessions"), list) else []
     history = data.get("connection_history")
     state = history.get("state") if isinstance(history, dict) else {}
@@ -1907,8 +1907,8 @@ def _render_connections(data: Mapping[str, object]) -> None:
     for column, client in zip(metrics, connection_watch.CLIENT_TYPES):
         cumulative = summary.get("cumulative", {}).get(client, 0) if isinstance(summary.get("cumulative"), dict) else 0
         unlinked = sum(1 for session in sessions if session.get("client_type") == client and session_connection_status(session) == "ok" and not session.get("device_id"))
-        detail = f"累計 {cumulative}台" + (f" / ID未連携 {unlinked}" if unlinked else "")
-        column.metric(f"{CLIENT_TYPE_LABELS[client]} / 現在接続", f"{active[client]}台", detail)
+        detail = f"端末ID連携済み累計 {cumulative}台" + (f" / ID未連携 {unlinked}セッション" if unlinked else "")
+        column.metric(f"{CLIENT_TYPE_LABELS[client]} / 現在セッション", f"{active[client]}件", detail)
     if not bool(data.get("activity_available")):
         st.warning("activity state を読み取れません。接続がない、とは判断していません。")
     else:
