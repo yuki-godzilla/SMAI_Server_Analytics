@@ -302,7 +302,7 @@ def critical_health_incident(snapshot: Mapping[str, object]) -> dict[str, object
         _safe_text(item.get("name"))
         for item in check_rows
         if isinstance(item, dict)
-        if str(item.get("status", "")).lower() == "failed"
+        if str(item.get("status", "")).lower() in {"failed", "critical"}
     ]
     evidence = failed_checks or ["critical health without readable checks"]
     return {

@@ -67,6 +67,18 @@ class IncidentAutomationTests(unittest.TestCase):
     def test_healthy_snapshot_does_not_create_incident(self) -> None:
         self.assertIsNone(incident_automation.critical_health_incident({"overall": "healthy", "checks": []}))
 
+    def test_critical_data_freshness_is_kept_in_incident_evidence(self) -> None:
+        incident = incident_automation.critical_health_incident(
+            {
+                "overall": "critical",
+                "checked_at": "2026-07-12T00:00:00+00:00",
+                "checks": [{"name": "Market news freshness", "status": "critical"}],
+            }
+        )
+
+        self.assertIsNotNone(incident)
+        self.assertEqual(["Market news freshness"], incident["evidence"])
+
     def test_record_report_appends_outcome_and_queues_notification(self) -> None:
         incident = {
             "severity": "critical",
