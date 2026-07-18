@@ -1,7 +1,7 @@
 # Codex自動起動・自動修復 設計仕様
 
 更新日: 2026-07-16
-状態: v2実装済み。現在の設定は`enabled=true` / `mode=active` / `deployment_enabled=false`であり、critical障害での隔離修復候補作成を許可する。workerタスク未登録時は候補を実行せず、マージ・配備・再起動・pushは別の明示承認を必要とする。
+状態: v2実装済み。現在の設定は`enabled=true` / `mode=active` / `deployment_enabled=true`であり、critical障害での隔離修復候補作成と、個別に第3承認されたAnalytics配備を許可する。workerタスク未登録時は候補を実行せず、マージ・配備・再起動・pushは別の明示承認を必要とする。
 対象: `SMAI_Server_Analytics` だけ。`Smart_Market_AI`本体を変更対象に含めない。
 
 ## 1. 目的と結論

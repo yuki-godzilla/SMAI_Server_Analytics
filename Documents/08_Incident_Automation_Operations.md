@@ -172,7 +172,7 @@ preflight成功後だけAnalyticsを再起動し、90秒以内に`http://127.0.0
 
 ### Workerの準備と有効化
 
-現在の[`config/codex_autofix.json`](../config/codex_autofix.json)は`enabled=true` / `mode=active` / `deployment_enabled=false`です。critical障害での隔離修復候補作成だけを許可し、workerタスク未登録時は候補を実行しません。まず専用Windows標準アカウントへ、Analyticsリポジトリの必要最小限のGit書き込み、Autofix Runtime、既存Incidentレポート／Outboxだけの権限と、専用Codexログインを用意します。SMAI本体のソース、ユーザーデータ、Credential Managerの不要な資格情報、管理者権限を与えません。
+現在の[`config/codex_autofix.json`](../config/codex_autofix.json)は`enabled=true` / `mode=active` / `deployment_enabled=true`です。critical障害での隔離修復候補作成を許可し、配備executorは個別の第3承認を持つ候補だけを処理します。workerタスク未登録時は候補を実行しません。専用Windows標準アカウントには、Analyticsリポジトリの必要最小限のGit書き込み、Autofix Runtime、既存Incidentレポート／Outboxだけの権限と、専用Codexログインを用意します。SMAI本体のソース、ユーザーデータ、Credential Managerの不要な資格情報、管理者権限を与えません。
 
 タスクを変更せず内容だけ確認します。
 
