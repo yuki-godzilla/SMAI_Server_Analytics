@@ -199,12 +199,14 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
 
     def test_dashboard_connection_nodes_animate_only_current_heartbeats(self) -> None:
         now = datetime.now(UTC).isoformat()
+        desktop_device = "desktop-device"
         available, nodes = analytics_web._dashboard_connection_nodes(
             {
                 "activity_available": True,
                 "sessions": [
-                    {"client_type": "desktop", "last_seen_at": now, "connection_state": "connected"},
-                    {"client_type": "smartphone", "last_seen_at": now, "connection_state": "connected"},
+                    {"client_type": "desktop", "last_seen_at": now, "connection_state": "connected", "device_id": desktop_device},
+                    {"client_type": "desktop", "last_seen_at": now, "connection_state": "connected", "device_id": desktop_device},
+                    {"client_type": "smartphone", "last_seen_at": now, "connection_state": "connected", "device_id": "phone-device"},
                     {"client_type": "tablet", "last_seen_at": now, "connection_state": "closed"},
                 ],
             }
@@ -213,17 +215,19 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
 
         self.assertTrue(available)
         self.assertTrue(by_client["desktop"]["flow"])
+        self.assertEqual(by_client["desktop"]["active"], 2)
+        self.assertEqual(by_client["desktop"]["devices"], 1)
         self.assertTrue(by_client["smartphone"]["flow"])
         self.assertFalse(by_client["tablet"]["flow"])
         self.assertEqual(by_client["tablet"]["status"], "degraded")
 
-    def test_connection_ui_labels_sessions_without_claiming_physical_device_counts(self) -> None:
+    def test_connection_ui_separates_devices_and_sessions_without_guessing_unlinked_devices(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
 
-        self.assertIn('columns[1].metric("現在のセッション", active_sessions)', source)
-        self.assertIn("現在 {active} セッション", source)
-        self.assertIn("実端末数ではありません", source)
-        self.assertIn("現在セッション", source)
+        self.assertIn('columns[1].metric("現在の端末", active_devices)', source)
+        self.assertIn('columns[2].metric("現在のセッション", active_sessions)', source)
+        self.assertIn("端末数 判定不可", source)
+        self.assertIn("端末IDで重複排除", source)
 
     def test_live_connection_map_uses_bidirectional_particles_only_for_current_heartbeats(self) -> None:
         class MarkdownRecorder:

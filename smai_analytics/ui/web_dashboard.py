@@ -466,7 +466,14 @@ def collect_summary_snapshot() -> dict[str, object]:
     raw_operations = activity.get("operations")
     activity_available = ACTIVITY.is_file() and isinstance(raw_sessions, dict) and isinstance(raw_operations, dict)
     sessions = [session_details(session_id, value) for session_id, value in raw_sessions.items()] if activity_available else []
-    active_session_count = sum(session_connection_status(session) == "ok" for session in sessions) if activity_available else None
+    active_sessions = [session for session in sessions if session_connection_status(session) == "ok"] if activity_available else []
+    active_session_count = len(active_sessions) if activity_available else None
+    unlinked_active_session_count = sum(not session.get("device_id") for session in active_sessions) if activity_available else None
+    active_device_count = (
+        len({session["device_id"] for session in active_sessions})
+        if activity_available and not unlinked_active_session_count
+        else None
+    )
 
     return {
         "health_note": health_snapshot_note(snapshot),
@@ -478,6 +485,8 @@ def collect_summary_snapshot() -> dict[str, object]:
         "activity_available": activity_available,
         "session_count": len(raw_sessions) if activity_available else None,
         "active_session_count": active_session_count,
+        "active_device_count": active_device_count,
+        "unlinked_active_session_count": unlinked_active_session_count,
         "operation_count": len(raw_operations) if activity_available else None,
         "sessions": sessions,
     }
@@ -1088,7 +1097,10 @@ def _dashboard_connection_nodes(data: Mapping[str, object]) -> tuple[bool, list[
     nodes: list[dict[str, object]] = []
     for client in connection_watch.CLIENT_TYPES:
         typed = [item for item in sessions if str(item.get("client_type") or "") == client]
-        active = sum(session_connection_status(item) == "ok" for item in typed)
+        active_sessions = [item for item in typed if session_connection_status(item) == "ok"]
+        active = len(active_sessions)
+        unlinked = sum(not item.get("device_id") for item in active_sessions)
+        devices = len({str(item.get("device_id") or "") for item in active_sessions if item.get("device_id")}) if not unlinked else None
         status = worst_status(*(session_connection_status(item) for item in typed)) if typed else "idle"
         if not available:
             status = "unknown"
@@ -1097,6 +1109,8 @@ def _dashboard_connection_nodes(data: Mapping[str, object]) -> tuple[bool, list[
                 "client": client,
                 "label": CLIENT_TYPE_LABELS[client],
                 "active": active if available else None,
+                "devices": devices if available else None,
+                "unlinked": unlinked if available else None,
                 "observed": len(typed) if available else None,
                 "status": status,
                 "flow": available and active > 0,
@@ -1356,17 +1370,26 @@ def _render_header(data: Mapping[str, object]) -> None:
 def _render_metrics(data: Mapping[str, object]) -> None:
     assert st is not None
     active_sessions = "—" if data["active_session_count"] is None else str(data["active_session_count"])
+    active_devices = "—" if data.get("active_device_count") is None else str(data["active_device_count"])
+    unlinked = data.get("unlinked_active_session_count")
+    device_detail = (
+        "接続情報を取得できません"
+        if data["active_session_count"] is None
+        else f"端末ID未連携 {unlinked} セッション" if isinstance(unlinked, int) and unlinked else "端末IDで重複排除済み"
+    )
     session_detail = "接続情報を取得できません" if data["session_count"] is None else f"観測 {data['session_count']} セッション / 90秒以内"
     operations = "—" if data["operation_count"] is None else str(data["operation_count"])
-    columns = st.columns(4)
+    columns = st.columns(5)
     columns[0].metric("ヘルススコア", f"{health_score(data['overall'])} / 100")
     columns[0].caption(status_label(data["overall"]))
-    columns[1].metric("現在のセッション", active_sessions)
-    columns[1].caption(session_detail)
-    columns[2].metric("実行中の処理", operations)
-    columns[2].caption("現在の実行状態")
-    columns[3].metric("最終確認", compact_timestamp(data["checked_at"]))
-    columns[3].caption(format_timestamp(data["checked_at"]))
+    columns[1].metric("現在の端末", active_devices)
+    columns[1].caption(device_detail)
+    columns[2].metric("現在のセッション", active_sessions)
+    columns[2].caption(session_detail)
+    columns[3].metric("実行中の処理", operations)
+    columns[3].caption("現在の実行状態")
+    columns[4].metric("最終確認", compact_timestamp(data["checked_at"]))
+    columns[4].caption(format_timestamp(data["checked_at"]))
 
 
 def _render_topology_node(column: object, *, label: str, detail: str, status: str, image: bytes | str | None = None) -> None:
@@ -1633,8 +1656,12 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
         client = str(node["client"])
         status_label_text, color = _visual_status(node["status"])
         active = node["active"]
+        devices = node["devices"]
+        unlinked = node["unlinked"]
         observed = node["observed"]
-        active_text = "観測不能" if active is None else f"現在 {active} セッション"
+        active_text = "観測不能" if devices is None and active is None else "端末数 判定不可" if devices is None else f"現在 {devices} 台"
+        session_text = "" if active is None else f" / {active} セッション"
+        unlinked_text = f" / ID未連携 {unlinked}" if isinstance(unlinked, int) and unlinked else ""
         observed_text = "" if observed is None or observed == active else f" / 観測 {observed} セッション"
         classes = f"network-image-node network-{client} {_network_status_class(node['status'])}" + (" active" if bool(node["flow"]) else "")
         image_uri = _image_data_uri(topology_images[client])
@@ -1642,7 +1669,7 @@ def _render_live_connection_map(data: Mapping[str, object]) -> None:
         node_markup.append(
             f'<div class="{classes}">{image_tag}<div class="network-image-label">'
             f'<b>{html.escape(CLIENT_TYPE_LABELS[client].upper())}</b><strong>{active_text}</strong>'
-            f'<span>{html.escape(status_label_text)}{observed_text}</span></div></div>'
+            f'<span>{html.escape(status_label_text)}{session_text}{unlinked_text}{observed_text}</span></div></div>'
         )
         path = paths[client]
         if bool(node["flow"]):
@@ -1897,18 +1924,22 @@ def _render_trends(data: Mapping[str, object]) -> None:
 
 def _render_connections(data: Mapping[str, object]) -> None:
     assert st is not None
-    _panel_heading("セッション接続状況", "利用環境種別ごとの現在のブラウザ・セッション数です。実端末数は端末ID連携済みの累計だけで確認できます。", kicker="SESSIONS")
+    _panel_heading("端末・セッション接続状況", "利用環境種別ごとに、端末IDで重複排除した現在端末数とブラウザ・セッション数を表示します。端末ID未連携のセッションは端末数を推定しません。", kicker="DEVICES / SESSIONS")
     sessions = [item for item in data.get("sessions", []) if isinstance(item, dict)] if isinstance(data.get("sessions"), list) else []
     history = data.get("connection_history")
     state = history.get("state") if isinstance(history, dict) else {}
     summary = connection_watch.summary(state) if isinstance(state, dict) else connection_watch.summary({})
-    active = {client: sum(1 for session in sessions if session.get("client_type") == client and session_connection_status(session) == "ok") for client in connection_watch.CLIENT_TYPES}
+    active = {
+        client: [session for session in sessions if session.get("client_type") == client and session_connection_status(session) == "ok"]
+        for client in connection_watch.CLIENT_TYPES
+    }
     metrics = st.columns(3)
     for column, client in zip(metrics, connection_watch.CLIENT_TYPES):
         cumulative = summary.get("cumulative", {}).get(client, 0) if isinstance(summary.get("cumulative"), dict) else 0
-        unlinked = sum(1 for session in sessions if session.get("client_type") == client and session_connection_status(session) == "ok" and not session.get("device_id"))
-        detail = f"端末ID連携済み累計 {cumulative}台" + (f" / ID未連携 {unlinked}セッション" if unlinked else "")
-        column.metric(f"{CLIENT_TYPE_LABELS[client]} / 現在セッション", f"{active[client]}件", detail)
+        unlinked = sum(not session.get("device_id") for session in active[client])
+        device_count = None if unlinked else len({str(session.get("device_id") or "") for session in active[client]})
+        detail = f"現在セッション {len(active[client])}件 / 端末ID連携済み累計 {cumulative}台" + (f" / ID未連携 {unlinked}セッション" if unlinked else "")
+        column.metric(f"{CLIENT_TYPE_LABELS[client]} / 現在端末", "—" if device_count is None else f"{device_count}台", detail)
     if not bool(data.get("activity_available")):
         st.warning("activity state を読み取れません。接続がない、とは判断していません。")
     else:
