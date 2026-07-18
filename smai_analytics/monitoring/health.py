@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from . import host_health, telemetry
+from . import data_freshness, host_health, telemetry
 
 PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"))
 RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
@@ -66,7 +66,11 @@ def _storage_metrics() -> list[dict[str, object]]:
     return metrics
 
 
-def collect(*, host_checks: list[dict[str, object]] | None = None) -> dict[str, object]:
+def collect(
+    *,
+    host_checks: list[dict[str, object]] | None = None,
+    freshness_checks: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     checks: list[Check] = []
     started_at = time.monotonic()
     try:
@@ -90,6 +94,15 @@ def collect(*, host_checks: list[dict[str, object]] | None = None) -> dict[str, 
             checks.append(Check(name, "L3", "ok", "read/write available", _elapsed_ms(started_at)))
         except OSError as exc:
             checks.append(Check(name, "L3", "failed", type(exc).__name__, _elapsed_ms(started_at)))
+    for item in freshness_checks if freshness_checks is not None else data_freshness.collect_checks(PROJECT_ROOT):
+        checks.append(
+            Check(
+                str(item["name"]),
+                str(item["level"]),
+                str(item["status"]),
+                str(item["detail"]),
+            )
+        )
     for item in host_checks if host_checks is not None else host_health.collect_checks():
         try:
             checks.append(
@@ -105,7 +118,7 @@ def collect(*, host_checks: list[dict[str, object]] | None = None) -> dict[str, 
             checks.append(Check("Windows host telemetry", "L3", "unknown", "invalid host telemetry", None))
     overall = (
         "critical"
-        if any(c.level == "L1" and c.status == "failed" for c in checks)
+        if any((c.level == "L1" and c.status == "failed") or c.status == "critical" for c in checks)
         else "degraded"
         if any(c.status != "ok" for c in checks)
         else "healthy"

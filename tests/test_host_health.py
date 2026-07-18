@@ -77,6 +77,20 @@ class HostHealthTests(unittest.TestCase):
         )
         self.assertEqual("degraded", snapshot["overall"])
 
+    def test_health_snapshot_escalates_a_critical_data_check(self) -> None:
+        snapshot = health.collect(
+            host_checks=[],
+            freshness_checks=[
+                {
+                    "name": "Market news freshness",
+                    "level": "L2",
+                    "status": "critical",
+                    "detail": "更新停止の可能性",
+                }
+            ],
+        )
+        self.assertEqual("critical", snapshot["overall"])
+
 
 if __name__ == "__main__":
     unittest.main()

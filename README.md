@@ -54,7 +54,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ## PC常時運用と安全保守
 
-`SMAI-Host-Monitor`は5分ごとに、Main Application、Tailscale、物理ディスク、メモリ、CPU、過去24時間の異常停止を同じhealth snapshotへ記録します。異常の記録だけでWindows全体を再起動することはありません。
+`SMAI-Host-Monitor`は5分ごとに、Main Application、Tailscale、物理ディスク、メモリ、CPU、過去24時間の異常停止を同じhealth snapshotへ記録します。さらにニュース更新と銘柄データ更新の最終成功時刻・連続失敗回数を確認し、24時間超の遅延は`degraded`、48時間超または連続4回失敗は`critical`として扱います。状態ファイルが欠損・破損している場合は`unknown`であり、正常とは表示しません。異常の記録だけでWindows全体を再起動することはありません。
 NVIDIA GPUがあるPCでは、同じsnapshotへ温度・ファン・消費電力を任意のL3観測として記録します。GPUがない、または取得できないPCでは既存のhealth判定を悪化させません。タスク状態もこの監視で5分ごとに記録するため、Web Consoleを開いていない時間帯も履歴が残ります。
 
 最初に変更前の電源・更新・タスク設定をRuntimeへ保存します。
