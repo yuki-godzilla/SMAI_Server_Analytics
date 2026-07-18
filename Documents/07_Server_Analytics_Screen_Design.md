@@ -1,51 +1,59 @@
-# SMAI Server Analytics 画面設計
+# SMAI Server Analytics Web Operations Console 画面設計
 
 ## 目的
 
-SMAI本体の投資分析画面とは分離して、サーバーの稼働状況、ユーザー接続、処理状態、操作履歴、障害を短時間で確認できる運用コンソールを提供する。
+SMAI本体を変更せず、運用状態をPC、タブレット、スマートフォンから確認できる読み取り専用画面として提供する。異常を優先して表示し、投資判断、ランキング、Forecast、ユーザーデータの意味を表示・再計算しない。
 
-## 画面構成
+## 表示構成
 
-| 画面 | 初期表示 | 主な確認内容 |
-|---|---|---|
-| Overview | 初期タブ | healthy/degraded/critical、L1〜L3、現在セッション、処理中件数、直近障害 |
-| Sessions | 2番目 | ユーザーID、開始/最終heartbeat、端末擬似ID、接続状態 |
-| Activity History | 3番目 | 時刻、ユーザー、操作、対象、結果、端末、所要時間。結果フィルタ付き |
-| Incidents | 4番目 | failed/error/critical、復旧、メンテナンス延期、Provider/Gateway障害 |
-| Tasks | 5番目 | Autostart、Watcher、Symbol Maintenance、Analyticsの状態 |
-| Logs | 6番目 | server_ops/maintenance/healthの直近ログ。通常は最後に開く |
+| 画面 | 主な内容 | 運用上の目的 |
+| --- | --- | --- |
+| ダッシュボード | 状態コマンドのHealth Scoreドーナツ、ライブ接続トポロジー、Health 24H、L1〜L3・応答・容量・タスクの重要シグナル、3サービスの状態行、詳細タブへの導線 | 最初に現在の安全性と観測根拠を判断し、詳細画面へ迷わず移動する |
+| 推移 | 最新のL1〜L3 Check Matrix、health、応答時間、容量、タスク鮮度 | 現在の検査根拠と直近24時間・7日・30日の傾向を確認する |
+| セッション | 端末種別ごとの現在接続、観測履歴 | heartbeatが根拠の接続状態を確認する |
+| 操作履歴 | 期間、結果、匿名利用者ID、操作による絞り込み | Runtimeの監査記録を調査する |
+| 障害 | 重要度・期間の絞り込み | 失敗・要確認の発生状況を確認する |
+| 改善レポート | Recovery Readiness、既存の改善提案・調査結果、固定Gmail通知の非機密な配送状態 | 復元準備、通知の有効性、自動化が残した調査結果を確認する |
+| タスク | Schedulerの最終結果、次回予定、実行パス | 自動実行の鮮度と失敗を確認する |
+| ログ | Runtimeと運用ログの末尾 | 根拠のログ行を確認する |
+| 管理設定 | 管理者名称・通知先、障害／修復／復旧通知、隔離Autofix候補、Gmail配信接続 | 管理者の連絡先と安全な自動運用の許可範囲をローカルで管理する |
 
-## 視認性・妥当性
+## 表示原則
 
-- 初期画面で障害の有無が判定できること
-- 正常状態の詳細より、異常状態を上位に置くこと
-- ユーザー操作履歴とrawログを同じ表へ混在させないこと
-- 長いJSONやstack traceは通常表示せず、選択時の詳細に限定すること
-- 状態名は`healthy`、`degraded`、`critical`、`unknown`に固定すること
-- 5秒更新で、更新中の表がちらつかないこと
-- 画面幅980px以上を標準とし、表は横スクロール可能にすること
+- 状態は`healthy`、`degraded`、`critical`、`unknown`を用い、不明・破損・読み取り不能を正常として描画しない。
+- 深いネイビーを基調に、シアン／ブルーを情報の強調、緑／黄／赤を状態の強調として用いる。
+- アプリバー、KPIストリップ、タブ、状態行、データ表の順に情報を積み、枠で囲むよりも余白・罫線・状態色で階層を作る。装飾的なカードを連続させない。
+- 4Kと通常解像度では画面幅をほぼ全面利用し、デスクトップでは情報密度を保ちながら文字と表の余白を確保する。狭い画面ではKPIと状態行を縦に並べ替え、機能を削らない。
+- 本家SMAIと同じresponsive contractを使う。iPhone相当は`max-width: 767px`、iPad相当は`768px–1024px`、デスクトップは`1025px`以上とする。スマホは主要判断を先に表示し、KPIは2列、通常の操作は全幅かつ44px以上、タブだけを局所横スクロールさせる。読み取り専用の証跡表は、PCでは罫線付きの表、スマホでは各セルの項目名を残した縦長カードへ切り替え、右端を隠さない。タブレットは通常のStreamlit列を2列へ折り返し、ダッシュボードのトポロジーとHealth 24Hは900px以下で1列へ切り替える。ページ全体に不要な横スクロールを作らない。
+- ヘッダーは透明背景・横長`SMAI Analytics`ロゴとマスコットを大きく使い、盾の視認サイズを維持したまま`SMAI Analytics`の文字を従来の約2倍へ強調する。ロゴ・状態・最終確認・更新操作を読みやすく配置する。ブラウザタブには正方形の`SMAI Analytics`アプリアイコンをStreamlitのpage iconとして使い、追加されたiPhoneホーム画面／PWAショートカットには同じ意匠のApple Touch Icon（180px）とmanifestの192px／512pxアイコンを使う。状態はヘッダーのpillと状態行の色で一貫して示し、マスコットは状態の視線を集める補助として使い、状態判定そのものへ依存しない。
+- 推移タブの時系列は、ネイビー背景と淡い罫線を使う暗色チャートに統一する。時刻ラベルは4本程度へ自動間引きして重なりを避け、タップ時のtooltipで正確な時刻と値を確認できるようにする。詳細データは推移画面で確認できるようにする。
+- ダッシュボードは現在判断に必要な情報へ限定する。ライブ接続トポロジーは既存のserver・PC・スマートフォン・タブレット画像を使い、90秒以内のheartbeatだけを端末種別ごとに集約する。heartbeat通信を観測した経路は実線・淡い発光レーン・双方向に流れる粒子で表し、現在の通信を観測していない経路は従来どおり点線で表す。粒子は通信量や内容ではなく「現在性と往復する通信」を表す。観測不能・期限超過は停止または要確認として表示し、通信中と見なさない。
+- 状態コマンドのHealth Scoreは、現在の判定色を使うドーナツ型ゲージで`0〜100`を表す。内側の数値とともに表示し、`unknown`は0点の灰色リングとして正常に見せない。
+- ダッシュボードのHealth 24Hは記録済みのhealth snapshotのみを線で描く。履歴がない・欠損している区間は正常な線で補間せず、空状態として明示する。L1〜L3、応答、空き容量、タスク鮮度は現在値の重要シグナルとして集約し、根拠の詳細は推移などの専用タブを正とする。
+- ライブ接続トポロジーとHealth 24Hは、端末画像・接続経路・推移線・マイクロ推移を読み取れる十分な縦幅を確保する。通常幅では前版から縦幅を20%拡張し、Health 24Hはトポロジーと同じ行高を使う。Health 24Hの見出し・score・履歴を含む上段と、応答・容量の補助推移を含む下段は、内側の罫線・余白を含む外枠の表示領域単位で厳密に1:1に配分する。スマホ幅では上・下の等分を保ちながら460pxへ圧縮し、トポロジーも360pxへ圧縮する。Health scoreは記録値を下端まで塗る面グラフとして表示し、値が高いほど面積が大きくなる。Serverのラベルは通信経路と重ならない画像左側へ置き、狭幅では画像下へ戻す。
+- 時系列、詳細検査表、復元準備、端末別の観測履歴は専用タブへ重複なく分散する。
+- 画面は5秒間隔で再描画する。失敗したhealth probeは表示を停止させず、結果をfail-closedで表示する。
+- ヘッダー右上には、Main Applicationと同じ位置・見た目の「管理者SMAIナビアイコン＋管理者表示名」のアカウントチップを固定表示する。押下時のポップオーバーには`管理設定`、`Gmail 認証・通知設定`、更新だけを置く。Gmail認証は通知用の固定Gmail接続設定へ遷移し、AnalyticsはMain Applicationのprivate moduleやユーザー状態を直接変更しない。
+- 管理設定では、管理者名称、通知先メールアドレス、障害検知・修復進行／結果・復旧結果の通知可否をRuntimeだけへ保存する。通知を無効化しても、障害と修復の監査証跡は削除しない。メールアドレスは設定画面以外に表示・記録しない。
+- Gmail配信接続を設定する場合、アプリパスワードはpassword fieldでのみ受け取り、Windows Credential Managerだけに保存する。送信元、送信先、アプリパスワード、SMTP認証情報を通常画面・ログ・Gitへ出さない。テスト送信は管理者の明示操作でのみ行う。
+- 自動修復の許可は隔離worktreeでの修復候補の作成だけに限定する。マージ、配備、再起動、pushは従来どおり別の明示承認を必要とし、実行ボタンは設けない。
+- 画面に表示するログは、API key、token、password、Cookie、メールアドレス、絶対Windowsパス、内部IP、URL queryをマスクする。利用者名・生のユーザーIDは表示せず、監査・セッションの照合には匿名IDだけを使う。
 
-## 監査イベント
+## 可視化の根拠
 
-履歴の必須項目は次のとおり。
+- [Datadog Dashboard Widgets](https://docs.datadoghq.com/ja/dashboards/widgets/) を参考に、サービス関係と状態を一つの運用面へ集約し、状態色で優先度を明確にする。
+- [Amazon CloudWatch Dashboards](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Dashboards.html) を参考に、メトリクスとアラーム相当の現在状態を同じ画面で扱い、更新による状態変化を素早く追えるようにする。
+- [Grafana dashboard best practices](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/best-practices/) を参考に、概要から詳細タブへ段階的に掘り下げる導線を保ち、DashBoardへ詳細表を重複させない。
+- [Grafana Node graph](https://grafana.com/docs/grafana/latest/panels-visualizations/visualizations/node-graph/) を参考に、ノード間の関係を線へ集約し、待機中の点線と現在通信の実線・移動粒子を一目で区別できるようにする。
 
-- UTC timestamp
-- user_id
-- action
-- target
-- result
-- device_id（Runtime固有saltでハッシュ化した擬似ID）
-- duration_ms
-- platform
+## 運用・ネットワーク
 
-token、secret、password、通知topic、入力本文、完全なIPアドレスは保存しない。
+`run_analytics_web.bat`はWeb ConsoleをTCP 8502で起動する。待受は`0.0.0.0`だが、通常アクセスURLはMagicDNSの`http://smai-server:8502`だけを表示する。Main Applicationは同じ端末名の`http://smai-server:8501`であり、ポート番号で区別する。サーバーPC内の確認は`http://localhost:8502`を使う。Tailscale未起動、名前解決失敗、Analytics停止、ポート不一致、Firewall遮断は接続不可として切り分ける。インターネット公開、Funnel、ルーターのポート開放は行わない。画面は読み取り専用で、ユーザーデータ、secret、token、Cookie、IPアドレスを表示・記録する機能を設けない。
 
-## データ欠損時の表示
+## 受け入れ基準
 
-- health snapshotなし：`unknown / snapshot unavailable`
-- activity state破損：`unknown / state unreadable`
-- 履歴なし：`No activity events recorded`
-- Windowsタスク取得失敗：`unknown / task query unavailable`
-
-空データを正常稼働と表示しない。
-
+1. ダッシュボードでアプリバー、状態、health score、ライブ接続トポロジー、Health 24H、重要シグナル、3サービスの現在値、次に確認すべき詳細タブを一画面で確認できる。履歴・heartbeatの欠損は正常扱いしない。
+2. TimelineとL1〜L3 Check Matrixは推移、端末別の接続詳細はセッション、Recovery Readinessは改善レポートで確認できる。
+3. 8画面すべてでRuntimeの欠損・破損を正常扱いせず、`unknown`または異常として扱う。
+4. 標準、degraded、critical、高負荷、復旧後の5状態を、実際のStreamlitレンダラーで検証する。
+5. 起動、再起動、自動起動はいずれも`analytics_web.py`を正規入口として扱い、SMAI本体のStreamlitを停止しない。

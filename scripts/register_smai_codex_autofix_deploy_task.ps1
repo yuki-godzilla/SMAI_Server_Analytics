@@ -1,0 +1,53 @@
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [string]$PythonPath = "",
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = "Stop"
+$taskName = "SMAI-Codex-Autofix-Deploy"
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$python = if ($PythonPath) { (Resolve-Path -LiteralPath $PythonPath).Path } else { (Get-Command python.exe -ErrorAction Stop).Source }
+$runner = Join-Path $PSScriptRoot "run_incident_automation_task.ps1"
+$hiddenRunner = Join-Path $PSScriptRoot "run_hidden_powershell.vbs"
+$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$wscript = "$env:SystemRoot\System32\wscript.exe"
+$config = Join-Path $projectRoot "config\codex_autofix.json"
+
+if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
+    throw "Required hidden task runner was not found: $runner"
+}
+if (-not (Test-Path -LiteralPath $hiddenRunner -PathType Leaf)) {
+    throw "Required non-console launcher was not found: $hiddenRunner"
+}
+if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
+    throw "Required Autofix config was not found: $config"
+}
+
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
+$action = New-ScheduledTaskAction -Execute $wscript -Argument ('//B //Nologo "{0}" "{1}" -NoProfile -ExecutionPolicy Bypass -File "{2}" -Mode autofix-deploy-worker -PythonPath "{3}"' -f $hiddenRunner, $powershell, $runner, $python) -WorkingDirectory $projectRoot
+$trigger = New-ScheduledTaskTrigger -Daily -At "00:00"
+$repetition = New-CimInstance -ClassName MSFT_TaskRepetitionPattern `
+    -Namespace Root\Microsoft\Windows\TaskScheduler `
+    -ClientOnly `
+    -Property @{ Interval = "PT1M"; Duration = "P1D"; StopAtDurationEnd = $false }
+$trigger.Repetition = $repetition
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Apply one separately approved Analytics Autofix deployment, verify health, and revert on failure."
+
+if ($DryRun) {
+    Write-Host "[DRY-RUN] Task: $taskName"
+    Write-Host "[DRY-RUN] User: current interactive Analytics owner (limited token)"
+    Write-Host "[DRY-RUN] Action: hidden PowerShell -> $python incident_automation.py autofix-deploy-worker"
+    Write-Host "[DRY-RUN] Deployment remains disabled unless enabled=true, mode=active, and deployment_enabled=true."
+    exit 0
+}
+
+if (-not $PSCmdlet.ShouldProcess($taskName, "Register approval-gated Analytics deployment executor")) {
+    exit 0
+}
+
+Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
+Write-Host "[OK] Registered: $taskName"
+Write-Host "[INFO] This task can restart only Analytics; visual review and Git push remain manual."
