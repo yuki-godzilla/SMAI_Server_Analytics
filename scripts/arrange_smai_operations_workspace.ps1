@@ -185,13 +185,13 @@ $targets = @(
     [pscustomobject]@{
         Name = "SMAI Main App VS Code"
         Rectangle = $mainLeft
-        Stacking = "Topmost"
+        Stacking = "Normal"
         Matches = { param($window) $window.ProcessName -eq "Code" -and $window.Title -like "*Smart_Market_AI*" }
     },
     [pscustomobject]@{
         Name = "SMAI Analytics VS Code"
         Rectangle = $mainRight
-        Stacking = "Topmost"
+        Stacking = "Normal"
         Matches = { param($window) $window.ProcessName -eq "Code" -and $window.Title -like "*SMAI_Server_Analytics*" }
     },
     [pscustomobject]@{

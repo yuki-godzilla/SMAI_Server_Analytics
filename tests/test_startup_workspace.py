@@ -34,6 +34,7 @@ class StartupWorkspaceTests(unittest.TestCase):
         pages = self.read("open_smai_service_pages.ps1")
         workspace = self.read("start_smai_operations_workspace.ps1")
         registration = self.read("register_smai_operations_workspace_task.ps1")
+        layout = self.read("arrange_smai_operations_workspace.ps1")
 
         self.assertIn("Local\\SMAI-$Service-Operations-Prompt", prompt)
         self.assertIn("does not start a duplicate instance", prompt)
@@ -47,6 +48,11 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn('foreach ($service in @(\"Main\", \"Analytics\"))', workspace)
         self.assertIn("SMAI Operations Workspace.lnk", registration)
         self.assertIn("WScript.Shell", registration)
+        self.assertIn('Name = "SMAI Main App VS Code"', layout)
+        self.assertIn('Name = "SMAI Analytics VS Code"', layout)
+        self.assertEqual(layout.count('Stacking = "Normal"'), 4)
+        self.assertEqual(layout.count('Stacking = "Bottom"'), 2)
+        self.assertNotIn('Stacking = "Topmost"', layout)
 
     def test_powershell_web_launcher_keeps_the_server_runner_out_of_cmd(self) -> None:
         launcher = self.read("run_analytics_web.ps1")
