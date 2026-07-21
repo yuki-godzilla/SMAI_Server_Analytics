@@ -2,7 +2,7 @@
   "schema_version": 2,
   "enabled": true,
   "mode": "active",
-  "deployment_enabled": true,
+  "deployment_enabled": false,
   "worker_interval_minutes": 5,
   "execution_limit_minutes": 45
 }
