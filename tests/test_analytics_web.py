@@ -14,6 +14,14 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn(".app-context { display: none; }", source)
         self.assertIn(".app-wordmark { height: 64px; max-width: min(50vw, 390px); }", source)
 
+    def test_dense_header_removes_the_embedded_menu_helper_from_layout_flow(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
+
+        self.assertIn('padding-top: 0.9rem;', source)
+        self.assertIn(':has(> iframe[data-testid="stIFrame"])', source)
+        self.assertIn('min-height: 126px;', source)
+        self.assertIn(':has(> [data-testid="column"] [data-testid="stMetric"]) { flex-wrap: nowrap; }', source)
+
     def test_current_check_summary_marks_failures_and_unknowns_for_attention(self) -> None:
         level, message = analytics_web._check_attention_summary(
             {"checks": [{"status": "failed"}, {"status": "unknown"}, {"status": "ok"}]}

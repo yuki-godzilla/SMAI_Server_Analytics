@@ -53,3 +53,15 @@ class DataFreshnessTests(unittest.TestCase):
 
         self.assertEqual("degraded", checks[0]["status"])
         self.assertEqual("critical", checks[1]["status"])
+
+    def test_symbol_maintenance_remains_healthy_inside_its_weekly_contract(self) -> None:
+        _news, symbols = data_freshness.POLICIES
+        self._write(
+            symbols,
+            last_success_at=(self.now - timedelta(days=7, hours=12)).isoformat(),
+            consecutive_failures=0,
+        )
+
+        check = data_freshness.collect_checks(self.root, now=self.now)[1]
+
+        self.assertEqual("ok", check["status"])

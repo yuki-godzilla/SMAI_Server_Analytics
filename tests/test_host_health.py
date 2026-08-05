@@ -77,7 +77,7 @@ class HostHealthTests(unittest.TestCase):
         )
         self.assertEqual("degraded", snapshot["overall"])
 
-    def test_health_snapshot_escalates_a_critical_data_check(self) -> None:
+    def test_health_snapshot_degrades_for_critical_data_freshness_when_service_checks_are_healthy(self) -> None:
         snapshot = health.collect(
             host_checks=[],
             freshness_checks=[
@@ -89,6 +89,21 @@ class HostHealthTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual("degraded", snapshot["overall"])
+
+    def test_health_snapshot_remains_critical_for_a_failed_local_persistence_check(self) -> None:
+        snapshot = health.collect(
+            host_checks=[
+                {
+                    "name": "user data",
+                    "level": "L3",
+                    "status": "failed",
+                    "detail": "PermissionError",
+                }
+            ],
+            freshness_checks=[],
+        )
+
         self.assertEqual("critical", snapshot["overall"])
 
 

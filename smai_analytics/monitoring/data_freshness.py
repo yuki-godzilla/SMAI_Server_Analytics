@@ -27,8 +27,11 @@ POLICIES = (
     FreshnessPolicy(
         name="Symbol data freshness",
         relative_path="data/cache/symbol_refresh_status.json",
-        stale_after=timedelta(hours=26),
-        critical_after=timedelta(hours=48),
+        # Symbol maintenance is intentionally scheduled weekly.  Do not
+        # report a healthy, on-schedule maintenance cycle as stale after two
+        # days; leave a one-day observation margin before escalating.
+        stale_after=timedelta(days=8),
+        critical_after=timedelta(days=10),
     ),
 )
 

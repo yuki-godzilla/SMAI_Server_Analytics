@@ -690,7 +690,15 @@ def _render_styles() -> None:
           /* Dense operational shell: cues come from hierarchy and state, not decorative cards. */
           [data-testid="stMainBlockContainer"], .block-container {
             padding-bottom: 1.6rem;
-            padding-top: 3.25rem;
+            padding-top: 0.9rem;
+          }
+          /* The administrator popover is fixed by its embedded helper.  Keep
+             that helper alive but remove Streamlit's otherwise blank iframe
+             row from the document flow. */
+          [data-testid="stVerticalBlock"] > [data-testid="element-container"]:has(> iframe[data-testid="stIFrame"]) {
+            height: 0 !important;
+            min-height: 0 !important;
+            overflow: visible;
           }
           [data-testid="stMetric"] {
             background: transparent;
@@ -707,8 +715,8 @@ def _render_styles() -> None:
             border-bottom: 1px solid #26384f;
             display: flex;
             justify-content: space-between;
-            min-height: 176px;
-            padding: 18px 18px 20px;
+            min-height: 126px;
+            padding: 12px 18px;
           }
           .app-brand, .app-state, .app-title, .app-state-copy { align-items: center; display: flex; min-width: 0; }
           .app-brand, .app-state, .app-title { gap: 22px; }
@@ -716,18 +724,18 @@ def _render_styles() -> None:
           .app-wordmark {
             display: block;
             object-fit: cover;
-            height: 86px;
+            height: 70px;
             max-width: min(52vw, 700px);
             width: auto;
           }
-          .app-mascot { display: block; height: 132px; margin: -10px 0 -10px -4px; object-fit: contain; width: 132px; }
+          .app-mascot { display: block; height: 102px; margin: -5px 0 -5px -4px; object-fit: contain; width: 102px; }
           .app-name { color: #F8FBFF; font-size: 2rem; letter-spacing: 0.02em; }
           .app-context, .app-state span { color: #8FA4BE; font-size: 0.94rem; letter-spacing: 0.08em; white-space: nowrap; }
           .app-context { display: flex; flex-direction: column; gap: 2px; line-height: 1.25; }
           .app-context small { color: #607A99; font-size: 0.67rem; letter-spacing: 0.12em; }
           .app-state { border-left: 1px solid #26384f; padding-left: 26px; }
           .app-state .status-pill { font-size: 0.92rem; padding: 6px 13px; }
-          .header-control-spacer { height: 57px; }
+          .header-control-spacer { height: 0; }
           /* Matches the Main Application account trigger: one compact avatar
              chip that opens a menu instead of exposing header actions. */
           .smai-administrator-trigger {
@@ -881,12 +889,18 @@ def _render_styles() -> None:
             [data-testid="stMainBlockContainer"], .block-container { padding: 1.25rem 1.25rem 1.75rem; }
             [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) { flex-wrap: wrap; }
             [data-testid="stHorizontalBlock"]:not(:has(.app-shell)) > [data-testid="column"] { flex: 1 1 calc(50% - 0.55rem) !important; min-width: calc(50% - 0.55rem) !important; width: calc(50% - 0.55rem) !important; }
+            /* The five compact header metrics are status evidence, not detail
+               cards.  Keep them on one scan line at tablet widths so they do
+               not make the operations header unnecessarily tall. */
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"] [data-testid="stMetric"]) { flex-wrap: nowrap; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"] [data-testid="stMetric"]) > [data-testid="column"] { flex: 1 1 0 !important; min-width: 0 !important; width: 0 !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"] [data-testid="stMetric"]) [data-testid="stMetric"] { padding-left: 10px; padding-right: 10px; }
             [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:first-child { flex: 1 1 calc(100% - 14.75rem) !important; min-width: 0 !important; width: calc(100% - 14.75rem) !important; }
             [data-testid="stHorizontalBlock"]:has(.app-shell) > [data-testid="column"]:last-child { flex: 0 0 14rem !important; min-width: 14rem !important; width: 14rem !important; }
-            .app-shell { min-height: 142px; padding: 14px 12px; }
+            .app-shell { min-height: 118px; padding: 10px 12px; }
             .app-brand, .app-state, .app-title { gap: 14px; }
-            .app-wordmark { height: 68px; max-width: min(46vw, 480px); }
-            .app-mascot { height: 100px; margin: -7px -4px -7px 0; width: 100px; }
+            .app-wordmark { height: 60px; max-width: min(46vw, 480px); }
+            .app-mascot { height: 88px; margin: -4px -4px -4px 0; width: 88px; }
             .app-state { padding-left: 16px; }
             .network-canvas { height: 468px; }
           }

@@ -66,6 +66,26 @@ def _storage_metrics() -> list[dict[str, object]]:
     return metrics
 
 
+def _overall_status(checks: list[Check]) -> str:
+    """Separate service continuity from the data-quality warning channel.
+
+    L2 includes externally refreshed market/news evidence.  It must remain
+    visible and fail closed when stale, but an old optional cache does not mean
+    that the local service is unavailable when every entry point, process, and
+    local persistence check is healthy.  L1 and L3 failures still represent
+    direct service-continuity risks and therefore remain critical.
+    """
+
+    if any(
+        check.status in {"failed", "critical"} and check.level in {"L1", "L3"}
+        for check in checks
+    ):
+        return "critical"
+    if any(check.status != "ok" for check in checks):
+        return "degraded"
+    return "healthy"
+
+
 def collect(
     *,
     host_checks: list[dict[str, object]] | None = None,
@@ -116,13 +136,7 @@ def collect(
             )
         except (KeyError, TypeError, ValueError):
             checks.append(Check("Windows host telemetry", "L3", "unknown", "invalid host telemetry", None))
-    overall = (
-        "critical"
-        if any((c.level == "L1" and c.status == "failed") or c.status == "critical" for c in checks)
-        else "degraded"
-        if any(c.status != "ok" for c in checks)
-        else "healthy"
-    )
+    overall = _overall_status(checks)
     return {
         "checked_at": datetime.now(UTC).isoformat(),
         "overall": overall,
