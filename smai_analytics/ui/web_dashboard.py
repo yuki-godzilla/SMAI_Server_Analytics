@@ -858,6 +858,8 @@ def _render_styles() -> None:
           .health-history-chart .sparkline, .health-history-chart .chart-unavailable { flex: 1; height: auto; }
           .sparkline { display: block; height: 200px; margin: 10px 0 8px; overflow: visible; width: 100%; }
           .spark-grid { stroke: #1E3047; stroke-dasharray: 3 4; stroke-width: 1; }
+          .spark-time-tick { stroke: #31445E; stroke-width: 1; }
+          .spark-time-label { fill: #8FA4BE; font-family: "Noto Sans JP", sans-serif; font-size: 8px; }
           .spark-area { fill-opacity: 0.1; }
           .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
           .spark-last { stroke: #070D19; stroke-width: 3; }
@@ -1189,37 +1191,59 @@ def _sparkline_svg(
     lower: float = 0.0,
     upper: float | None = None,
     area: bool = False,
+    time_window: timedelta | None = None,
+    time_ticks: int = 0,
 ) -> str:
-    """Render a bounded inline SVG without inventing missing telemetry."""
+    """Render a bounded inline SVG with an honest, optional time axis."""
 
     if not points:
         return '<div class="chart-unavailable">履歴なし。欠損を正常の線として描画しません。</div>'
+    ordered_points = sorted(points, key=lambda point: point[0])
     width, height, padding = 480.0, 200.0, 12.0
-    values = [value for _, value in points]
+    axis_space = 22.0 if time_ticks >= 2 else 0.0
+    plot_bottom = height - padding - axis_space
+    values = [value for _, value in ordered_points]
     ceiling = upper if upper is not None else max(max(values) * 1.15, lower + 1.0)
     ceiling = max(ceiling, lower + 1.0)
-    count = max(1, len(points) - 1)
+    end_at = ordered_points[-1][0].astimezone(UTC)
+    start_at = (end_at - time_window) if time_window is not None else ordered_points[0][0].astimezone(UTC)
+    span_seconds = max(1.0, (end_at - start_at).total_seconds())
     coordinates = [
         (
-            padding + (width - padding * 2) * index / count,
-            padding + (height - padding * 2) * (1 - min(1.0, max(0.0, (value - lower) / (ceiling - lower)))),
+            padding + (width - padding * 2) * min(1.0, max(0.0, (timestamp.astimezone(UTC) - start_at).total_seconds() / span_seconds)),
+            padding + (plot_bottom - padding) * (1 - min(1.0, max(0.0, (value - lower) / (ceiling - lower)))),
         )
-        for index, (_, value) in enumerate(points)
+        for timestamp, value in ordered_points
     ]
     polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y in coordinates)
     last_x, last_y = coordinates[-1]
     grid = "".join(
         f'<line class="spark-grid" x1="{padding}" x2="{width - padding}" y1="{y:.1f}" y2="{y:.1f}" />'
-        for y in (padding, height / 2, height - padding)
+        for y in (padding, (padding + plot_bottom) / 2, plot_bottom)
     )
+    time_axis = ""
+    if time_ticks >= 2:
+        tick_count = max(2, time_ticks)
+        ticks: list[str] = []
+        for index in range(tick_count):
+            ratio = index / (tick_count - 1)
+            tick_at = start_at + timedelta(seconds=span_seconds * ratio)
+            x = padding + (width - padding * 2) * ratio
+            anchor = "start" if index == 0 else "end" if index == tick_count - 1 else "middle"
+            tick_label = f"現在 {tick_at.astimezone().strftime('%H:%M')}" if index == tick_count - 1 else tick_at.astimezone().strftime("%m/%d %H:%M")
+            ticks.append(
+                f'<line class="spark-time-tick" x1="{x:.1f}" x2="{x:.1f}" y1="{plot_bottom:.1f}" y2="{plot_bottom + 4:.1f}" />'
+                f'<text class="spark-time-label" x="{x:.1f}" y="{height - 2:.1f}" text-anchor="{anchor}">{html.escape(tick_label)}</text>'
+            )
+        time_axis = f'<g class="spark-time-axis" aria-label="横軸: 観測時刻（JST）">{"".join(ticks)}</g>'
     area_fill = (
-        f'<polygon class="spark-area" points="{padding},{height - padding} {polyline} {width - padding},{height - padding}" style="fill:{color}" />'
+        f'<polygon class="spark-area" points="{padding},{plot_bottom} {polyline} {width - padding},{plot_bottom}" style="fill:{color}" />'
         if area
         else ""
     )
     return (
         f'<svg class="sparkline" viewBox="0 0 {int(width)} {int(height)}" preserveAspectRatio="none" '
-        f'role="img" aria-label="{html.escape(label)}">{area_fill}{grid}'
+        f'role="img" aria-label="{html.escape(label)}（横軸: 観測時刻）">{area_fill}{grid}{time_axis}'
         f'<polyline class="spark-line" points="{polyline}" style="stroke:{color}" />'
         f'<circle class="spark-last" cx="{last_x:.1f}" cy="{last_y:.1f}" r="5" style="fill:{color}" /></svg>'
     )
@@ -1731,9 +1755,30 @@ def _render_health_timeline(data: Mapping[str, object]) -> None:
     current_color = status_color(data.get("overall"))
     latency_value = "—" if not latency_points else f"{latency_points[-1][1]:.0f} ms"
     headroom_value = "—" if not headroom_points else f"{headroom_points[-1][1]:.1f}%"
-    health_chart = _sparkline_svg(health_points, color=current_color, label="過去24時間のHealth score", upper=100.0, area=True)
-    latency_chart = _sparkline_svg(latency_points, color="#A78BFA", label="応答p95の推移")
-    headroom_chart = _sparkline_svg(headroom_points, color="#34D399", label="空き容量率の推移", upper=100.0)
+    health_chart = _sparkline_svg(
+        health_points,
+        color=current_color,
+        label="過去24時間のHealth score",
+        upper=100.0,
+        area=True,
+        time_window=DASHBOARD_HEALTH_WINDOW,
+        time_ticks=5,
+    )
+    latency_chart = _sparkline_svg(
+        latency_points,
+        color="#A78BFA",
+        label="応答p95の推移",
+        time_window=DASHBOARD_HEALTH_WINDOW,
+        time_ticks=3,
+    )
+    headroom_chart = _sparkline_svg(
+        headroom_points,
+        color="#34D399",
+        label="空き容量率の推移",
+        upper=100.0,
+        time_window=DASHBOARD_HEALTH_WINDOW,
+        time_ticks=3,
+    )
     st.markdown(
         f'<section class="visual-surface health-visual-surface"><div class="health-history-block"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'
         f'<div class="health-score-line"><strong style="color:{current_color}">{score}</strong>'

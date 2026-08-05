@@ -300,6 +300,24 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn('class="spark-area"', health_chart)
         self.assertNotIn('class="spark-area"', latency_chart)
 
+    def test_health_timeline_uses_real_observation_time_and_labeled_x_axis(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        chart = analytics_web._sparkline_svg(
+            [(now - timedelta(hours=23), 100.0), (now - timedelta(hours=3), 20.0), (now, 100.0)],
+            color="#34D399",
+            label="Health",
+            upper=100.0,
+            time_window=timedelta(hours=24),
+            time_ticks=5,
+        )
+
+        self.assertIn('class="spark-time-axis"', chart)
+        self.assertIn('aria-label="横軸: 観測時刻（JST）"', chart)
+        self.assertIn(f'現在 {now.astimezone().strftime("%H:%M")}', chart)
+        self.assertIn('text-anchor="start"', chart)
+        self.assertIn('text-anchor="end"', chart)
+        self.assertEqual(5, chart.count('class="spark-time-tick"'))
+
     def test_health_timeline_groups_heading_with_chart_for_equal_blocks(self) -> None:
         class MarkdownRecorder:
             rendered = ""
