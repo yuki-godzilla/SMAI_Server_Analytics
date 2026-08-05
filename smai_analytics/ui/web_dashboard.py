@@ -855,11 +855,19 @@ def _render_styles() -> None:
           .health-visual-surface { display: flex; flex-direction: column; gap: 15px; min-height: 674px; }
           .health-history-block, .health-micro-block { display: flex; flex: 1 1 0; flex-direction: column; min-height: 0; }
           .health-history-chart { display: flex; flex: 1 1 0; min-height: 0; }
-          .health-history-chart .sparkline, .health-history-chart .chart-unavailable { flex: 1; height: auto; }
+          .health-history-chart .sparkline-frame, .health-history-chart .chart-unavailable { flex: 1; height: auto; }
+          .sparkline-frame { display: flex; flex-direction: column; min-height: 0; }
           .sparkline { display: block; height: 200px; margin: 10px 0 8px; overflow: visible; width: 100%; }
+          .sparkline-frame .sparkline { flex: 1; height: auto; min-height: 0; }
           .spark-grid { stroke: #1E3047; stroke-dasharray: 3 4; stroke-width: 1; }
           .spark-time-tick { stroke: #31445E; stroke-width: 1; }
-          .spark-time-label { fill: #8FA4BE; font-family: "Noto Sans JP", sans-serif; font-size: 8px; }
+          .spark-time-labels { align-items: flex-start; color: #AAB8C8; display: flex; font-size: 0.72rem; font-weight: 700; justify-content: space-between; line-height: 1.2; margin: 3px 0 2px; }
+          .spark-time-label { display: flex; flex-direction: column; min-width: 0; }
+          .spark-time-label:nth-child(2):not(:last-child) { align-items: center; text-align: center; }
+          .spark-time-label:last-child { align-items: flex-end; text-align: right; }
+          .spark-time-label b { color: #DCEBFF; font-size: 0.76rem; }
+          .spark-time-label small { color: #8FA4BE; font-size: 0.68rem; font-weight: 650; }
+          .spark-time-label-current b { color: #22D3EE; }
           .spark-area { fill-opacity: 0.1; }
           .spark-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
           .spark-last { stroke: #070D19; stroke-width: 3; }
@@ -872,7 +880,11 @@ def _render_styles() -> None:
           .micro-trend header span { color: #8FA4BE; font-size: 0.72rem; }
           .micro-trend header strong { color: #E5EDF7; font-size: 0.86rem; }
           .micro-trend .sparkline { height: 94px; margin: 7px 0 0; }
+          .health-visual-surface .micro-trend .sparkline-frame { flex: 1; min-height: 0; }
           .health-visual-surface .micro-trend .sparkline { flex: 1; height: auto; min-height: 0; }
+          .micro-trend .spark-time-labels { font-size: 0.6rem; margin-top: 2px; }
+          .micro-trend .spark-time-label b { font-size: 0.62rem; }
+          .micro-trend .spark-time-label small { font-size: 0.58rem; }
           .micro-trend .chart-unavailable { font-size: 0.7rem; height: 94px; }
           .health-visual-surface .micro-trend .chart-unavailable { flex: 1; height: auto; min-height: 0; }
           .evidence-rail { border-bottom: 1px solid #26384f; border-top: 1px solid #26384f; display: grid; gap: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0 0 24px; }
@@ -1200,8 +1212,7 @@ def _sparkline_svg(
         return '<div class="chart-unavailable">履歴なし。欠損を正常の線として描画しません。</div>'
     ordered_points = sorted(points, key=lambda point: point[0])
     width, height, padding = 480.0, 200.0, 12.0
-    axis_space = 22.0 if time_ticks >= 2 else 0.0
-    plot_bottom = height - padding - axis_space
+    plot_bottom = height - padding
     values = [value for _, value in ordered_points]
     ceiling = upper if upper is not None else max(max(values) * 1.15, lower + 1.0)
     ceiling = max(ceiling, lower + 1.0)
@@ -1222,31 +1233,36 @@ def _sparkline_svg(
         for y in (padding, (padding + plot_bottom) / 2, plot_bottom)
     )
     time_axis = ""
+    time_labels = ""
     if time_ticks >= 2:
         tick_count = max(2, time_ticks)
         ticks: list[str] = []
+        labels: list[str] = []
         for index in range(tick_count):
             ratio = index / (tick_count - 1)
             tick_at = start_at + timedelta(seconds=span_seconds * ratio)
             x = padding + (width - padding * 2) * ratio
-            anchor = "start" if index == 0 else "end" if index == tick_count - 1 else "middle"
-            tick_label = f"現在 {tick_at.astimezone().strftime('%H:%M')}" if index == tick_count - 1 else tick_at.astimezone().strftime("%m/%d %H:%M")
-            ticks.append(
-                f'<line class="spark-time-tick" x1="{x:.1f}" x2="{x:.1f}" y1="{plot_bottom:.1f}" y2="{plot_bottom + 4:.1f}" />'
-                f'<text class="spark-time-label" x="{x:.1f}" y="{height - 2:.1f}" text-anchor="{anchor}">{html.escape(tick_label)}</text>'
+            ticks.append(f'<line class="spark-time-tick" x1="{x:.1f}" x2="{x:.1f}" y1="{plot_bottom:.1f}" y2="{plot_bottom + 4:.1f}" />')
+            hours_before = round((end_at - tick_at).total_seconds() / 3600)
+            relative_label = "現在" if index == tick_count - 1 else f"{hours_before}時間前"
+            current_class = " spark-time-label-current" if index == tick_count - 1 else ""
+            labels.append(
+                f'<span class="spark-time-label{current_class}"><b>{relative_label}</b><small>{tick_at.astimezone().strftime("%m/%d %H:%M")}</small></span>'
             )
         time_axis = f'<g class="spark-time-axis" aria-label="横軸: 観測時刻（JST）">{"".join(ticks)}</g>'
+        time_labels = f'<div class="spark-time-labels spark-time-labels-{tick_count}" aria-hidden="true">{"".join(labels)}</div>'
     area_fill = (
         f'<polygon class="spark-area" points="{padding},{plot_bottom} {polyline} {width - padding},{plot_bottom}" style="fill:{color}" />'
         if area
         else ""
     )
-    return (
+    chart = (
         f'<svg class="sparkline" viewBox="0 0 {int(width)} {int(height)}" preserveAspectRatio="none" '
         f'role="img" aria-label="{html.escape(label)}（横軸: 観測時刻）">{area_fill}{grid}{time_axis}'
         f'<polyline class="spark-line" points="{polyline}" style="stroke:{color}" />'
         f'<circle class="spark-last" cx="{last_x:.1f}" cy="{last_y:.1f}" r="5" style="fill:{color}" /></svg>'
     )
+    return f'<div class="sparkline-frame">{chart}{time_labels}</div>' if time_labels else chart
 
 
 def _current_level_statuses(data: Mapping[str, object]) -> dict[str, str]:
@@ -1762,14 +1778,14 @@ def _render_health_timeline(data: Mapping[str, object]) -> None:
         upper=100.0,
         area=True,
         time_window=DASHBOARD_HEALTH_WINDOW,
-        time_ticks=5,
+        time_ticks=3,
     )
     latency_chart = _sparkline_svg(
         latency_points,
         color="#A78BFA",
         label="応答p95の推移",
         time_window=DASHBOARD_HEALTH_WINDOW,
-        time_ticks=3,
+        time_ticks=2,
     )
     headroom_chart = _sparkline_svg(
         headroom_points,
@@ -1777,7 +1793,7 @@ def _render_health_timeline(data: Mapping[str, object]) -> None:
         label="空き容量率の推移",
         upper=100.0,
         time_window=DASHBOARD_HEALTH_WINDOW,
-        time_ticks=3,
+        time_ticks=2,
     )
     st.markdown(
         f'<section class="visual-surface health-visual-surface"><div class="health-history-block"><div class="visual-heading"><strong>Health 24H</strong><span>TIME SERIES</span></div>'

@@ -313,9 +313,9 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
 
         self.assertIn('class="spark-time-axis"', chart)
         self.assertIn('aria-label="横軸: 観測時刻（JST）"', chart)
-        self.assertIn(f'現在 {now.astimezone().strftime("%H:%M")}', chart)
-        self.assertIn('text-anchor="start"', chart)
-        self.assertIn('text-anchor="end"', chart)
+        self.assertIn('class="spark-time-labels spark-time-labels-5"', chart)
+        self.assertIn('<b>現在</b>', chart)
+        self.assertIn(now.astimezone().strftime("%m/%d %H:%M"), chart)
         self.assertEqual(5, chart.count('class="spark-time-tick"'))
 
     def test_health_timeline_groups_heading_with_chart_for_equal_blocks(self) -> None:
