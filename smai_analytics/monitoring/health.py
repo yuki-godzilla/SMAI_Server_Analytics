@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -16,6 +16,10 @@ from . import data_freshness, host_health, telemetry
 PROJECT_ROOT = Path(os.environ.get("SMAI_PROJECT_ROOT", r"C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI"))
 RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
 SNAPSHOT_PATH = PROJECT_ROOT / "data/ops/server_ops/health_snapshot.json"
+RUNTIME_LIFECYCLE_PATH = PROJECT_ROOT / "data/ops/server_ops/runtime_lifecycle.json"
+LIFECYCLE_GRACE_SECONDS = 180.0
+EXPECTED_TRANSITION_PHASES = {"STARTING": "starting", "STOPPING": "stopping"}
+MAIN_ENTRYPOINT_CHECKS = {"TCP 8501", "Streamlit health"}
 
 
 @dataclass(frozen=True)
@@ -67,14 +71,7 @@ def _storage_metrics() -> list[dict[str, object]]:
 
 
 def _overall_status(checks: list[Check]) -> str:
-    """Separate service continuity from the data-quality warning channel.
-
-    L2 includes externally refreshed market/news evidence.  It must remain
-    visible and fail closed when stale, but an old optional cache does not mean
-    that the local service is unavailable when every entry point, process, and
-    local persistence check is healthy.  L1 and L3 failures still represent
-    direct service-continuity risks and therefore remain critical.
-    """
+    """Separate service continuity from the data-quality warning channel."""
 
     if any(
         check.status in {"failed", "critical"} and check.level in {"L1", "L3"}
@@ -86,10 +83,59 @@ def _overall_status(checks: list[Check]) -> str:
     return "healthy"
 
 
+def _read_runtime_lifecycle(path: Path = RUNTIME_LIFECYCLE_PATH) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _lifecycle_age_seconds(lifecycle: dict[str, object], *, now: datetime | None = None) -> float | None:
+    raw = lifecycle.get("updated_at")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
+    return max(0.0, (current - parsed.astimezone(UTC)).total_seconds())
+
+
+def _expected_transition_status(
+    checks: list[Check],
+    lifecycle: dict[str, object],
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    phase = str(lifecycle.get("phase", "")).upper()
+    mapped = EXPECTED_TRANSITION_PHASES.get(phase)
+    if mapped is None:
+        return None
+    age = _lifecycle_age_seconds(lifecycle, now=now)
+    if age is None or age > LIFECYCLE_GRACE_SECONDS:
+        return None
+
+    continuity_failures = [
+        check
+        for check in checks
+        if check.status in {"failed", "critical"} and check.level in {"L1", "L3"}
+    ]
+    if not continuity_failures:
+        return None
+    if all(check.level == "L1" and check.name in MAIN_ENTRYPOINT_CHECKS for check in continuity_failures):
+        return mapped
+    return None
+
+
 def collect(
     *,
     host_checks: list[dict[str, object]] | None = None,
     freshness_checks: list[dict[str, object]] | None = None,
+    runtime_lifecycle: dict[str, object] | None = None,
 ) -> dict[str, object]:
     checks: list[Check] = []
     started_at = time.monotonic()
@@ -136,10 +182,18 @@ def collect(
             )
         except (KeyError, TypeError, ValueError):
             checks.append(Check("Windows host telemetry", "L3", "unknown", "invalid host telemetry", None))
+
+    lifecycle = runtime_lifecycle if runtime_lifecycle is not None else _read_runtime_lifecycle()
     overall = _overall_status(checks)
+    transition_status = _expected_transition_status(checks, lifecycle)
+    if overall == "critical" and transition_status is not None:
+        overall = transition_status
+
     return {
         "checked_at": datetime.now(UTC).isoformat(),
         "overall": overall,
+        "runtime_phase": str(lifecycle.get("phase", "UNKNOWN")).upper(),
+        "runtime_lifecycle": lifecycle,
         "checks": [asdict(c) for c in checks],
         "storage": _storage_metrics(),
     }
