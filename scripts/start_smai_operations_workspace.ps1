@@ -2,31 +2,33 @@
 param()
 
 $ErrorActionPreference = "Stop"
-$promptScript = Join-Path $PSScriptRoot "show_smai_service_prompt.ps1"
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$logDir = Join-Path $projectRoot "logs"
+$logFile = Join-Path $logDir "workspace.log"
 $browserScript = Join-Path $PSScriptRoot "open_smai_service_pages.ps1"
 $layoutScript = Join-Path $PSScriptRoot "arrange_smai_operations_workspace.ps1"
-foreach ($path in @($promptScript, $browserScript, $layoutScript)) {
+
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+
+function Write-WorkspaceLog {
+    param([string]$Message)
+    $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -LiteralPath $logFile -Value "$stamp $Message" -Encoding UTF8
+}
+
+foreach ($path in @($browserScript, $layoutScript)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Write-WorkspaceLog "ERROR Required workspace script was not found: $path"
         throw "Required workspace script was not found: $path"
     }
 }
 
-$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-# Server processes stay hidden.  The two visible, color-coded PowerShell
-# prompts provide one status surface each for Main and Analytics.
-foreach ($service in @("Main", "Analytics")) {
-    $arguments = @(
-        "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$promptScript`"",
-        "-Service", $service, "-Watch"
-    )
-    Start-Process -FilePath $powershell -ArgumentList $arguments
-}
-
-& $browserScript -StartupDelaySeconds 10 -WaitSeconds 180
 try {
-    & $layoutScript
+    Write-WorkspaceLog "START SMAI Workspace launcher invoked."
+    & $browserScript -StartupDelaySeconds 5 -WaitSeconds 180
+    & $layoutScript -MaxWaitSeconds 90 -PollSeconds 2
+    Write-WorkspaceLog "OK SMAI Workspace ready."
 } catch {
-    # The service prompts and web pages remain usable when a monitor is
-    # disconnected or Windows temporarily rejects a layout request at logon.
-    Write-Warning "SMAI workspace layout was not applied: $($_.Exception.Message)"
+    Write-WorkspaceLog "ERROR $($_.Exception.Message)"
+    throw
 }
