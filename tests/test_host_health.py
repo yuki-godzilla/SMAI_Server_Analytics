@@ -1,6 +1,7 @@
 import json
 import subprocess
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from smai_analytics.monitoring import health, host_health
 
@@ -62,6 +63,40 @@ class HostHealthTests(unittest.TestCase):
             return subprocess.CompletedProcess([], 0, json.dumps(payload), "")
 
         self.assertNotIn("GPU thermal", {str(item["name"]) for item in host_health.collect_checks(runner=runner)})
+
+    def test_fresh_starting_phase_downgrades_only_entrypoint_failure(self) -> None:
+        now = datetime.now(UTC)
+        checks = [
+            health.Check("TCP 8501", "L1", "failed", "ConnectionRefusedError"),
+            health.Check("Streamlit health", "L1", "failed", "URLError"),
+            health.Check("server ops state", "L3", "ok", "read/write available"),
+        ]
+        lifecycle = {"phase": "STARTING", "updated_at": now.isoformat()}
+
+        self.assertEqual(
+            "starting",
+            health._expected_transition_status(checks, lifecycle, now=now),
+        )
+
+    def test_stale_starting_phase_is_not_treated_as_expected_transition(self) -> None:
+        now = datetime.now(UTC)
+        checks = [health.Check("TCP 8501", "L1", "failed", "ConnectionRefusedError")]
+        lifecycle = {
+            "phase": "STARTING",
+            "updated_at": (now - timedelta(minutes=10)).isoformat(),
+        }
+
+        self.assertIsNone(health._expected_transition_status(checks, lifecycle, now=now))
+
+    def test_starting_phase_never_masks_persistence_failure(self) -> None:
+        now = datetime.now(UTC)
+        checks = [
+            health.Check("TCP 8501", "L1", "failed", "ConnectionRefusedError"),
+            health.Check("user data", "L3", "failed", "PermissionError"),
+        ]
+        lifecycle = {"phase": "STARTING", "updated_at": now.isoformat()}
+
+        self.assertIsNone(health._expected_transition_status(checks, lifecycle, now=now))
 
     def test_health_snapshot_degrades_on_noncritical_host_attention(self) -> None:
         snapshot = health.collect(
