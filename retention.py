@@ -1,26 +1,11 @@
-﻿from __future__ import annotations
+"""Compatibility entry point for SMAI Analytics retention."""
 
-import json
-import os
-import time
-from pathlib import Path
+import sys
 
-RUNTIME_ROOT = Path(os.environ.get("SMAI_RUNTIME_ROOT", r"C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Runtime"))
-POLICY = Path(__file__).with_name("retention_policy.json")
-
-
-def main() -> int:
-    policy = json.loads(POLICY.read_text(encoding="utf-8"))
-    cutoff = time.time() - int(policy["log_days"]) * 86400
-    removed = 0
-    for path in (RUNTIME_ROOT / "logs").glob("*"):
-        if path.is_file() and path.stat().st_mtime < cutoff:
-            path.unlink()
-            removed += 1
-    print(f"[SMAI] removed {removed} expired runtime logs")
-    return 0
+from smai_analytics.operations import retention as _implementation
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-
+    raise SystemExit(_implementation.main())
+else:
+    sys.modules[__name__] = _implementation

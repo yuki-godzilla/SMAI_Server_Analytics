@@ -1,223 +1,111 @@
-# SMAI Server Analytics 引継ぎメッセージ
+# SMAI Server Analytics 引継ぎ・実画面UI改善指示書
 
-作成日: 2026-07-11  
-対象リポジトリ: `yuki-godzilla/SMAI_Server_Analytics`  
-目的: SMAI本体の常時運用、監視、バックアップ、障害解析、操作履歴をAnalytics側で詳細開発する。
+更新日: 2026-07-13
+対象リポジトリ: `C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Analytics`
+作業ブランチ: `agent/analytics-operations-console`
+最新commit: `a5c969a refactor: focus analytics overview on next actions`（`origin`へpush済み）
 
-## 1. 最初に読むファイル
+## 1. 次セッションで最初に行うこと
 
-1. `AGENTS.md`
-2. `PROJECT_CONTEXT.md`
-3. `Documents/06_MVP_Operations_Guide.md`
-4. `Documents/07_Server_Analytics_Screen_Design.md`
-5. `tasks.md`
-6. `Documents/99_Work_Log.md`
+1. この文書、`AGENTS.md`、`PROJECT_CONTEXT.md`、`Documents/07_Server_Analytics_Screen_Design.md`、`Documents/99_Work_Log.md`を読む。
+2. `git status --short --branch`で、引継ぎ時点の作業ツリーがクリーンであることを確認する。
+3. `http://localhost:8502/_stcore/health`を確認する。引継ぎ時点ではTCP 8502で待受中、health endpointは`200 / ok`だった。
+4. Browser操作スキルを使い、`http://localhost:8502`の実画面へ接続する。前セッションではBrowser runtimeが`No browser is available`を返したため、通常のユーザーブラウザが自動共有されるとは仮定しない。新セッションでは必ず再接続を試す。
 
-## 2. リポジトリとRuntimeの位置
+Browser接続が利用できない場合は、画面を見たと偽らない。ユーザーへ、更新後の画面スクリーンショットをチャットに添付してもらい、その画像を実画面の根拠として反復する。
 
-現在の想定構成は次のとおり。
+## 2. ユーザーの明示要求（未完了）
 
-```text
-C:\Users\user\workspace\SMAI_Projects\
-├─ Smart_Market_AI        # SMAI本体
-├─ SMAI_Server_Analytics  # このリポジトリ
-└─ SMAI_Server_Runtime    # ログ、監査履歴、状態、バックアップ
-```
+Streamlit Web Operations Consoleについて、実画面を確認しながらUI/UX、視覚的な分かりやすさ、情報密度、情報の理解しやすさを改善する。**変更 → 実画面確認 → 評価 → 改善**をおよそ5回繰り返すこと。
 
-`SMAI_PROJECT_ROOT` と `SMAI_RUNTIME_ROOT` で上書き可能。通常のAnalytics起動batは新しい階層を既定値にしている。
+特に、情報を一ページへ集め過ぎず、タブ切替で適度に分散させること。Analyticsは読み取り専用の運用画面であり、SMAI本体の計算、ランキング、Forecast、投資判断を変更・再計算してはならない。
 
-## 3. 現在の実装済み機能
+## 3. 現在の画面設計と実装済みの第1変更
 
-### Analytics UI
+正規画面は`analytics_web.py`、実装は`smai_analytics/ui/web_dashboard.py`、起動は`run_analytics_web.bat`である。8タブは次のとおり。
 
-`dashboard.py` は外部依存のないTkinterデスクトップ画面。
+| タブ | 現在の責務 |
+| --- | --- |
+| 概要 | health score、現在状態、Next Check、SMAI UI / Runtime / Analyticsの現在値、詳細タブへの導線 |
+| 推移 | 最新L1〜L3 Check Matrix、health、応答時間、容量、タスク鮮度の時系列 |
+| セッション | 端末種別ごとの現在接続、セッション一覧、観測履歴 |
+| 操作履歴 | 期間・結果・ユーザー・操作名で絞る監査履歴 |
+| 障害 | failed / error / criticalの記録 |
+| 改善レポート | Recovery Readiness（復元検証、最小空き率、履歴カバレッジ）と調査結果 |
+| タスク | Scheduled Taskの鮮度、実行結果、失敗理由 |
+| ログ | 直近の運用ログ |
 
-- `Overview`: L1〜L3 health、overall、セッション数、処理数
-- `Sessions`: セッションID、heartbeat、状態
-- `Activity History`: 監査イベント一覧、結果フィルタ
-- `Incidents`: failed/error/criticalイベント
-- `Tasks`: Windows Scheduled Taskの状態とLast Result
-- `Logs`: server_ops / maintenance / healthの直近ログ
+`a5c969a`で行った第1変更:
 
-画面は5秒ごとに更新する。SMAI本体が停止していても、Analytics画面自体は最後のsnapshotとログを表示できる。
+- OverviewからHealth Timeline、詳細なL1〜L3 Check Matrix、Recovery Readiness、端末別の6カードTopologyを外した。
+- 上記の詳細を、推移・改善レポート・セッションへ分散した。
+- Overviewには`NEXT CHECK`を追加した。overallが`critical`なら障害、`degraded`または`unknown`なら推移、Task鮮度に要確認があればタスクを案内する。欠損Taskを失敗扱いしないテストも追加した。
+- `Documents/07_Server_Analytics_Screen_Design.md`と`Documents/99_Work_Log.md`を新しい分散方針に更新した。
 
-### Health
+これはコード・レンダラー検証済みだが、**変更後の実画面を根拠にした視覚レビューはまだ0回**である。ユーザーが最初に共有した画像は変更前の画面であり、今回の5回には数えない。
 
-`health.py` の確認レベルは以下。
+## 4. 実画面レビューの進め方（5回）
 
-- L1: TCP 8501、Streamlit `/_stcore/health`
-- L2: Streamlitトップページ応答
-- L3: server ops state / user dataの読み書き
+各回で必ず、対象画面・表示幅・状態・観察事項・変更内容・再確認結果を`Documents/99_Work_Log.md`へ追記する。実行していない確認を実行済みとは記録しない。
 
-L1失敗は`critical`、L2/L3のみの失敗は`degraded`、全成功は`healthy`。snapshotは本体の`data/ops/server_ops/health_snapshot.json`、履歴はRuntimeへ保存する。
+1. **Overview / 通常デスクトップ幅 / healthy**
+   - 最初の3秒で健康状態と次の確認先が理解できるか。
+   - ヘッダー、KPI、gauge、3サービス、導線の縦密度と余白を確認する。
+2. **推移 / 通常デスクトップ幅 / degraded**
+   - 最新Check Matrix、期間選択、health history、latency、storageの読み順とグラフ軸を確認する。
+   - 障害時に黄色・赤・unknownが埋もれないかを確認する。
+3. **セッション・改善レポート / 通常デスクトップ幅 / healthyまたは高件数**
+   - 接続端末、復元準備、表の列数、説明文、空状態を確認する。
+4. **障害・タスク・ログ / 通常デスクトップ幅 / critical**
+   - 重大状態、失敗理由、時刻、表の横スクロール、ログの根拠が追えるかを確認する。
+5. **概要・推移 / 狭幅（スマートフォンまたは狭いウィンドウ） / healthyとdegraded**
+   - タブ到達性、縦並び、文字の縮小、操作部の詰まり、横スクロールを確認する。
 
-### Backup / retention
+改善は一度に無関係な変更を混ぜない。各回は、対象の実画面を確認した後に最小の修正を加え、`restart_analytics_web.bat`でAnalyticsだけを再起動し、同じ条件で再確認する。
 
-- `backup.py`: user data、server ops state、正式な銘柄マスターをmanifest付きでRuntimeへ保存
-- `retention.py`: Runtimeログの保持期限処理
-- `retention_policy.json`: 保持日数とGit追跡対象を定義
-
-日付別reports、raw HTML、ログ、再生成可能cacheはGitへ自動追加しない。正式なsymbol universe、source CSV、manifestはSMAI本体リポジトリ側の対象とする。
-
-### Audit
-
-`audit.py` の`record_event()`がRuntimeの`audit/events.jsonl`へイベントを書き込む。
-
-標準項目:
-
-```text
-timestamp, user_id, action, target, result,
-device_id, platform, duration_ms
-```
-
-`device_id`はRuntime固有saltと端末情報から生成する擬似ID。token、secret、password、topic、inputはmetadataから除外する。
-
-## 4. 未完了の最重要作業
-
-### A. SMAI本体から監査イベントを送る
-
-現在はAnalytics側のイベント記録・表示基盤のみ。SMAI本体の以下へ連携フックを追加する必要がある。
-
-- プロフィール選択 / ログイン
-- ログアウト / ユーザー切替
-- ページ遷移
-- ランキング作成
-- 銘柄データ取得
-- AI調査
-- レポート生成
-- 設定変更
-- 成功 / 失敗 / キャンセル
-
-AnalyticsがSMAI本体のprivate moduleをimportする構成は禁止。連携は、安定したJSONL契約、CLI、または本体側の小さなadapterを使用する。
-
-### B. Sessionsの端末情報を充実させる
-
-現状のSessionsタブはactivity stateのsessionとheartbeatを表示する。次の項目を本体側から追加する。
-
-- user_id
-- profile display name
-- login_at
-- last_seen_at
-- device_id
-- browser / OSの限定的な情報
-- connection state
-
-IPアドレスは識別子にしない。User-Agentや端末情報は診断に必要な最小限だけ保存する。
-
-### C. Windowsタスクを新物理パスへ再登録する
-
-AnalyticsとRuntimeは新階層へ物理移動済み。本体は、8501を占有するSession 0の孤立Pythonプロセスにより物理移動ができず、現在は次のJunctionで互換性を維持している。
-
-```text
-C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI
-    -> C:\Users\user\workspace\Smart_Market_AI
-```
-
-Windows再起動などで8501プロセスが解放された後に、次を行う。
-
-1. Junctionであることを確認
-2. Junctionだけを削除
-3. `Smart_Market_AI`本体を`SMAI_Projects`配下へ物理移動
-4. 管理者PowerShellでタスク再登録
-
-```powershell
-cd C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI
-.\scripts\server_ops\register_smai_autostart_task.ps1
-.\scripts\register_symbol_maintenance_if_due_task.ps1
-```
-
-対象タスク:
-
-- `SmartMarketAI-Server-Autostart`
-- `SmartMarketAI-Server-Watch`
-- `SmartMarketAI-Symbol-Maintenance-IfDue`
-
-旧`SmartMarketAI-LAN-Server`は無効化済み。
-
-### D. 段階停止の実機確認
-
-`scripts/stop_smai_server.bat` は停止要求ファイルを作成してから通常停止を試み、30秒後に必要ならforce停止する仕様。SMAI本体が新パスへ移動した後、実機で以下を確認する。
-
-- 実行中のランキングや書き込みを待って停止する
-- resilient launcherが停止要求を認識する
-- 30秒timeout時だけforce停止する
-- SQLite / JSON / cacheの破損がない
-- Watcherが意図した手動停止を復旧扱いしない
-
-## 5. 銘柄更新の自動commit/push方針
-
-SMAI本体の`tools/auto_commit_symbol_updates.py`が許可対象を限定する。
-
-自動commit/push対象:
-
-- `data/marketdata/symbol_universe.csv`
-- `data/marketdata/symbol_universe_sources/*.csv`
-- `data/marketdata/*manifest*.json`
-
-対象外:
-
-- raw HTML
-- reports
-- logs
-- runtime cache
-- user data
-- temporary files
-
-許可外の差分がある場合はfail-closedで停止する。自動push失敗を成功扱いしない。secret検査と`git diff --cached --check`をpush前に追加するのが次の改善。
-
-## 6. 検証コマンド
-
-Analytics側:
+## 5. 起動・再起動・確認コマンド
 
 ```powershell
 cd C:\Users\user\workspace\SMAI_Projects\SMAI_Server_Analytics
-$env:PYTHONDONTWRITEBYTECODE = "1"
-..\Smart_Market_AI\venv_SMAI\Scripts\python.exe -m py_compile dashboard.py audit.py health.py backup.py retention.py
-..\Smart_Market_AI\venv_SMAI\Scripts\python.exe health.py
-git status --short
+.\run_analytics_web.bat
+
+# Analyticsだけを再起動（SMAI本体のStreamlitは停止しない）
+.\restart_analytics_web.bat
+
+# 本PCの画面を開く
+Start-Process "http://localhost:8502"
+
+# health確認
+Invoke-WebRequest http://localhost:8502/_stcore/health -UseBasicParsing
 ```
 
-本体側のtargeted check:
+`run_analytics_web.bat`はAnalytics専用venvがなければ、本体側`venv_SMAI`を互換環境として使用する。前セッションでは`venv_SMAI_Analytics`は存在しなかったが、`C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI\venv_SMAI\Scripts\python.exe`は利用できた。
+
+## 6. 実行済みの検証
+
+以下は`a5c969a`作成前に実行し、成功している。
 
 ```powershell
-cd C:\Users\user\workspace\SMAI_Projects\Smart_Market_AI
-.\venv_SMAI\Scripts\python.exe -m pytest tests/test_server_operations_scripts.py tests/test_server_ops_launcher.py tests/test_server_ops_maintenance.py tests/test_server_ops_scripts.py tests/test_lan_server_script.py -q
+$env:PYTHONDONTWRITEBYTECODE = "1"
+..\Smart_Market_AI\venv_SMAI\Scripts\python.exe -m py_compile analytics_web.py health.py backup.py retention.py
+..\Smart_Market_AI\venv_SMAI\Scripts\python.exe -m compileall -q smai_analytics
+..\Smart_Market_AI\venv_SMAI\Scripts\python.exe -m unittest tests.test_analytics_web tests.test_web_operations -v
+..\Smart_Market_AI\venv_SMAI\Scripts\python.exe tests\ui_web_render_sprint.py
 ```
 
-注意: 管理者権限で作成されたpytest temp/cacheは通常ユーザーからPermissionErrorになることがある。権限を混在させず、必要なら管理者環境で再実行する。
+結果:
 
-## 7. 直近commit
+- 単体・契約テスト: 11件成功
+- Streamlit renderer: `healthy`、`degraded`、`critical`、高件数、復旧後の5状態すべて成功
+- `git diff --check`: 成功
+- `http://127.0.0.1:8502/_stcore/health`: `200 / ok`
 
-Analytics:
+この5状態レンダラー確認は視覚的な実画面レビューの代替ではない。実画面の5回反復は未完了である。
 
-```text
-9137bec feat: design and expand server analytics console
-86ce2c9 chore: align analytics paths with SMAI_Projects
-```
+## 7. 安全・Gitの必須事項
 
-SMAI本体:
-
-```text
-5ae8dd9 chore: normalize SMAI workspace references
-ce08ebf chore: stop tracking generated reports and raw imports
-```
-
-## 8. 重要な注意
-
-- `git add .`は禁止。対象ファイルを明示する。
-- SMAI本体とAnalyticsのGit操作を必ず別々の絶対作業ディレクトリで行う。
-- Reports/raw/log/cacheを誤って本体Gitへ追加しない。
-- Runtimeにはユーザー・端末・操作情報が含まれるためGit管理しない。
-- 投資スコア、ランキング、Forecast、Decision Reportの意味をAnalytics側で変更しない。
-- 実行していない確認を実行済みと報告しない。
-
-## 9. 次の推奨順序
-
-1. Windows再起動後に本体の物理移動とScheduled Task再登録
-2. SMAI本体のログイン / 操作イベント連携
-3. Sessionsの端末・profile表示強化
-4. Activity Historyの期間、ユーザー、操作、結果フィルタ
-5. Incidentsのseverity分類と障害相関表示
-6. backup verify / restore smoke
-7. 自動push前のsecret検査とdry-run
-
+- `AGENTS.md`を最優先する。Analyticsは本体のprivate moduleをimportせず、安定したファイル・HTTP・プロセス・CLI契約を読むだけにする。
+- Runtime、ログ、バックアップ、ユーザーデータ、secret、token、CookieをGitへ追加しない。
+- 変更した作業単位ごとに、対象差分、`git status`、検証結果を確認してからcommitする。`git add .`は禁止で、対象ファイルを明示する。
+- 検証成功後、`origin/agent/analytics-operations-console`へpushする。push失敗を成功扱いしない。
+- Windowsのlive operation（自動起動タスク登録など）は、今回のUI改善とは分離し、明示要求がない限り実行しない。

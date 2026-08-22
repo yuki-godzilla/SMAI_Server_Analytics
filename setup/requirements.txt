@@ -1,0 +1,4 @@
+# === runtime ===
+# These packages provide branded image rendering and the browser-based Operations Console.
+Pillow==10.4.0
+streamlit==1.38.0

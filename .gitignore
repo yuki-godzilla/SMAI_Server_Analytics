@@ -4,5 +4,9 @@ backups/
 *.pyc
 __pycache__/
 .venv/
+venv_SMAI_Analytics/
+.black_cache/
+.ruff_cache/
+.pytest_cache/
 .env
-
+.ui-validation/
