@@ -15,29 +15,45 @@ $startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::St
 $startupLauncher = Join-Path $startupDirectory "SMAI Analytics Autostart.lnk"
 $legacyLauncher = Join-Path $startupDirectory "SMAI Analytics Autostart.cmd"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($startupLauncher)
-$shortcut.TargetPath = $powershell
-$shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$startScript`" -StartupDelaySeconds 45"
-$shortcut.WorkingDirectory = $projectRoot
-$shortcut.WindowStyle = 7
-$shortcut.Save()
-if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
-    Remove-Item -LiteralPath $legacyLauncher -Force
-    Write-Host "[SMAI] Replaced CMD Startup launcher with PowerShell shortcut."
-}
+$taskName = "SMAI-Server-Analytics"
 
-$legacyTaskName = "SMAI-Server-Analytics"
-$legacyTask = Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
-if ($null -ne $legacyTask) {
-    $legacyActions = ($legacyTask.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join " "
-    if ($legacyActions -match "(?i)run_analytics_web\.bat") {
-        Disable-ScheduledTask -TaskName $legacyTaskName | Out-Null
-        Write-Host "[SMAI] Disabled legacy CMD task: $legacyTaskName"
+# Startup-folder shortcuts and the old CMD task both race to bind TCP 8502 at
+# logon.  Keep one user-owned, health-aware scheduled task as the sole path.
+foreach ($launcher in @($startupLauncher, $legacyLauncher)) {
+    if (Test-Path -LiteralPath $launcher -PathType Leaf) {
+        Remove-Item -LiteralPath $launcher -Force
+        Write-Host "[SMAI] Removed superseded Startup launcher: $launcher"
     }
 }
+
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$userId = $identity.Name
+$action = New-ScheduledTaskAction `
+    -Execute $powershell `
+    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$startScript`"" `
+    -WorkingDirectory $projectRoot
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
+$trigger.Delay = "PT1M"
+$principal = New-ScheduledTaskPrincipal `
+    -UserId $userId `
+    -LogonType Interactive `
+    -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet `
+    -MultipleInstances IgnoreNew `
+    -RestartCount 1 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+    -StartWhenAvailable
+$task = New-ScheduledTask `
+    -Action $action `
+    -Trigger $trigger `
+    -Principal $principal `
+    -Settings $settings `
+    -Description "Start the SMAI Analytics Web Operations Console after user logon."
+Register-ScheduledTask -TaskName $taskName -InputObject $task -Force -ErrorAction Stop | Out-Null
+
 if ($RunImmediately) {
     & $startScript -StartupDelaySeconds 0
     if (-not $?) { throw "Could not start the Analytics launcher." }
 }
-Write-Host "[OK] Registered user Startup launcher: $startupLauncher"
+Write-Host "[OK] Registered health-aware logon task: $taskName"

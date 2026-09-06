@@ -90,14 +90,14 @@ NVIDIA GPUがあるPCでは、同じsnapshotへ温度・ファン・消費電力
 
 ## ログオン時の運用プロンプトとWeb画面
 
-SMAI Main Applicationは既存のWindows起動タスクで起動を維持し、Analyticsはログオン時に重複を検出して起動します。ログオン時の自動起動は、管理者権限を必要としない現在のユーザーのWindows Startupフォルダーへ登録します。Analyticsは45秒待機してから確認するため、既存タスクが残っていても二重起動しません。`SMAI-Operations-Workspace`は同じログオン時に、既存プロセスを二重起動せず、MainとAnalyticsそれぞれの状態確認用PowerShellプロンプトを表示します。両方のhealth endpointが応答した後、既定ブラウザーで`http://localhost:8501`と`http://localhost:8502`を開きます。
+SMAI Main Applicationは既存のWindows起動タスクで起動を維持し、Analyticsは現在の対話ユーザーの`SMAI-Server-Analytics`ログオンタスクだけで起動します。タスクはログオン後60秒にhealth確認・mutex付きのランチャーを呼び、TCP 8502がすでに正常なら二重起動しません。`SMAI Operations Workspace`はサーバーを起動しない任意の表示機能です。必要なときだけMainとAnalyticsの状態確認用PowerShellプロンプトとブラウザー画面を開けます。通常のログオン時には自動表示しません。
 
 ```powershell
 .\scripts\register_smai_analytics_autostart_task.ps1
-.\scripts\register_smai_operations_workspace_task.ps1 -RunImmediately
+.\scripts\start_smai_operations_workspace.ps1
 ```
 
-プロンプトを閉じてもサーバープロセスは停止しません。Web画面を開き直すだけなら`open_smai_service_pages.ps1`を実行します。元に戻す場合は次を実行します。
+プロンプトを閉じてもサーバープロセスは停止しません。ログオン時にも画面を自動表示したい場合だけ、`register_smai_operations_workspace_task.ps1`を実行します。Web画面を開き直すだけなら`open_smai_service_pages.ps1`を実行します。元に戻す場合は次を実行します。
 
 ```powershell
 .\scripts\unregister_smai_operations_workspace_task.ps1

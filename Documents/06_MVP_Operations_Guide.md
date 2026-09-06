@@ -142,18 +142,24 @@ python .\backup.py smoke
 
 ### ログオン時のプロンプトとWeb画面
 
-SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。AnalyticsはTCP 8502のhealth endpointを先に確認し、すでに正常であれば二重起動せず終了します。ログオン時の起動と表示は、管理者権限を必要としない現在のユーザーのWindows StartupフォルダーへPowerShellショートカットとして登録します。Analyticsは45秒待機してから同じ確認を行い、起動処理は非表示PowerShellで実行します。旧`SMAI-Server-Analytics`がCMDバッチを起動する構成を検出した場合は、重複とCMDポップアップを防ぐため無効化します。
+SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。Analyticsは現在の対話ユーザーの`SMAI-Server-Analytics`ログオンタスクだけで起動します。ログオン後60秒に非表示PowerShellからhealth確認・mutex付きの`start_smai_analytics_service.ps1`を呼び、TCP 8502がすでに正常なら二重起動せず終了します。登録時には、旧CMDタスクと競合するStartupフォルダーの`SMAI Analytics Autostart`ショートカットを削除します。
 
-`SMAI-Operations-Workspace`はログオン時に、Main Application用とAnalytics用の2つのPowerShellプロンプトを開きます。両方とも30秒ごとにlocalhostのhealth endpointを確認するだけで、サーバープロセスを起動・停止しません。正常は緑、注意は黄、停止・到達不能は赤、URLはシアンで表示します。サーバー本体の起動処理は非表示PowerShellへ分離するため、CMDウィンドウは開きません。両サービスが応答した時点で、Google Chromeがある場合は`http://localhost:8501`と`http://localhost:8502`を別ウィンドウで開きます。Chromeがない場合だけ既定ブラウザーを使います。サーバーの起動途中は最大180秒待機し、応答できないサービスのページは開きません。
+`SMAI Operations Workspace`は任意の表示用機能です。Main Application用とAnalytics用の2つのPowerShellプロンプト、および両サービスが正常になった後のブラウザー画面を開きますが、サーバープロセスの起動・停止はしません。通常の常時運用では自動起動しません。必要なときだけ手動で起動するか、明示的にStartupショートカットを登録してください。
 
 2画面を接続している通常の運用端末では、ページを開いた後に`arrange_smai_operations_workspace.ps1`が次のように配置します。Main Applicationを左、Analyticsを右に統一し、VS Codeはメインディスプレイの通常の重なり順、状態確認用PowerShellは同じ位置の最背面、Web画面はサブディスプレイに置きます。VS CodeではCodex拡張機能を右側のセカンダリサイドバーで起動するユーザー設定を使用します。モニターが1台だけの場合や対象ウィンドウが起動しなかった場合は、配置だけをスキップして各サービスを停止させません。
 
 ```powershell
 .\scripts\register_smai_analytics_autostart_task.ps1
-.\scripts\register_smai_operations_workspace_task.ps1 -RunImmediately
+.\scripts\start_smai_operations_workspace.ps1
 ```
 
-プロンプトを閉じてもサーバーは停止しません。不要になった場合は、ユーザータスクだけを次で削除できます。
+プロンプトを閉じてもサーバーは停止しません。ログオン時にも画面を自動表示したい場合だけ、次を実行します。
+
+```powershell
+.\scripts\register_smai_operations_workspace_task.ps1
+```
+
+不要になった場合は、Startupショートカットを次で削除できます。
 
 ```powershell
 .\scripts\unregister_smai_operations_workspace_task.ps1

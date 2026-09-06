@@ -22,12 +22,12 @@ class StartupWorkspaceTests(unittest.TestCase):
         self.assertIn("run_analytics_web.ps1", service)
         self.assertIn("Local\\SMAI-Analytics-Service-Start", service)
         self.assertIn("WindowStyle = \"Hidden\"", service)
-        self.assertIn("[Environment+SpecialFolder]::Startup", registration)
-        self.assertIn("SMAI Analytics Autostart.lnk", registration)
-        self.assertIn("WScript.Shell", registration)
+        self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $userId", registration)
         self.assertIn("SMAI-Server-Analytics", registration)
-        self.assertIn("Disabled legacy CMD task", registration)
-        self.assertIn("-StartupDelaySeconds 45", registration)
+        self.assertIn('"PT1M"', registration)
+        self.assertIn("New-ScheduledTaskPrincipal", registration)
+        self.assertIn("Register-ScheduledTask", registration)
+        self.assertIn("Removed superseded Startup launcher", registration)
 
     def test_workspace_opens_colored_prompts_and_pages_without_starting_servers(self) -> None:
         prompt = self.read("show_smai_service_prompt.ps1")
