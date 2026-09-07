@@ -17,6 +17,10 @@ class StartupWorkspaceTests(unittest.TestCase):
         registration = self.read("register_smai_analytics_autostart_task.ps1")
 
         self.assertIn("Test-AnalyticsHealth", service)
+        self.assertIn("Test-SmaiApplicationHealth", service)
+        self.assertIn("Sync-HealthAfterSmaiStartup", service)
+        self.assertIn("run_smai_host_monitor.ps1", service)
+        self.assertIn("Recorded a fresh healthy snapshot after SMAI startup", service)
         self.assertIn("Get-NetTCPConnection", service)
         self.assertIn("StartupDelaySeconds", service)
         self.assertIn("run_analytics_web.ps1", service)
