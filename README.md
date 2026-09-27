@@ -20,7 +20,8 @@ Server Analytics:    http://smai-server:8502
 
 LAN内でも外出先でも、管理端末でTailscaleを起動して`http://smai-server:8502`を開いてください。起動時表示と画面上の案内もこのURLだけを通常案内とし、LAN IP・Tailscale IPは障害調査時を除き表示しません。URL設定は非秘匿の[`config/network.json`](config/network.json)へ集約しており、端末名を変更する場合は本体の`config/server.yaml`と同じ値へ更新します。明示的な環境変数`SMAI_TAILSCALE_HOSTNAME`、`SMAI_ANALYTICS_PORT`、`SMAI_ANALYTICS_SCHEME`も使用できます。
 
-- サマリーは5秒ごと、現在表示している画面だけは7秒ごとに部分更新します。データ収集とローカルhealth probeは15秒の共有キャッシュを使うため、非表示の画面を含む一斉再描画や接続端末ごとの重複したprobeは行いません。
+- サマリーは15秒ごと、ダッシュボードと推移のHealth詳細は60秒ごとに部分更新します。その他の詳細は画面切替または「最新状態に更新」で再取得します。ブラウザーは監視タスクが記録したsnapshotを読み取り、接続端末ごとにhealth probeを実行しません。実測と記録は画面の閲覧有無に関係なく`SMAI-Host-Monitor`が5分ごとに行います。
+- health snapshotが10分を超えて更新されていない場合、画面の現在状態とhealth scoreは`unknown`として表示します。古い記録を現在の正常状態として扱いません。
 - Overviewにはhealth score、現在状態、サービス概要、次に確認すべき画面への導線を表示します。詳細なhealth timelineとL1〜L3 check matrixは`推移`、Recovery Readinessは`改善レポート`で確認します。
 - 異常、欠損、読み取り不能は正常扱いにせず、`degraded`、`critical`、`unknown`として表示します。
 - SMAIの計算、ランキング、Forecast、ユーザーデータ、タスク設定を変更しません。
@@ -54,7 +55,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ## PC常時運用と安全保守
 
-`SMAI-Host-Monitor`は5分ごとに、Main Application、Tailscale、物理ディスク、メモリ、CPU、過去24時間の異常停止を同じhealth snapshotへ記録します。さらにニュース更新と銘柄データ更新の最終成功時刻・連続失敗回数を確認し、24時間超の遅延は`degraded`、48時間超または連続4回失敗は`critical`として扱います。状態ファイルが欠損・破損している場合は`unknown`であり、正常とは表示しません。異常の記録だけでWindows全体を再起動することはありません。
+`SMAI-Host-Monitor`は5分ごとに、Main Application、Tailscale、物理ディスク、メモリ、CPU、過去24時間の異常停止を同じhealth snapshotへ記録します。ニュース更新は直近の失敗または最終成功から24時間超で`degraded`、48時間超または連続4回失敗で`critical`と判定します。銘柄マスターは週次保守の`data/ops/symbol_maintenance_state.json`を根拠とし、最終成功から8日超または直近処理の失敗で`degraded`、10日超で`critical`と判定します。画面操作に応じて更新されるcacheは週次保守の証拠にしません。状態ファイルが欠損・破損している場合は`unknown`であり、正常とは表示しません。異常の記録だけでWindows全体を再起動することはありません。
 NVIDIA GPUがあるPCでは、同じsnapshotへ温度・ファン・消費電力を任意のL3観測として記録します。GPUがない、または取得できないPCでは既存のhealth判定を悪化させません。タスク状態もこの監視で5分ごとに記録するため、Web Consoleを開いていない時間帯も履歴が残ります。
 
 最初に変更前の電源・更新・タスク設定をRuntimeへ保存します。

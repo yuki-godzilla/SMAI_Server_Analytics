@@ -1,9 +1,10 @@
 """Read-only SMAI Analytics dashboard for trusted private networks.
 
 This Streamlit surface deliberately owns no SMAI calculation, ranking, or
-user-facing application state. It reads stable Operations contracts and runs
-the server-local health probe at a bounded interval. The launcher binds it to
-a separate port so it never competes with SMAI's primary Streamlit application.
+user-facing application state. It reads stable Operations contracts and the
+server-local monitor snapshot without probing from browser sessions. The
+launcher binds it to a separate port so it never competes with SMAI's primary
+Streamlit application.
 """
 
 from __future__ import annotations
