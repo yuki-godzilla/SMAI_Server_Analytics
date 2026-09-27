@@ -50,7 +50,7 @@ function Sync-HealthAfterSmaiStartup {
         if (Test-SmaiApplicationHealth) {
             $monitorExit = Update-StartupHealthSnapshot
             if ($monitorExit -eq 0) {
-                Write-Host "[SMAI] Recorded a fresh healthy snapshot after SMAI startup."
+                Write-Host "[SMAI] Recorded a fresh health snapshot after SMAI startup. Review the overall and individual checks."
             } else {
                 Write-Warning "[SMAI] SMAI responded, but the fresh health snapshot still needs attention."
             }

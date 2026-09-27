@@ -15,6 +15,7 @@ class FreshnessPolicy:
     relative_path: str
     stale_after: timedelta
     critical_after: timedelta
+    result_field: str = "consecutive_failures"
 
 
 POLICIES = (
@@ -25,13 +26,14 @@ POLICIES = (
         critical_after=timedelta(hours=48),
     ),
     FreshnessPolicy(
-        name="Symbol data freshness",
-        relative_path="data/cache/symbol_refresh_status.json",
+        name="Symbol master freshness",
+        relative_path="data/ops/symbol_maintenance_state.json",
         # Symbol maintenance is intentionally scheduled weekly.  Do not
         # report a healthy, on-schedule maintenance cycle as stale after two
         # days; leave a one-day observation margin before escalating.
         stale_after=timedelta(days=8),
         critical_after=timedelta(days=10),
+        result_field="last_exit_code",
     ),
 )
 
@@ -55,29 +57,23 @@ def _read_status(path: Path) -> Mapping[str, object] | None:
     return value if isinstance(value, dict) else None
 
 
-def _failure_count(status: Mapping[str, object]) -> int | None:
-    value = status.get("consecutive_failures")
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int) and value >= 0:
-        return value
-    return None
-
-
 def classify(policy: FreshnessPolicy, status: Mapping[str, object] | None, *, now: datetime) -> dict[str, object]:
     """Classify a status file without treating missing or malformed data as fresh."""
 
     if status is None:
         return {"name": policy.name, "level": "L2", "status": "unknown", "detail": "更新状態を読み取れません"}
     succeeded_at = parse_timestamp(status.get("last_success_at"))
-    failures = _failure_count(status)
-    if succeeded_at is None or failures is None:
-        return {"name": policy.name, "level": "L2", "status": "unknown", "detail": "最終成功時刻または失敗回数を確認できません"}
+    result = status.get(policy.result_field)
+    if succeeded_at is None or isinstance(result, bool) or not isinstance(result, int) or result < 0:
+        return {"name": policy.name, "level": "L2", "status": "unknown", "detail": "最終成功時刻または実行結果を確認できません"}
     age = max(timedelta(), now.astimezone(UTC) - succeeded_at)
     minutes = int(age.total_seconds() // 60)
+    failures = result if policy.result_field == "consecutive_failures" else 0
     if failures >= 4 or age > policy.critical_after:
         reason = f"連続失敗 {failures} 回" if failures >= 4 else f"最終成功から {minutes} 分経過"
         return {"name": policy.name, "level": "L2", "status": "critical", "detail": f"{reason}（更新停止の可能性）"}
+    if policy.result_field == "last_exit_code" and result != 0:
+        return {"name": policy.name, "level": "L2", "status": "degraded", "detail": f"直近の保守処理が失敗（終了コード {result}、最終成功から {minutes} 分）"}
     if failures >= 2 or age > policy.stale_after:
         reason = f"連続失敗 {failures} 回" if failures >= 2 else f"最終成功から {minutes} 分経過"
         return {"name": policy.name, "level": "L2", "status": "degraded", "detail": f"{reason}（鮮度を確認）"}

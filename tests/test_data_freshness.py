@@ -24,8 +24,9 @@ class DataFreshnessTests(unittest.TestCase):
         path.write_text(json.dumps(status), encoding="utf-8")
 
     def test_collect_marks_recent_success_as_healthy(self) -> None:
-        for policy in data_freshness.POLICIES:
-            self._write(policy, last_success_at=self.now.isoformat(), consecutive_failures=0)
+        news, symbols = data_freshness.POLICIES
+        self._write(news, last_success_at=self.now.isoformat(), consecutive_failures=0)
+        self._write(symbols, last_success_at=self.now.isoformat(), last_exit_code=0)
 
         checks = data_freshness.collect_checks(self.root, now=self.now)
 
@@ -36,7 +37,7 @@ class DataFreshnessTests(unittest.TestCase):
 
         self.assertEqual(["unknown", "unknown"], [check["status"] for check in checks])
 
-    def test_collect_escalates_stale_and_repeated_failures(self) -> None:
+    def test_collect_reports_news_staleness_and_maintenance_failure(self) -> None:
         news, symbols = data_freshness.POLICIES
         self._write(
             news,
@@ -46,22 +47,43 @@ class DataFreshnessTests(unittest.TestCase):
         self._write(
             symbols,
             last_success_at=self.now.isoformat(),
-            consecutive_failures=4,
+            last_exit_code=1,
         )
 
         checks = data_freshness.collect_checks(self.root, now=self.now)
 
         self.assertEqual("degraded", checks[0]["status"])
-        self.assertEqual("critical", checks[1]["status"])
+        self.assertEqual("degraded", checks[1]["status"])
+
+    def test_news_repeated_failures_are_critical(self) -> None:
+        news, _symbols = data_freshness.POLICIES
+        self._write(news, last_success_at=self.now.isoformat(), consecutive_failures=4)
+
+        self.assertEqual("critical", data_freshness.collect_checks(self.root, now=self.now)[0]["status"])
 
     def test_symbol_maintenance_remains_healthy_inside_its_weekly_contract(self) -> None:
         _news, symbols = data_freshness.POLICIES
         self._write(
             symbols,
             last_success_at=(self.now - timedelta(days=7, hours=12)).isoformat(),
-            consecutive_failures=0,
+            last_exit_code=0,
         )
 
         check = data_freshness.collect_checks(self.root, now=self.now)[1]
 
         self.assertEqual("ok", check["status"])
+
+    def test_symbol_health_uses_weekly_maintenance_not_optional_cache_refresh(self) -> None:
+        _news, symbols = data_freshness.POLICIES
+        self._write(symbols, last_success_at=(self.now - timedelta(days=3)).isoformat(), last_exit_code=0)
+        cache = self.root / "data/cache/symbol_refresh_status.json"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"last_success_at": "2020-01-01", "consecutive_failures": 0}), encoding="utf-8")
+
+        self.assertEqual("ok", data_freshness.collect_checks(self.root, now=self.now)[1]["status"])
+
+    def test_symbol_maintenance_overdue_remains_critical(self) -> None:
+        _news, symbols = data_freshness.POLICIES
+        self._write(symbols, last_success_at=(self.now - timedelta(days=11)).isoformat(), last_exit_code=0)
+
+        self.assertEqual("critical", data_freshness.collect_checks(self.root, now=self.now)[1]["status"])

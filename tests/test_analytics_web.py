@@ -1,7 +1,9 @@
 import json
+import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 import analytics_web
 
@@ -174,10 +176,12 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
     def test_dashboard_refresh_contract_limits_timed_reruns_to_summary(self) -> None:
         self.assertEqual(15, analytics_web.SNAPSHOT_REFRESH_INTERVAL_SECONDS)
         self.assertEqual(15, analytics_web.SUMMARY_REFRESH_INTERVAL_SECONDS)
+        self.assertEqual(60, analytics_web.HEALTH_DETAIL_REFRESH_INTERVAL_SECONDS)
         self.assertEqual(60, analytics_web.DETAIL_SNAPSHOT_TTL_SECONDS)
         source = (Path(__file__).resolve().parents[1] / "smai_analytics" / "ui" / "web_dashboard.py").read_text(encoding="utf-8")
-        self.assertNotIn("run_every=ACTIVE_VIEW_REFRESH_INTERVAL_SECONDS", source)
-        self.assertIn("詳細は画面切替または更新操作で最新化", source)
+        self.assertIn("@st.fragment(run_every=HEALTH_DETAIL_REFRESH_INTERVAL_SECONDS)", source)
+        self.assertIn('if selected_view in {"ダッシュボード", "推移"}:', source)
+        self.assertIn("その他の詳細は画面切替または更新操作で最新化", source)
 
     def test_health_snapshot_note_fails_closed_without_browser_side_probe(self) -> None:
         now = datetime(2026, 7, 16, 0, 0, tzinfo=UTC)
@@ -186,6 +190,28 @@ class AnalyticsWebFormattingTests(unittest.TestCase):
         self.assertIn("11分", analytics_web.health_snapshot_note(stale, now=now))
         fresh = {"checked_at": (now - timedelta(minutes=2)).isoformat()}
         self.assertEqual("", analytics_web.health_snapshot_note(fresh, now=now))
+        future = {"checked_at": (now + timedelta(minutes=2)).isoformat()}
+        self.assertIn("未来", analytics_web.health_snapshot_note(future, now=now))
+
+    def test_stale_health_snapshot_does_not_keep_a_healthy_score(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot = root / "health_snapshot.json"
+            snapshot.write_text(
+                json.dumps({
+                    "checked_at": (datetime.now(UTC) - timedelta(minutes=11)).isoformat(),
+                    "overall": "healthy",
+                    "checks": [{"name": "Streamlit health", "status": "ok"}],
+                    "storage": [{"name": "Runtime", "status": "ok"}],
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.object(analytics_web, "SNAPSHOT", snapshot), mock.patch.object(analytics_web, "ACTIVITY", root / "activity.json"):
+                result = analytics_web.collect_summary_snapshot()
+        self.assertEqual("unknown", result["overall"])
+        self.assertTrue(result["health_note"])
+        self.assertEqual("unknown", result["check_statuses"]["streamlit health"])
+        self.assertEqual("unknown", result["storage"][0]["status"])
 
     def test_overview_next_check_keeps_unknown_and_critical_fail_closed(self) -> None:
         self.assertEqual(analytics_web._next_check({"overall": "unknown"})[0], "推移")

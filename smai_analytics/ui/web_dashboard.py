@@ -39,10 +39,11 @@ BACKUP_SMOKE_STATE = RUNTIME_ROOT / "backup_restore_smoke.json"
 CONNECTION_WATCH_STATE = RUNTIME_ROOT / "connections/watch_state.json"
 LOG_ROOTS = (RUNTIME_ROOT / "logs", PROJECT_ROOT / "logs/server_ops", PROJECT_ROOT / "logs/maintenance")
 ASSET_ROOT = REPOSITORY_ROOT / "assets"
-# Browser sessions only read monitor evidence.  The timed fragment redraws the
-# compact summary; detailed evidence is fetched on navigation or explicit refresh.
+# Browser sessions only read monitor evidence. Health views refresh from the
+# monitor snapshot; other detailed evidence is fetched on navigation or request.
 SNAPSHOT_REFRESH_INTERVAL_SECONDS = 15
 SUMMARY_REFRESH_INTERVAL_SECONDS = 15
+HEALTH_DETAIL_REFRESH_INTERVAL_SECONDS = 60
 DETAIL_SNAPSHOT_TTL_SECONDS = 60
 HEALTH_SNAPSHOT_STALE_AFTER = timedelta(minutes=10)
 ANALYTICS_LOGO = ASSET_ROOT / "smai-analytics-logo-transparent.png"
@@ -443,6 +444,8 @@ def health_snapshot_note(snapshot: Mapping[str, object], *, now: datetime | None
         return "health snapshotの時刻を確認できないため、現在状態を正常と判断できません"
     current = (now or datetime.now(UTC)).astimezone(UTC)
     age = current - checked_at.astimezone(UTC)
+    if age < -timedelta(minutes=1):
+        return "health snapshotの時刻が未来のため、現在状態を正常と判断できません"
     if age > HEALTH_SNAPSHOT_STALE_AFTER:
         return f"health snapshotが{int(age.total_seconds() // 60)}分更新されていません。監視タスクを確認してください"
     return ""
@@ -452,15 +455,20 @@ def collect_summary_snapshot() -> dict[str, object]:
     """Read only the compact state required by the periodically refreshed header."""
 
     snapshot = read_json(SNAPSHOT)
-    overall = str(snapshot.get("overall") or "unknown").casefold()
+    health_note = health_snapshot_note(snapshot)
+    overall = "unknown" if health_note else str(snapshot.get("overall") or "unknown").casefold()
     raw_checks = snapshot.get("checks")
     checks = [item for item in raw_checks if isinstance(item, dict)] if isinstance(raw_checks, list) else []
     check_statuses = {
         str(item.get("name") or "").casefold(): str(item.get("status") or "unknown").casefold()
         for item in checks
     }
+    if health_note:
+        check_statuses = {name: "unknown" for name in check_statuses}
     raw_storage = snapshot.get("storage")
     storage = [item for item in raw_storage if isinstance(item, dict)] if isinstance(raw_storage, list) else []
+    if health_note:
+        storage = [{**item, "status": "unknown"} for item in storage]
     activity = read_json(ACTIVITY)
     raw_sessions = activity.get("sessions")
     raw_operations = activity.get("operations")
@@ -476,7 +484,7 @@ def collect_summary_snapshot() -> dict[str, object]:
     )
 
     return {
-        "health_note": health_snapshot_note(snapshot),
+        "health_note": health_note,
         "overall": overall,
         "checked_at": snapshot.get("checked_at"),
         "checks": checks,
@@ -1883,7 +1891,9 @@ def _render_trends(data: Mapping[str, object]) -> None:
     with coverage:
         st.caption(f"履歴カバレッジ: {summary['coverage_percent']}%  /  {summary['available_buckets']} / {summary['expected_buckets']} 枠。欠損は正常として数えません。")
 
-    _panel_heading("LATEST CHECK MATRIX", "現在のL1〜L3検査結果です。時系列の変化はこの下のグラフで確認します。", kicker="CURRENT EVIDENCE")
+    _panel_heading("LATEST CHECK MATRIX", "最後に記録されたL1〜L3検査結果です。時系列の変化はこの下のグラフで確認します。", kicker="LATEST EVIDENCE")
+    if data.get("health_note"):
+        st.warning(str(data["health_note"]))
     check_rows = _check_rows(data)
     attention_summary = _check_attention_summary(data)
     if attention_summary is not None:
@@ -2419,7 +2429,8 @@ def _render_live_header() -> None:
     if data["health_note"]:
         st.warning(str(data["health_note"]))
     st.caption(
-        f"サマリーは{SUMMARY_REFRESH_INTERVAL_SECONDS}秒ごとに部分更新 / 詳細は画面切替または更新操作で最新化 / 最終表示 "
+        f"サマリーは{SUMMARY_REFRESH_INTERVAL_SECONDS}秒ごと、Health画面は{HEALTH_DETAIL_REFRESH_INTERVAL_SECONDS}秒ごとに更新 / "
+        "その他の詳細は画面切替または更新操作で最新化 / 最終表示 "
         f"{datetime.now().astimezone().strftime('%H:%M:%S')} / この画面は閲覧専用です"
     )
 
@@ -2430,13 +2441,28 @@ if st is not None:
     def _live_header_fragment() -> None:
         _render_live_header()
 
+    @st.fragment(run_every=HEALTH_DETAIL_REFRESH_INTERVAL_SECONDS)
+    def _live_health_detail_fragment(selected_view: str) -> None:
+        data = cached_operations_snapshot()
+        if selected_view == "ダッシュボード":
+            _render_overview(data)
+        else:
+            _render_trends(data)
+
 else:
     # Keep pure helper tests importable when the optional Web runtime is absent.
     _live_header_fragment = _render_live_header
 
+    def _live_health_detail_fragment(selected_view: str) -> None:
+        data = cached_operations_snapshot()
+        if selected_view == "ダッシュボード":
+            _render_overview(data)
+        else:
+            _render_trends(data)
+
 
 def render_dashboard() -> None:
-    """Render static detail once; only the header fragment has a timed rerun."""
+    """Refresh Health views periodically while keeping other detail on demand."""
 
     assert st is not None
     _live_header_fragment()
@@ -2447,12 +2473,11 @@ def render_dashboard() -> None:
         label_visibility="collapsed",
         key="operations_view",
     )
+    if selected_view in {"ダッシュボード", "推移"}:
+        _live_health_detail_fragment(selected_view)
+        return
     data = cached_operations_snapshot()
-    if selected_view == "ダッシュボード":
-        _render_overview(data)
-    elif selected_view == "推移":
-        _render_trends(data)
-    elif selected_view == "セッション":
+    if selected_view == "セッション":
         _render_connections(data)
     elif selected_view == "操作履歴":
         _render_activity_history(data)
