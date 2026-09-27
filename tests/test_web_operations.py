@@ -18,7 +18,7 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("--server.enableXsrfProtection true", launcher)
         self.assertNotIn("dashboard.py", launcher.casefold())
 
-    def test_autostart_uses_the_current_users_startup_folder_and_avoids_duplicates(self) -> None:
+    def test_autostart_uses_one_interactive_task_and_removes_legacy_shortcuts(self) -> None:
         script = (
             REPOSITORY_ROOT / "scripts" / "register_smai_analytics_autostart_task.ps1"
         ).read_text(encoding="utf-8")
@@ -26,9 +26,11 @@ class WebOperationsContractTests(unittest.TestCase):
         self.assertIn("start_smai_analytics_service.ps1", script)
         self.assertIn("[Environment+SpecialFolder]::Startup", script)
         self.assertIn("SMAI Analytics Autostart.lnk", script)
-        self.assertIn("WScript.Shell", script)
-        self.assertIn("Disabled legacy CMD task", script)
-        self.assertIn("-StartupDelaySeconds 45", script)
+        self.assertIn("Removed superseded Startup launcher", script)
+        self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $userId", script)
+        self.assertIn("-MultipleInstances IgnoreNew", script)
+        self.assertIn("-LogonType Interactive", script)
+        self.assertIn('"PT1M"', script)
         self.assertNotIn("run_dashboard.bat", script)
 
     def test_restart_targets_only_the_web_console_process(self) -> None:
