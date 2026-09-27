@@ -10,7 +10,7 @@ SMAI本体、Analytics画面、Runtimeデータを分離します。SMAI本体�
 
 PC、タブレット、スマートフォンから同じ運用状態を確認する場合は、Analyticsプロジェクトで`scripts\run_analytics_web.ps1`を実行します。SMAI本体のStreamlitとは別のTCP 8502で、読み取り専用のOperations Consoleを起動します。管理端末ではTailscaleを起動し、LAN内でも外出先でも`http://smai-server:8502`を開いてください。Main Applicationは`http://smai-server:8501`であり、同じサーバー名と異なるポート番号で区別します。サーバーPC内の確認だけは`http://localhost:8502`を使用します。Web Consoleだけを再起動する場合は`restart_analytics_web.bat`を使用します。
 
-- ブラウザー画面は5秒ごとに状態を更新し、L1〜L3のhealth snapshot、セッション、タスク、障害、直近ログを表示します。
+- ブラウザー画面のサマリーは15秒ごと、ダッシュボードと推移のHealth詳細は60秒ごとに更新します。その他の詳細は画面切替または管理者の「最新状態に更新」で再取得します。監視自体はブラウザーに依存せず、`SMAI-Host-Monitor`が5分ごとに記録します。
 - この画面はSMAI本体の計算、ランキング、スコア、Forecast、ユーザーデータ、タスク設定を変更しません。
 - TCP 8502をインターネットへ公開しません。ルーターのポート開放、Tailscale Funnel、UPnPは使用しません。Firewall変更は自動で行わず、必要な場合だけAnalytics TCP 8502がMain TCP 8501と別ルールであり、パブリックネットワークを許可しないことを確認します。
 - URL設定は`config/network.json`に集約します。端末名を変更する場合は本体の`config/server.yaml`と同じ`tailscale_hostname`に更新するか、両方の起動環境で`SMAI_TAILSCALE_HOSTNAME`を設定します。旧LAN IP／Tailscale IPの通常案内は廃止しました。
@@ -29,10 +29,10 @@ PC、タブレット、スマートフォンから同じ運用状態を確認す
 `run_health.bat` は次を記録します。
 
 - L1: TCP 8501、Streamlit `/_stcore/health`
-- L2: Streamlitトップページ応答、Tailscale adapter
+- L2: Streamlitトップページ応答、Tailscale adapter、ニュース更新状態、週次の銘柄マスター保守状態
 - L3: `data/ops/server_ops` と `data/user` の読み書き、物理ディスク、空きメモリ、CPU、過去24時間の異常停止
 
-L1失敗は `critical`、L2/L3の失敗・不明は `degraded`、全成功は `healthy` です。snapshotは本体の `data/ops/server_ops/health_snapshot.json`、履歴はRuntimeのhealth logへ保存します。
+L1/L3の失敗・重大は `critical`、L2の失敗・重大および各レベルの不明は `degraded`、全成功は `healthy` です。銘柄マスターの鮮度は週次保守の `data/ops/symbol_maintenance_state.json` で判定します。画面操作に応じて更新される `data/cache/symbol_refresh_status.json` は週次保守の証拠として扱いません。snapshotは本体の `data/ops/server_ops/health_snapshot.json`、履歴はRuntimeのhealth logへ保存します。snapshotが10分を超えて更新されない場合、画面の現在状態とスコアは `unknown` として表示します。
 
 ### 5分ホスト監視
 
@@ -140,26 +140,26 @@ python .\backup.py smoke
 
   PC設定は管理者として開いたPowerShellで`set_smai_server_power_profile.ps1 -Apply`を実行すると、バランス電源プランを維持したままAC時Hybrid SleepとFast Startupを無効にし、AC時スリープ・休止状態を無効にします。Windows UpdateのActive Hoursは08:00〜02:00へ設定し、日曜04:00を保守枠にします。実行前の値はbaselineで確認でき、BIOS・Firewall・ネットワーク設定は変更しません。非昇格では設定を一部だけ変えることなく停止します。
 
-### ログオン時のプロンプトとWeb画面
+### ログオン時のWeb画面
 
 SMAI Main Applicationは既存のWindows起動タスクでサーバープロセスを維持します。Analyticsは現在の対話ユーザーの`SMAI-Server-Analytics`ログオンタスクだけで起動します。ログオン後60秒に非表示PowerShellからhealth確認・mutex付きの`start_smai_analytics_service.ps1`を呼び、TCP 8502がすでに正常なら二重起動せず終了します。登録時には、旧CMDタスクと競合するStartupフォルダーの`SMAI Analytics Autostart`ショートカットを削除します。
 
-`SMAI Operations Workspace`は任意の表示用機能です。Main Application用とAnalytics用の2つのPowerShellプロンプト、および両サービスが正常になった後のブラウザー画面を開きますが、サーバープロセスの起動・停止はしません。通常の常時運用では自動起動しません。必要なときだけ手動で起動するか、明示的にStartupショートカットを登録してください。
+`SMAI-Operations-Workspace` はログオン後、両サービスの正常応答を待ってブラウザー画面を開きます。状態確認用のPowerShellプロンプトは開きません。サーバープロセスの起動・停止もしません。
 
-2画面を接続している通常の運用端末では、ページを開いた後に`arrange_smai_operations_workspace.ps1`が次のように配置します。Main Applicationを左、Analyticsを右に統一し、VS Codeはメインディスプレイの通常の重なり順、状態確認用PowerShellは同じ位置の最背面、Web画面はサブディスプレイに置きます。VS CodeではCodex拡張機能を右側のセカンダリサイドバーで起動するユーザー設定を使用します。モニターが1台だけの場合や対象ウィンドウが起動しなかった場合は、配置だけをスキップして各サービスを停止させません。
+2画面を接続している運用端末では、`arrange_smai_operations_workspace.ps1` がサブディスプレイの左半分にMain Application、右半分にAnalyticsを配置します。モニターが1台だけの場合や対象ウィンドウが起動しなかった場合は、配置だけをスキップして各サービスを停止させません。
 
 ```powershell
 .\scripts\register_smai_analytics_autostart_task.ps1
 .\scripts\start_smai_operations_workspace.ps1
 ```
 
-プロンプトを閉じてもサーバーは停止しません。ログオン時にも画面を自動表示したい場合だけ、次を実行します。
+ログオン時にWeb画面を自動表示するには、次を実行します。
 
 ```powershell
 .\scripts\register_smai_operations_workspace_task.ps1
 ```
 
-不要になった場合は、Startupショートカットを次で削除できます。
+不要になった場合は、ログオンタスクを次で解除できます。
 
 ```powershell
 .\scripts\unregister_smai_operations_workspace_task.ps1

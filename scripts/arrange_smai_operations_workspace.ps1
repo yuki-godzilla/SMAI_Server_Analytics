@@ -8,8 +8,8 @@ param(
 )
 
 # Keep the operations workspace predictable after interactive logon.  The
-# script only targets the six named SMAI windows; unrelated windows are never
-# moved or restacked.
+# script only targets the two named SMAI web-app windows; unrelated windows
+# are never moved or restacked.
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -166,53 +166,19 @@ function Set-SmaiWindowLayout {
     }
 }
 
-$primaryScreen = [System.Windows.Forms.Screen]::AllScreens | Where-Object Primary | Select-Object -First 1
 $secondaryScreen = [System.Windows.Forms.Screen]::AllScreens |
     Where-Object { -not $_.Primary } |
     Sort-Object { $_.WorkingArea.X }, { $_.WorkingArea.Y } |
     Select-Object -First 1
 
-if ($null -eq $primaryScreen -or $null -eq $secondaryScreen) {
-    throw "A primary display and one secondary display are required to arrange the SMAI workspace."
+if ($null -eq $secondaryScreen) {
+    throw "A secondary display is required to arrange the SMAI web applications."
 }
 
-$mainLeft = Get-HalfScreenRectangle -WorkingArea $primaryScreen.WorkingArea -Side Left
-$mainRight = Get-HalfScreenRectangle -WorkingArea $primaryScreen.WorkingArea -Side Right
 $secondaryLeft = Get-HalfScreenRectangle -WorkingArea $secondaryScreen.WorkingArea -Side Left
 $secondaryRight = Get-HalfScreenRectangle -WorkingArea $secondaryScreen.WorkingArea -Side Right
 
 $targets = @(
-    [pscustomobject]@{
-        Name = "SMAI Main App VS Code"
-        Rectangle = $mainLeft
-        Stacking = "Normal"
-        Required = $false
-        Matches = { param($window) $window.ProcessName -eq "Code" -and $window.Title -like "*Smart_Market_AI*" }
-    },
-    [pscustomobject]@{
-        Name = "SMAI Analytics VS Code"
-        Rectangle = $mainRight
-        Stacking = "Normal"
-        Required = $false
-        Matches = { param($window) $window.ProcessName -eq "Code" -and $window.Title -like "*SMAI_Server_Analytics*" }
-    },
-    [pscustomobject]@{
-        Name = "SMAI Main Application Prompt"
-        # Keep the two service consoles on the secondary display, behind their
-        # matching web apps.  The primary display remains reserved for the
-        # two VS Code project windows.
-        Rectangle = $secondaryLeft
-        Stacking = "Bottom"
-        Required = $true
-        Matches = { param($window) $window.Title -eq "SMAI Main Application Prompt" }
-    },
-    [pscustomobject]@{
-        Name = "SMAI Analytics Prompt"
-        Rectangle = $secondaryRight
-        Stacking = "Bottom"
-        Required = $true
-        Matches = { param($window) $window.Title -eq "SMAI Analytics Prompt" }
-    },
     [pscustomobject]@{
         Name = "SMAI Main Application Web"
         Rectangle = $secondaryLeft

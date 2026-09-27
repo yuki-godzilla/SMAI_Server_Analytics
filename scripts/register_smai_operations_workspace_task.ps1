@@ -14,19 +14,42 @@ $startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::St
 $startupLauncher = Join-Path $startupDirectory "SMAI Operations Workspace.lnk"
 $legacyLauncher = Join-Path $startupDirectory "SMAI Operations Workspace.cmd"
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($startupLauncher)
-$shortcut.TargetPath = $powershell
-$shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$workspaceScript`""
-$shortcut.WorkingDirectory = $projectRoot
-$shortcut.WindowStyle = 7
-$shortcut.Save()
-if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
-    Remove-Item -LiteralPath $legacyLauncher -Force
-    Write-Host "[SMAI] Replaced CMD Startup launcher with PowerShell shortcut."
+$taskName = "SMAI-Operations-Workspace"
+
+# A single scheduled task avoids duplicate browser launches caused by legacy
+# Startup-folder entries.
+foreach ($launcher in @($startupLauncher, $legacyLauncher)) {
+    if (Test-Path -LiteralPath $launcher -PathType Leaf) {
+        Remove-Item -LiteralPath $launcher -Force
+        Write-Host "[SMAI] Removed superseded Startup launcher: $launcher"
+    }
 }
+
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$action = New-ScheduledTaskAction `
+    -Execute $powershell `
+    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$workspaceScript`"" `
+    -WorkingDirectory $projectRoot
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
+$trigger.Delay = "PT1M"
+$principal = New-ScheduledTaskPrincipal `
+    -UserId $identity.Name `
+    -LogonType Interactive `
+    -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet `
+    -MultipleInstances IgnoreNew `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 5) `
+    -StartWhenAvailable
+$task = New-ScheduledTask `
+    -Action $action `
+    -Trigger $trigger `
+    -Principal $principal `
+    -Settings $settings `
+    -Description "Open and arrange the SMAI Main and Analytics web applications after user logon."
+Register-ScheduledTask -TaskName $taskName -InputObject $task -Force -ErrorAction Stop | Out-Null
+
 if ($RunImmediately) {
     & $workspaceScript
     if (-not $?) { throw "Could not start the Operations Workspace." }
 }
-Write-Host "[OK] Registered user Startup launcher: $startupLauncher"
+Write-Host "[OK] Registered logon task: $taskName"
