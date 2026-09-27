@@ -26,8 +26,17 @@ $processes = Get-CimInstance Win32_Process -ErrorAction Stop |
 foreach ($process in $processes) {
     $liveProcess = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
     if ($null -ne $liveProcess) {
-        Stop-Process -Id $process.Id -Force -ErrorAction Stop
-        Write-Host "[SMAI] Stopped Analytics Web process: $($process.Id)"
+        try {
+            Stop-Process -Id $process.Id -Force -ErrorAction Stop
+            Write-Host "[SMAI] Stopped Analytics Web process: $($process.Id)"
+        } catch {
+            # Stopping the wrapper can terminate its child before this loop
+            # reaches it.  Other stop failures must still abort the restart.
+            if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+                throw
+            }
+            Write-Host "[SMAI] Analytics Web process already stopped: $($process.Id)"
+        }
     }
 }
 
